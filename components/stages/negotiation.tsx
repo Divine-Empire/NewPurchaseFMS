@@ -30,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, FileText, Image, Shield, ShieldCheck, Loader2, Users, ClipboardList, History } from "lucide-react";
+import { CheckCircle2, FileText, Image, Shield, ShieldCheck, Loader2, Users, ClipboardList, History, Square, CheckSquare } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -47,6 +47,11 @@ export default function Stage4() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Bulk Negotiate State
+  const [selectedIndents, setSelectedIndents] = useState<string[]>([]);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkRecords, setBulkRecords] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
     selectedVendor: "",
@@ -245,7 +250,7 @@ export default function Stage4() {
 
       // Update ONLY the required Negotiation Fields
       const currentVendors = getVendors(currentRecord);
-      const selectedVendorObj = currentVendors.find(v => v.id === formData.selectedVendor);
+      const selectedVendorObj = currentVendors.find(v => v && v.id === formData.selectedVendor);
       const selectedVendorName = selectedVendorObj ? selectedVendorObj.name : "";
 
       rowArray[46] = `${yyyy}-${mm}-${dd}`;       // AU: Current Date (YYYY-MM-DD)
@@ -304,6 +309,130 @@ export default function Stage4() {
         attachment: record.data[`vendor${idx}Attachment`],
       };
     }).filter(Boolean);
+  };
+
+  // Bulk Negotiate Helper Functions
+  const toggleIndentSelection = (indentId: string) => {
+    setSelectedIndents(prev =>
+      prev.includes(indentId)
+        ? prev.filter(id => id !== indentId)
+        : [...prev, indentId]
+    );
+  };
+
+  const getCommonVendors = (records: any[]) => {
+    if (records.length === 0) return [];
+
+    // Get vendor names for each record
+    const vendorNameSets = records.map(record => {
+      const vendors = getVendors(record);
+      return vendors.map((v: any) => v?.name).filter(Boolean);
+    });
+
+    // Find intersection of all vendor names
+    const commonNames = vendorNameSets.reduce((acc, names) =>
+      acc.filter(name => names.includes(name))
+    );
+
+    // Return unique vendor objects from first record that match common names (for radio selection)
+    const firstRecordVendors = getVendors(records[0]);
+    return firstRecordVendors.filter((v: any) => v && commonNames.includes(v.name));
+  };
+
+  // Get all vendors from ALL records for the comparison table
+  const getAllVendorsForComparison = (records: any[]) => {
+    if (records.length === 0) return [];
+
+    // Get common vendor names first
+    const vendorNameSets = records.map(record => {
+      const vendors = getVendors(record);
+      return vendors.map((v: any) => v?.name).filter(Boolean);
+    });
+    const commonNames = vendorNameSets.reduce((acc, names) =>
+      acc.filter(name => names.includes(name))
+    );
+
+    // Collect vendors from ALL records, adding indent info for display
+    const allVendors: any[] = [];
+    records.forEach(record => {
+      const vendors = getVendors(record);
+      vendors.forEach((v: any) => {
+        if (v && commonNames.includes(v.name)) {
+          allVendors.push({
+            ...v,
+            indentNumber: record.data?.indentNumber || record.id,
+          });
+        }
+      });
+    });
+    return allVendors;
+  };
+
+  const handleOpenBulkModal = () => {
+    const records = selectedIndents.map(id => sheetRecords.find(r => r.id === id)).filter(Boolean);
+    setBulkRecords(records);
+    setFormData({ selectedVendor: "", approvedBy: "", remarks: "" });
+    setBulkModalOpen(true);
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (bulkRecords.length === 0 || !formData.selectedVendor || !formData.approvedBy) return;
+
+    const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+    if (!SHEET_API_URL) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+
+      // Get selected vendor name from common vendors
+      const commonVendors = getCommonVendors(bulkRecords);
+      const selectedVendorObj = commonVendors.find((v: any) => v?.id === formData.selectedVendor);
+      const selectedVendorName = selectedVendorObj ? selectedVendorObj.name : "";
+
+      // Process each record sequentially
+      for (const record of bulkRecords) {
+        const rowArray = new Array(60).fill("");
+        rowArray[46] = `${yyyy}-${mm}-${dd}`;       // AU: Current Date
+        rowArray[48] = selectedVendorName;          // AW: Vendor Name
+        rowArray[49] = formData.approvedBy;         // AX: Approved By
+        rowArray[50] = formData.remarks;            // AY: Remarks
+
+        const params = new URLSearchParams();
+        params.append("action", "update");
+        params.append("sheetName", "INDENT-LIFT");
+        params.append("rowIndex", record.rowIndex.toString());
+        params.append("rowData", JSON.stringify(rowArray));
+
+        const response = await fetch(SHEET_API_URL, {
+          method: "POST",
+          body: params,
+        });
+
+        if (!response.ok) throw new Error(`Failed to update row ${record.id}`);
+
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || `Failed to update ${record.id}`);
+      }
+
+      // Success - refresh and reset
+      await fetchData();
+      setBulkModalOpen(false);
+      setSelectedIndents([]);
+      setBulkRecords([]);
+      setFormData({ selectedVendor: "", approvedBy: "", remarks: "" });
+    } catch (err: any) {
+      console.error("Bulk Submit Error:", err);
+      setSubmitError(err.message || "Bulk submission failed");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const ColumnSelector = () => (
@@ -423,9 +552,24 @@ export default function Stage4() {
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
+              {/* Bulk Negotiate Button - appears when >= 2 selected */}
+              {selectedIndents.length >= 2 && (
+                <div className="flex items-center justify-between p-3 bg-blue-50 border-b">
+                  <span className="text-sm font-medium text-blue-800">
+                    {selectedIndents.length} items selected
+                  </span>
+                  <Button
+                    onClick={handleOpenBulkModal}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    Bulk Negotiate
+                  </Button>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[50px] text-center">Select</TableHead>
                     <TableHead className="sticky left-0 bg-white z-10 w-[120px]">Actions</TableHead>
                     {baseColumns
                       .filter((c) => selectedColumns.includes(c.key))
@@ -443,10 +587,26 @@ export default function Stage4() {
                 <TableBody>
                   {pending.map((record) => {
                     const vendors = getVendors(record);
+                    const isSelected = selectedIndents.includes(record.id);
                     return vendors.map((v, idx) => {
                       if (!v) return null;
                       return (
-                        <TableRow key={`${record.id}-v${idx + 1}`}>
+                        <TableRow key={`${record.id}-v${idx + 1}`} className={isSelected ? "bg-blue-50" : ""}>
+                          {idx === 0 && (
+                            <TableCell rowSpan={vendors.length} className="text-center w-[50px]">
+                              <button
+                                type="button"
+                                onClick={() => toggleIndentSelection(record.id)}
+                                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-5 h-5 text-blue-600" />
+                                ) : (
+                                  <Square className="w-5 h-5 text-gray-400" />
+                                )}
+                              </button>
+                            </TableCell>
+                          )}
                           {idx === 0 && (
                             <TableCell rowSpan={vendors.length} className="sticky left-0 bg-white z-10 w-[120px]">
                               <Button
@@ -814,6 +974,209 @@ export default function Stage4() {
                   </>
                 ) : (
                   "Confirm & Proceed"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* BULK NEGOTIATE MODAL */}
+      <Dialog open={bulkModalOpen} onOpenChange={setBulkModalOpen}>
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>Bulk Vendor Negotiation & Final Selection</DialogTitle>
+            <p className="text-sm text-gray-500">
+              Applying negotiation to {bulkRecords.length} items
+            </p>
+          </DialogHeader>
+
+          <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
+            {/* 1. SELECT VENDOR (Common Vendors Only) */}
+            <div className="space-y-3 border-b pb-4">
+              <Label className="text-lg font-semibold">
+                Select Vendor <span className="text-red-500">*</span>
+              </Label>
+              {(() => {
+                const commonVendors = getCommonVendors(bulkRecords);
+                if (commonVendors.length === 0 && bulkRecords.length > 0) {
+                  return (
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm">
+                      ⚠️ No common vendors found across selected items. Please select items with at least one common vendor.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {commonVendors.map((v: any) => {
+                      if (!v) return null;
+                      return (
+                        <label
+                          key={v.id}
+                          className={`flex items-center p-3 border rounded-lg cursor-pointer transition-all ${formData.selectedVendor === v.id
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-300 hover:border-gray-400"
+                            }`}
+                        >
+                          <input
+                            type="radio"
+                            name="bulkSelectedVendor"
+                            value={v.id}
+                            checked={formData.selectedVendor === v.id}
+                            onChange={(e) => setFormData({ ...formData, selectedVendor: e.target.value })}
+                            className="mr-3"
+                          />
+                          <span className="font-medium">{v.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* 2. APPROVED BY */}
+            <div className="space-y-2">
+              <Label htmlFor="bulkApprovedBy">
+                Approved By <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={formData.approvedBy}
+                onValueChange={(v) => setFormData({ ...formData, approvedBy: v })}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select approver..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {approvers.map((a) => (
+                    <SelectItem key={a} value={a}>{a}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 3. ITEM DETAILS (Multiple Items) */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="font-medium mb-3">Item Details ({bulkRecords.length} items selected)</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Indent #</TableHead>
+                    <TableHead>Item</TableHead>
+                    <TableHead>Quantity</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bulkRecords.map((record) => (
+                    <TableRow key={record.id}>
+                      <TableCell className="font-medium">{record.data?.indentNumber || "—"}</TableCell>
+                      <TableCell>{record.data?.itemName || "—"}</TableCell>
+                      <TableCell>{record.data?.quantity || "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* 4. VENDOR COMPARISON (Aggregated) */}
+            <div className="border rounded-lg">
+              <div className="p-4 border-b bg-muted/50">
+                <h3 className="font-medium">Vendor Comparison Sheet (Common Vendors)</h3>
+              </div>
+              <div className="p-4">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Indent #</TableHead>
+                      <TableHead>Vendor Name</TableHead>
+                      <TableHead>Rate/Qty</TableHead>
+                      <TableHead>Payment Terms</TableHead>
+                      <TableHead>Exp. Delivery</TableHead>
+                      <TableHead>Attachment</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {getAllVendorsForComparison(bulkRecords).map((v: any, index: number) => {
+                      if (!v) return null;
+                      return (
+                        <TableRow
+                          key={`${v.indentNumber}-${v.id}-${index}`}
+                          className={formData.selectedVendor === v.id ? "bg-blue-50" : ""}
+                        >
+                          <TableCell className="font-medium">{v.indentNumber}</TableCell>
+                          <TableCell>{v.name}</TableCell>
+                          <TableCell>₹{v.rate || "-"}</TableCell>
+                          <TableCell>
+                            {paymentTerms.find((t) => t.value === v.terms)?.label || v.terms || "-"}
+                          </TableCell>
+                          <TableCell>
+                            {v.delivery ? new Date(v.delivery).toLocaleDateString("en-IN") : "-"}
+                          </TableCell>
+                          <TableCell>
+                            {v.attachment ? (
+                              <a
+                                href={typeof v.attachment === 'string' ? v.attachment : undefined}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>View</span>
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* 5. REMARKS */}
+            <div className="space-y-2">
+              <Label htmlFor="bulkRemarks">Negotiation Remarks</Label>
+              <Textarea
+                id="bulkRemarks"
+                value={formData.remarks}
+                onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                placeholder="Any special terms, discounts, or notes..."
+                className="min-h-24"
+              />
+            </div>
+
+            {submitError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
+                ⚠️ {submitError}
+              </div>
+            )}
+
+            <DialogFooter className="flex-shrink-0 border-t pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setBulkModalOpen(false);
+                  setFormData({ selectedVendor: "", approvedBy: "", remarks: "" });
+                }}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting || !formData.selectedVendor || !formData.approvedBy || getCommonVendors(bulkRecords).length === 0}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving {bulkRecords.length} items...
+                  </>
+                ) : (
+                  `Confirm & Proceed (${bulkRecords.length} items)`
                 )}
               </Button>
             </DialogFooter>

@@ -31,6 +31,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function Stage5() {
   const { moveToNextStage, updateRecord } = useWorkflow();
@@ -42,6 +49,10 @@ export default function Stage5() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Shared fields for bulk PO
+  const [commonPONumber, setCommonPONumber] = useState("");
+  const [commonPOCopy, setCommonPOCopy] = useState<File | null>(null);
 
   const formatDate = (date?: Date | string) => {
     if (!date) return "";
@@ -210,15 +221,15 @@ export default function Stage5() {
     const initialData: Record<string, any> = {};
     selectedRecordIds.forEach((id) => {
       initialData[id] = {
-        poNumber: "",
         basicValue: "",
         totalWithTax: "",
-        paymentTerms: "",
-        remarks: "",
-        poCopy: null as File | null,
+        hsn: "",        // renamed from paymentTerms
+        gst: "",        // new dropdown (replaces remarks)
       };
     });
     setBulkFormData(initialData);
+    setCommonPONumber("");
+    setCommonPOCopy(null);
     setOpen(true);
   };
 
@@ -227,10 +238,16 @@ export default function Stage5() {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
     if (!SHEET_API_URL || selectedRecordIds.length === 0) return;
 
+    // Validate shared PO Number
+    if (!commonPONumber.trim()) {
+      toast.error("Please enter the PO Number.");
+      return;
+    }
+
     let allValid = true;
     selectedRecordIds.forEach((id) => {
       const data = bulkFormData[id];
-      if (!data || !data.poNumber || !data.basicValue || !data.totalWithTax || !data.paymentTerms) {
+      if (!data || !data.basicValue || !data.totalWithTax || !data.hsn || !data.gst) {
         allValid = false;
       }
     });
@@ -254,6 +271,40 @@ export default function Stage5() {
       try {
         const now = new Date();
         let successCount = 0;
+        let finalFileUrl = "";
+
+        // Upload shared PO Copy ONCE before processing all records
+        if (commonPOCopy instanceof File) {
+          const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = error => reject(error);
+          });
+
+          const base64Data = await toBase64(commonPOCopy);
+
+          const uploadParams = new URLSearchParams();
+          uploadParams.append("action", "uploadFile");
+          uploadParams.append("sheetName", "INDENT-LIFT");
+          uploadParams.append("base64Data", base64Data);
+          uploadParams.append("fileName", commonPOCopy.name);
+          uploadParams.append("mimeType", commonPOCopy.type);
+          const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
+          uploadParams.append("folderId", folderId);
+
+          const uploadRes = await fetch(SHEET_API_URL, {
+            method: "POST",
+            body: uploadParams,
+          });
+
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.success) {
+            finalFileUrl = uploadJson.fileUrl || uploadJson.url;
+          } else {
+            console.error("PO Copy upload failed:", uploadJson.error);
+          }
+        }
 
         for (const { record, data } of recordsToProcess) {
           if (!record) continue;
@@ -262,42 +313,7 @@ export default function Stage5() {
           await new Promise((r) => setTimeout(r, 300));
 
           try {
-            let finalFileUrl = "";
-
-            // 1. Upload File if exists
-            if (data.poCopy instanceof File) {
-              const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result as string);
-                reader.onerror = error => reject(error);
-              });
-
-              const base64Data = await toBase64(data.poCopy);
-
-              const uploadParams = new URLSearchParams();
-              uploadParams.append("action", "uploadFile");
-              uploadParams.append("sheetName", "INDENT-LIFT");
-              uploadParams.append("base64Data", base64Data);
-              uploadParams.append("fileName", data.poCopy.name);
-              uploadParams.append("mimeType", data.poCopy.type);
-              const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
-              uploadParams.append("folderId", folderId);
-
-              const uploadRes = await fetch(SHEET_API_URL, {
-                method: "POST",
-                body: uploadParams,
-              });
-
-              const uploadJson = await uploadRes.json();
-              if (uploadJson.success) {
-                finalFileUrl = uploadJson.fileUrl || uploadJson.url;
-              } else {
-                console.error("PO Copy upload failed:", uploadJson.error);
-              }
-            }
-
-            // 2. Prepare Update Data - Only update specific columns
+            // Prepare Update Data - Only update specific columns
             const rowArray = new Array(60).fill("");
 
             // Format current date as YYYY-MM-DD
@@ -308,12 +324,12 @@ export default function Stage5() {
             // Only update the required columns
             rowArray[52] = `${yyyy}-${mm}-${dd}`;                  // BA: Current Date (Actual 4)
             // BB (Index 53) - User requested skip
-            rowArray[54] = data.poNumber;                          // BC: PO Number
+            rowArray[54] = commonPONumber;                         // BC: PO Number (shared)
             rowArray[55] = data.basicValue;                        // BD: Basic Value
             rowArray[56] = data.totalWithTax;                      // BE: Total with Tax
-            rowArray[57] = data.paymentTerms;                      // BF: Payment Terms
-            rowArray[58] = finalFileUrl;                           // BG: PO Copy URL
-            rowArray[59] = data.remarks || "";                     // BH: Remarks
+            rowArray[57] = data.hsn;                               // BF: HSN (renamed from Payment Terms)
+            rowArray[58] = finalFileUrl;                           // BG: PO Copy URL (shared)
+            rowArray[59] = data.gst || "";                         // BH: GST (replaces Remarks)
 
 
             const updateParams = new URLSearchParams();
@@ -356,18 +372,12 @@ export default function Stage5() {
     });
   };
 
-  const handleFileChange = (recordId: string, file: File | null) => {
-    setBulkFormData((prev) => ({
-      ...prev,
-      [recordId]: { ...prev[recordId], poCopy: file },
-    }));
+  const handleCommonFileChange = (file: File | null) => {
+    setCommonPOCopy(file);
   };
 
-  const handleFileRemove = (recordId: string) => {
-    setBulkFormData((prev) => ({
-      ...prev,
-      [recordId]: { ...prev[recordId], poCopy: null },
-    }));
+  const handleCommonFileRemove = () => {
+    setCommonPOCopy(null);
   };
 
   const getVendorData = (record: any) => {
@@ -767,7 +777,26 @@ export default function Stage5() {
             <p className="text-sm text-gray-600">Fill PO details for all selected items</p>
           </DialogHeader>
 
-          <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-8 pr-2">
+          <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
+            {/* SHARED PO NUMBER - AT TOP */}
+            <div className="border rounded-lg p-4 bg-blue-50">
+              <div className="space-y-2">
+                <Label htmlFor="common-poNumber" className="text-base font-semibold">
+                  PO Number <span className="text-red-500">*</span>
+                  <span className="text-xs font-normal text-gray-500 ml-2">(applies to all items)</span>
+                </Label>
+                <Input
+                  id="common-poNumber"
+                  value={commonPONumber}
+                  onChange={(e) => setCommonPONumber(e.target.value)}
+                  required
+                  placeholder="PO-2025-001"
+                  className="bg-white"
+                />
+              </div>
+            </div>
+
+            {/* PER-ITEM SECTIONS */}
             {selectedRecordIds.map((recordId) => {
               const record = sheetRecords.find((r) => r.id === recordId);
               if (!record) return null;
@@ -787,25 +816,7 @@ export default function Stage5() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor={`${recordId}-poNumber`}>
-                        PO Number <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id={`${recordId}-poNumber`}
-                        value={data.poNumber || ""}
-                        onChange={(e) =>
-                          setBulkFormData((prev) => ({
-                            ...prev,
-                            [recordId]: { ...prev[recordId], poNumber: e.target.value },
-                          }))
-                        }
-                        required
-                        placeholder="PO-2025-001"
-                      />
-                    </div>
-
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor={`${recordId}-basicValue`}>
                         Basic Value <span className="text-red-500">*</span>
@@ -847,80 +858,94 @@ export default function Stage5() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor={`${recordId}-paymentTerms`}>
-                        Payment Terms <span className="text-red-500">*</span>
+                      <Label htmlFor={`${recordId}-hsn`}>
+                        HSN <span className="text-red-500">*</span>
                       </Label>
                       <Input
-                        id={`${recordId}-paymentTerms`}
-                        value={data.paymentTerms || ""}
+                        id={`${recordId}-hsn`}
+                        value={data.hsn || ""}
                         onChange={(e) =>
                           setBulkFormData((prev) => ({
                             ...prev,
-                            [recordId]: { ...prev[recordId], paymentTerms: e.target.value },
+                            [recordId]: { ...prev[recordId], hsn: e.target.value },
                           }))
                         }
                         required
-                        placeholder="50% Advance"
+                        placeholder="HSN Code"
                       />
                     </div>
-                  </div>
 
-                  <div className="mt-4 space-y-2">
-                    <Label>PO Copy</Label>
-                    <div>
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                        onChange={(e) => handleFileChange(recordId, e.target.files?.[0] || null)}
-                        className="hidden"
-                        id={`file-${recordId}`}
-                      />
-                      <label
-                        htmlFor={`file-${recordId}`}
-                        className="flex items-center justify-center w-full p-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 text-sm"
+                    <div className="space-y-2">
+                      <Label htmlFor={`${recordId}-gst`}>
+                        GST <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={data.gst || ""}
+                        onValueChange={(val) =>
+                          setBulkFormData((prev) => ({
+                            ...prev,
+                            [recordId]: { ...prev[recordId], gst: val },
+                          }))
+                        }
+                        required
                       >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Upload PO copy
-                      </label>
-                      {data.poCopy && (
-                        <div className="mt-2 p-2 bg-white border rounded flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4" />
-                            <span>{data.poCopy.name}</span>
-                            <span className="text-gray-500">
-                              ({(data.poCopy.size / 1024).toFixed(1)} KB)
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleFileRemove(recordId)}
-                            className="text-red-600"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
+                        <SelectTrigger id={`${recordId}-gst`}>
+                          <SelectValue placeholder="Select GST" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5%">5%</SelectItem>
+                          <SelectItem value="18%">18%</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <Label htmlFor={`${recordId}-remarks`}>Remarks</Label>
-                    <Textarea
-                      id={`${recordId}-remarks`}
-                      value={data.remarks || ""}
-                      onChange={(e) =>
-                        setBulkFormData((prev) => ({
-                          ...prev,
-                          [recordId]: { ...prev[recordId], remarks: e.target.value },
-                        }))
-                      }
-                      placeholder="Any notes..."
-                      className="mt-1"
-                    />
                   </div>
                 </div>
               );
             })}
+
+            {/* SHARED PO COPY - AT BOTTOM */}
+            <div className="border rounded-lg p-4 bg-blue-50">
+              <div className="space-y-2">
+                <Label className="text-base font-semibold">
+                  PO Copy
+                  <span className="text-xs font-normal text-gray-500 ml-2">(applies to all items)</span>
+                </Label>
+                <div>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                    onChange={(e) => handleCommonFileChange(e.target.files?.[0] || null)}
+                    className="hidden"
+                    id="common-file"
+                  />
+                  <label
+                    htmlFor="common-file"
+                    className="flex items-center justify-center w-full p-3 border-2 border-dashed border-gray-300 bg-white rounded-lg cursor-pointer hover:border-gray-400 text-sm"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload PO copy
+                  </label>
+                  {commonPOCopy && (
+                    <div className="mt-2 p-2 bg-white border rounded flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        <span>{commonPOCopy.name}</span>
+                        <span className="text-gray-500">
+                          ({(commonPOCopy.size / 1024).toFixed(1)} KB)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCommonFileRemove}
+                        className="text-red-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </form>
 
           <DialogFooter className="flex-shrink-0 border-t pt-4">
@@ -932,9 +957,10 @@ export default function Stage5() {
               disabled={
                 isSubmitting ||
                 selectedRecordIds.length === 0 ||
+                !commonPONumber.trim() ||
                 !selectedRecordIds.every((id) => {
                   const d = bulkFormData[id];
-                  return d?.poNumber && d?.basicValue && d?.totalWithTax && d?.paymentTerms;
+                  return d?.basicValue && d?.totalWithTax && d?.hsn && d?.gst;
                 })
               }
             >

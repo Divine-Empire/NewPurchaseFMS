@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -32,14 +31,19 @@ import { FileText, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 const QC_ENGINEERS = [
-  "Rajesh Kumar",
-  "Amit Sharma",
-  "Priya Singh",
-  "Vikram Patel",
-  "Neha Gupta",
-  "Suresh Yadav",
-  "Anjali Verma",
-  "Karan Mehta",
+  "Amar Kumar Aggalle",
+  "Himanshu Verma",
+  "Mohammad Shoaib Khan",
+  "Sumit Thawait",
+  "Skgolam Mortuja",
+  "Sunil Kumar Sahu",
+  "Pranjal Deka",
+  "Ayush Vishwakarma",
+  "Satish Nirmalkar",
+  "Nilmani Yadav",
+  "Aadarash Rahangdale",
+  "Sourabh Rathore",
+  "Akash Nandi",
 ];
 
 export default function Stage8() {
@@ -50,6 +54,8 @@ export default function Stage8() {
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [srnDetailsOpen, setSrnDetailsOpen] = useState(false);
+  const [srnDetailsData, setSrnDetailsData] = useState<{ serialNo: number; srn: string; image: string }[]>([]);
 
   const [formData, setFormData] = useState({
     qcBy: "",
@@ -60,6 +66,8 @@ export default function Stage8() {
     returnStatus: "",
     qcRemarks: "",
     rejectPhoto: null as File | null,
+    approvedQty: "",
+    srnEntries: [] as { serialNo: number; srn: string; image: File | null }[],
   });
 
   const fetchData = async () => {
@@ -131,6 +139,7 @@ export default function Stage8() {
                 rejectQty: row[41],              // AP (Updated)
                 rejectPhoto: row[42],            // AQ (Updated)
                 rejectRemarks: row[43],          // AR (Updated)
+                srnJson: row[74] || "",          // BW: SRN Details JSON
               }
             };
           });
@@ -146,75 +155,14 @@ export default function Stage8() {
     fetchData();
   }, []);
 
-  // Column range helpers
-  const B_TO_S = [
+  // Fixed columns for both Pending and History tables
+  const FIXED_COLUMNS = [
     { key: "indentNumber", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
     { key: "vendorName", label: "Vendor" },
-    { key: "poNumber", label: "PO #" },
-    { key: "nextFollowUpDate", label: "Next Follow-Up" },
-    { key: "remarksStage6", label: "Remarks (S6)" },
-    { key: "itemName", label: "Item" },
-    { key: "liftingQty", label: "Lifting Qty" },
-    { key: "transporterName", label: "Transporter" },
-    { key: "vehicleNo", label: "Vehicle No" },
-    { key: "contactNo", label: "Contact No" },
-    { key: "lrNo", label: "LR No" },
-    { key: "dispatchDate", label: "Dispatch Date" },
-    { key: "freightAmount", label: "Freight Amt" },
-    { key: "advanceAmount", label: "Advance Amt" },
-    { key: "paymentDate", label: "Payment Date" },
-    { key: "paymentStatus", label: "Payment Status" },
-    { key: "biltyCopy", label: "Bilty Copy" },
-  ];
-
-  const W_TO_AH = [
-    { key: "invoiceType", label: "Invoice Type" },
-    { key: "invoiceDate", label: "Invoice Date" },
     { key: "invoiceNumber", label: "Invoice #" },
-    { key: "receivedQty", label: "Rec. Qty" },
-    { key: "receivedItemImage", label: "Rec. Item Img" },
-    { key: "srnNumber", label: "SRN #" },
-    { key: "qcRequirement", label: "QC Requirement" },
-    { key: "billAttachment", label: "Bill Attach" },
-    { key: "paymentAmountHydra", label: "Hydra Amt" },
-    { key: "paymentAmountLabour", label: "Labour Amt" },
-    { key: "paymentAmountHamali", label: "Hamali Amt" },
-    { key: "remarksStage7", label: "S7 Remarks" },
+    { key: "itemName", label: "Item" },
+    { key: "receivedQty", label: "Received Qty" },
   ];
-
-  const AL_TO_AR = [
-    { key: "qcBy", label: "QC Done By" },
-    { key: "qcDate", label: "QC Date" },
-    { key: "qcStatus", label: "QC Status" },
-    { key: "qcRemarks", label: "QC Remarks" },
-    { key: "rejectQty", label: "Reject Qty" },
-    { key: "rejectPhoto", label: "Reject Photo" },
-    { key: "rejectRemarks", label: "Reject Remarks" },
-  ];
-
-  // Pending columns: B to S, W to AH, and AI (Plan 7)
-  const pendingColumns = [
-    ...B_TO_S,
-    ...W_TO_AH,
-    { key: "plan7", label: "QC Plan" },
-  ];
-
-  // History columns: B to S, W to AH, AL to AR (Skips AI, AJ, AK), and BV (Return Status)
-  const historyColumns = [
-    ...B_TO_S,
-    ...W_TO_AH,
-    ...AL_TO_AR,
-    { key: "returnStatus", label: "Return Status" },
-  ];
-
-  const [selectedPendingColumns, setSelectedPendingColumns] = useState<
-    string[]
-  >(pendingColumns.map((col) => col.key));
-
-  const [selectedHistoryColumns, setSelectedHistoryColumns] = useState<
-    string[]
-  >(historyColumns.map((col) => col.key));
 
   // Filtering
   const pending = sheetRecords.filter((r) => r.status === "pending");
@@ -232,6 +180,8 @@ export default function Stage8() {
       returnStatus: "",
       qcRemarks: "",
       rejectPhoto: null,
+      approvedQty: "",
+      srnEntries: [],
     });
     setOpen(true);
   };
@@ -261,6 +211,35 @@ export default function Stage8() {
         else throw new Error("Photo upload failed");
       }
 
+      // Process SRN entries for approved status
+      let approvedQtyJson = "";
+      if (formData.qcStatus === "approved" && formData.srnEntries.length > 0) {
+        const srnData = [];
+        const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
+
+        for (const entry of formData.srnEntries) {
+          let imageUrl = "";
+          if (entry.image instanceof File) {
+            const uploadParams = new URLSearchParams();
+            uploadParams.append("action", "uploadFile");
+            uploadParams.append("base64Data", await toBase64(entry.image));
+            uploadParams.append("fileName", `SRN_${entry.serialNo}_${entry.image.name}`);
+            uploadParams.append("mimeType", entry.image.type);
+            uploadParams.append("folderId", folderId);
+
+            const res = await fetch(SHEET_API_URL, { method: "POST", body: uploadParams });
+            const json = await res.json();
+            if (json.success) imageUrl = json.fileUrl || "";
+          }
+          srnData.push({
+            serialNo: entry.serialNo,
+            srn: entry.srn,
+            image: imageUrl,
+          });
+        }
+        approvedQtyJson = JSON.stringify(srnData);
+      }
+
       // Prepare Date Strings in M/D/YYYY format strictly
       const now = new Date();
       const mDYYYY = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
@@ -284,6 +263,9 @@ export default function Stage8() {
       rowArray[41] = formData.rejectQty;      // AP: Reject Qty (Updated)
       rowArray[42] = photoUrl || "";          // AQ: Reject Photo (Updated)
       rowArray[43] = formData.rejectRemarks;  // AR: Reject Remarks (Updated)
+
+      // Column BW (index 74): Approved Qty with SRN and Image JSON
+      rowArray[74] = approvedQtyJson;
 
       const params = new URLSearchParams();
       params.append("action", "update");
@@ -320,16 +302,33 @@ export default function Stage8() {
     formData.qcDate &&
     formData.qcStatus &&
     formData.returnStatus &&
-    (formData.qcStatus === "approved" ||
-      (formData.qcStatus === "rejected" &&
-        formData.rejectQty &&
-        formData.rejectRemarks));
+    (formData.qcStatus === "approved"
+      ? formData.approvedQty &&
+      parseInt(formData.approvedQty) > 0 &&
+      formData.srnEntries.length > 0 &&
+      formData.srnEntries.every((e) => e.srn.trim() !== "")
+      : formData.qcStatus === "rejected" &&
+      formData.rejectQty &&
+      formData.rejectRemarks);
 
   const formatDisplayDate = (d: any) => {
     if (!d || d === "" || d === "-" || d === "Invalid Date") return "-";
     const date = new Date(d);
     if (isNaN(date.getTime())) return d;
     return date.toLocaleDateString("en-IN");
+  };
+
+  // Open SRN Details modal with parsed JSON
+  const openSrnDetails = (jsonStr: string) => {
+    try {
+      const data = JSON.parse(jsonStr);
+      if (Array.isArray(data)) {
+        setSrnDetailsData(data);
+        setSrnDetailsOpen(true);
+      }
+    } catch (e) {
+      console.error("Failed to parse SRN JSON:", e);
+    }
   };
 
   // Safe data access with lifting data support
@@ -388,91 +387,11 @@ export default function Stage8() {
     <div className="p-6">
       {/* Header */}
       <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold">Stage 8: Quality Control</h2>
-            <p className="text-gray-600 mt-1">
-              Inspect and approve/reject received materials
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Show Columns:</Label>
-            <Select value="" onValueChange={() => { }}>
-              <SelectTrigger className="w-64">
-                <SelectValue
-                  placeholder={
-                    activeTab === "pending"
-                      ? `${selectedPendingColumns.length} selected`
-                      : `${selectedHistoryColumns.length} selected`
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent className="w-64 max-h-96 overflow-y-auto">
-                <div className="p-2">
-                  <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
-                    <Checkbox
-                      checked={
-                        activeTab === "pending"
-                          ? selectedPendingColumns.length ===
-                          pendingColumns.length
-                          : selectedHistoryColumns.length ===
-                          historyColumns.length
-                      }
-                      onCheckedChange={(checked) => {
-                        if (activeTab === "pending") {
-                          setSelectedPendingColumns(
-                            checked ? pendingColumns.map((c) => c.key) : []
-                          );
-                        } else {
-                          setSelectedHistoryColumns(
-                            checked ? historyColumns.map((c) => c.key) : []
-                          );
-                        }
-                      }}
-                    />
-                    <Label className="text-sm font-medium">All</Label>
-                  </div>
-                  {(activeTab === "pending"
-                    ? pendingColumns
-                    : historyColumns
-                  ).map((col) => (
-                    <div
-                      key={col.key}
-                      className="flex items-center space-x-2 py-1"
-                    >
-                      <Checkbox
-                        checked={
-                          activeTab === "pending"
-                            ? selectedPendingColumns.includes(col.key)
-                            : selectedHistoryColumns.includes(col.key)
-                        }
-                        onCheckedChange={(checked) => {
-                          if (activeTab === "pending") {
-                            setSelectedPendingColumns(
-                              checked
-                                ? [...selectedPendingColumns, col.key]
-                                : selectedPendingColumns.filter(
-                                  (c) => c !== col.key
-                                )
-                            );
-                          } else {
-                            setSelectedHistoryColumns(
-                              checked
-                                ? [...selectedHistoryColumns, col.key]
-                                : selectedHistoryColumns.filter(
-                                  (c) => c !== col.key
-                                )
-                            );
-                          }
-                        }}
-                      />
-                      <Label className="text-sm">{col.label}</Label>
-                    </div>
-                  ))}
-                </div>
-              </SelectContent>
-            </Select>
-          </div>
+        <div>
+          <h2 className="text-2xl font-bold">Stage 8: Quality Control</h2>
+          <p className="text-gray-600 mt-1">
+            Inspect and approve/reject received materials
+          </p>
         </div>
       </div>
 
@@ -506,12 +425,9 @@ export default function Stage8() {
                         ID
                       </TableHead>
                       <TableHead className="bg-white z-10">Actions</TableHead>
-                      {pendingColumns
-                        .filter((c) => selectedPendingColumns.includes(c.key))
-                        .map((col) => (
-                          <TableHead key={col.key}>{col.label}</TableHead>
-                        ))}
-
+                      {FIXED_COLUMNS.map((col) => (
+                        <TableHead key={col.key}>{col.label}</TableHead>
+                      ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -529,14 +445,11 @@ export default function Stage8() {
                             Perform QC
                           </Button>
                         </TableCell>
-                        {pendingColumns
-                          .filter((c) => selectedPendingColumns.includes(c.key))
-                          .map((col) => (
-                            <TableCell key={col.key}>
-                              {safeValue(record, col.key)}
-                            </TableCell>
-                          ))}
-
+                        {FIXED_COLUMNS.map((col) => (
+                          <TableCell key={col.key}>
+                            {safeValue(record, col.key)}
+                          </TableCell>
+                        ))}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -559,11 +472,10 @@ export default function Stage8() {
                       <TableHead className="sticky left-0 bg-white z-10">
                         ID
                       </TableHead>
-                      {historyColumns
-                        .filter((c) => selectedHistoryColumns.includes(c.key))
-                        .map((col) => (
-                          <TableHead key={col.key}>{col.label}</TableHead>
-                        ))}
+                      {FIXED_COLUMNS.map((col) => (
+                        <TableHead key={col.key}>{col.label}</TableHead>
+                      ))}
+                      <TableHead>SRN Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -572,13 +484,25 @@ export default function Stage8() {
                         <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">
                           {record.id || "-"}
                         </TableCell>
-                        {historyColumns
-                          .filter((c) => selectedHistoryColumns.includes(c.key))
-                          .map((col) => (
-                            <TableCell key={col.key}>
-                              {safeValue(record, col.key, true)}
-                            </TableCell>
-                          ))}
+                        {FIXED_COLUMNS.map((col) => (
+                          <TableCell key={col.key}>
+                            {safeValue(record, col.key, true)}
+                          </TableCell>
+                        ))}
+                        <TableCell>
+                          {record.data?.srnJson && record.data.srnJson.trim() !== "" ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs"
+                              onClick={() => openSrnDetails(record.data.srnJson)}
+                            >
+                              View SRN
+                            </Button>
+                          ) : (
+                            <span className="text-gray-400 text-xs">-</span>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -647,6 +571,8 @@ export default function Stage8() {
                         rejectQty: v === "approved" ? "" : formData.rejectQty,
                         rejectRemarks:
                           v === "approved" ? "" : formData.rejectRemarks,
+                        approvedQty: v === "rejected" ? "" : formData.approvedQty,
+                        srnEntries: v === "rejected" ? [] : formData.srnEntries,
                       })
                     }
                   >
@@ -659,6 +585,41 @@ export default function Stage8() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Approved Qty - appears when status is approved */}
+                {formData.qcStatus === "approved" && (
+                  <div>
+                    <Label>Approved Qty *</Label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty || 999}
+                      className="w-full px-3 py-2 border rounded"
+                      placeholder={`Max: ${sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty || "-"}`}
+                      value={formData.approvedQty}
+                      onChange={(e) => {
+                        const qty = parseInt(e.target.value) || 0;
+                        const maxQty = parseInt(sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty) || 999;
+                        const validQty = Math.min(Math.max(0, qty), maxQty);
+
+                        // Generate SRN entries based on qty
+                        const newEntries = Array.from({ length: validQty }, (_, i) => ({
+                          serialNo: i + 1,
+                          srn: formData.srnEntries[i]?.srn || "",
+                          image: formData.srnEntries[i]?.image || null,
+                        }));
+
+                        setFormData({
+                          ...formData,
+                          approvedQty: e.target.value,
+                          srnEntries: newEntries,
+                        });
+                      }}
+                      required
+                    />
+                  </div>
+                )}
+
                 <div>
                   <Label>Return Status *</Label>
                   <Select
@@ -677,6 +638,82 @@ export default function Stage8() {
                   </Select>
                 </div>
               </div>
+
+              {/* SRN Entries Section - appears when approved qty > 0 */}
+              {formData.qcStatus === "approved" && formData.srnEntries.length > 0 && (
+                <div className="p-4 border rounded bg-green-50 space-y-3">
+                  <h3 className="font-semibold text-green-800">
+                    SRN Details ({formData.srnEntries.length} items)
+                  </h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-600 sticky top-0 bg-green-50 py-1">
+                      <div className="col-span-1">S.No</div>
+                      <div className="col-span-5">SRN *</div>
+                      <div className="col-span-6">Image</div>
+                    </div>
+                    {formData.srnEntries.map((entry, idx) => (
+                      <div key={entry.serialNo} className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-1 text-sm font-medium text-gray-700">
+                          {entry.serialNo}
+                        </div>
+                        <div className="col-span-5">
+                          <input
+                            type="text"
+                            className="w-full px-2 py-1.5 border rounded text-sm"
+                            placeholder="Enter SRN..."
+                            value={entry.srn}
+                            onChange={(e) => {
+                              const updated = [...formData.srnEntries];
+                              updated[idx] = { ...updated[idx], srn: e.target.value };
+                              setFormData({ ...formData, srnEntries: updated });
+                            }}
+                            required
+                          />
+                        </div>
+                        <div className="col-span-6 flex items-center gap-2">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            id={`srn-image-${idx}`}
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              const updated = [...formData.srnEntries];
+                              updated[idx] = { ...updated[idx], image: file };
+                              setFormData({ ...formData, srnEntries: updated });
+                            }}
+                          />
+                          <label
+                            htmlFor={`srn-image-${idx}`}
+                            className="flex-1 px-2 py-1.5 border rounded bg-white cursor-pointer hover:bg-gray-50 text-sm text-center"
+                          >
+                            {entry.image ? (
+                              <span className="text-green-600 truncate block">
+                                {entry.image.name}
+                              </span>
+                            ) : (
+                              <span className="text-gray-500">Upload</span>
+                            )}
+                          </label>
+                          {entry.image && (
+                            <button
+                              type="button"
+                              className="text-red-500 hover:text-red-700 text-xs"
+                              onClick={() => {
+                                const updated = [...formData.srnEntries];
+                                updated[idx] = { ...updated[idx], image: null };
+                                setFormData({ ...formData, srnEntries: updated });
+                              }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {formData.qcStatus === "rejected" && (
                 <div className="p-4 border rounded bg-red-50 space-y-3">
@@ -773,6 +810,58 @@ export default function Stage8() {
               ) : (
                 "Complete QC"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* SRN Details Modal */}
+      <Dialog open={srnDetailsOpen} onOpenChange={setSrnDetailsOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>SRN Details</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto max-h-[60vh]">
+            {srnDetailsData.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No SRN data available</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-16">S.No</TableHead>
+                    <TableHead>SRN</TableHead>
+                    <TableHead>Image</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {srnDetailsData.map((entry) => (
+                    <TableRow key={entry.serialNo}>
+                      <TableCell className="font-medium">{entry.serialNo}</TableCell>
+                      <TableCell>{entry.srn || "-"}</TableCell>
+                      <TableCell>
+                        {entry.image && entry.image.trim() !== "" ? (
+                          <a
+                            href={entry.image}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-blue-600 hover:underline text-sm"
+                          >
+                            <FileText className="w-4 h-4" />
+                            View Image
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSrnDetailsOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

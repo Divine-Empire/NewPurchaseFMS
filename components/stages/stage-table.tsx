@@ -173,7 +173,16 @@ export function StageTable({
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[100px]">Actions</TableHead>
-                          {columns.map((col) => (
+                          {/* Render first column (Indent #) */}
+                          <TableHead className="min-w-[120px]">
+                            {columns[0]?.label}
+                          </TableHead>
+                          {/* Date column at index 2 */}
+                          <TableHead className="min-w-[120px]">
+                            Date
+                          </TableHead>
+                          {/* Render remaining columns */}
+                          {columns.slice(1).map((col) => (
                             <TableHead key={col.key} className="min-w-[120px]">
                               {col.label}
                             </TableHead>
@@ -195,7 +204,16 @@ export function StageTable({
                                 Edit
                               </Button>
                             </TableCell>
-                            {columns.map((col) => (
+                            {/* Render first column cell (Indent #) */}
+                            <TableCell className="text-sm">
+                              {String(record.data[columns[0]?.key] || "-")}
+                            </TableCell>
+                            {/* Date cell at index 2 */}
+                            <TableCell className="text-sm">
+                              {getStageTimestamp(record)}
+                            </TableCell>
+                            {/* Render remaining column cells */}
+                            {columns.slice(1).map((col) => (
                               <TableCell key={col.key} className="text-sm">
                                 {col.key === "leadTime"
                                   ? `${record.data[col.key] || "-"} days`

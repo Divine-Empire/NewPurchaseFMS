@@ -57,7 +57,7 @@ const PENDING_COLUMNS = [
     { key: "nextFollowUpDate", label: "Next Follow-Up" },
     { key: "remarks", label: "Remarks" },
     { key: "itemName", label: "Item Name" },
-    { key: "liftingQty", label: "Lifting Qty" },
+    { key: "liftingQty", label: "PO Qty" },
     { key: "transporterName", label: "Transporter" },
     { key: "vehicleNo", label: "Vehicle No" },
     { key: "contactNo", label: "Contact No" },
@@ -68,6 +68,7 @@ const PENDING_COLUMNS = [
     { key: "paymentDate", label: "Payment Date" },
     { key: "paymentStatus", label: "Payment Status" },
     { key: "biltyCopy", label: "Bilty Copy" },
+    { key: "poCopy", label: "PO Copy" },
 ] as const;
 
 /* --------------------------------------------------------------- */
@@ -88,7 +89,6 @@ const HISTORY_COLUMNS = [
     { key: "paymentAmountHydra", label: "Hydra Amt" },
     { key: "paymentAmountLabour", label: "Labour Amt" },
     { key: "paymentAmountHamali", label: "Hamali Amt" },
-    { key: "remarks", label: "Remarks" },
 ] as const;
 
 export default function Stage7() {
@@ -174,6 +174,11 @@ export default function Stage7() {
                             status = "completed";
                         }
 
+                        // Look up Approved Qty from INDENT-LIFT sheet Column O (index 14)
+                        const indentNum = String(row[1] || "").trim();
+                        const fmsRow = fmsMap.get(indentNum);
+                        const approvedQty = fmsRow ? (fmsRow[14] || "") : "";
+
                         return {
                             id: row[1] || `row-${originalIndex}`,
                             rowIndex: originalIndex,
@@ -188,7 +193,7 @@ export default function Stage7() {
                                 nextFollowUpDate: row[5] || "", // F: Next Follow-Up Date
                                 remarks: row[6] || "",           // G: Remarks
                                 itemName: row[7] || "",          // H: Item Name
-                                liftingQty: row[8] || "",        // I: Lifting Qty
+                                liftingQty: approvedQty,         // From INDENT-LIFT Column O (Approved Qty)
                                 transporterName: row[9] || "",  // J: Transporter Name
                                 vehicleNo: row[10] || "",        // K: Vehicle No
                                 contactNo: row[11] || "",        // L: Contact No
@@ -199,6 +204,7 @@ export default function Stage7() {
                                 paymentDate: row[16] || "",      // Q: Payment Date
                                 paymentStatus: row[17] || "",    // R: Payment Status
                                 biltyCopy: row[18] || "",        // S: Bilty Copy
+                                poCopy: fmsRow ? (fmsRow[58] || "") : "", // From INDENT-LIFT Column BG (index 58)
 
                                 // Columns T and U for status determination
                                 columnT: row[19] || "",          // T: Planned
@@ -661,6 +667,34 @@ export default function Stage7() {
                                                         );
                                                     }
 
+                                                    // Handle PO Copy as a link
+                                                    if (col.key === "poCopy") {
+                                                        return (
+                                                            <TableCell key={col.key}>
+                                                                {rec.data.poCopy ? (
+                                                                    <a
+                                                                        href={rec.data.poCopy}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                                                    >
+                                                                        <FileText className="w-3.5 h-3.5" />
+                                                                        <span>View PO</span>
+                                                                    </a>
+                                                                ) : "-"}
+                                                            </TableCell>
+                                                        );
+                                                    }
+
+                                                    // Handle date columns - format as date only (no timestamp)
+                                                    if (col.key === "nextFollowUpDate" || col.key === "dispatchDate" || col.key === "paymentDate") {
+                                                        return (
+                                                            <TableCell key={col.key}>
+                                                                {rec.data[col.key] ? formatDate(rec.data[col.key]) : "-"}
+                                                            </TableCell>
+                                                        );
+                                                    }
+
                                                     // Handle currency columns
                                                     if (col.key === "freightAmount" || col.key === "advanceAmount") {
                                                         return (
@@ -756,6 +790,25 @@ export default function Stage7() {
                                                                         >
                                                                             <FileText className="w-3.5 h-3.5" />
                                                                             <span>View Bilty</span>
+                                                                        </a>
+                                                                    ) : "-"}
+                                                                </TableCell>
+                                                            );
+                                                        }
+
+                                                        // Handle PO Copy as a link
+                                                        if (col.key === "poCopy") {
+                                                            return (
+                                                                <TableCell key={col.key}>
+                                                                    {historyData.poCopy ? (
+                                                                        <a
+                                                                            href={historyData.poCopy}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                                                        >
+                                                                            <FileText className="w-3.5 h-3.5" />
+                                                                            <span>View PO</span>
                                                                         </a>
                                                                     ) : "-"}
                                                                 </TableCell>

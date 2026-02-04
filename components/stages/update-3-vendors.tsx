@@ -73,31 +73,32 @@ export default function Stage3() {
   const [currentRecord, setCurrentRecord] = useState<any>(null);
   const [vendorCount, setVendorCount] = useState(0);
 
+  // Vendor list fetched from Dropdown sheet
+  const [vendorList, setVendorList] = useState<string[]>([]);
+  // Search state for each vendor combobox
+  const [vendorSearch1, setVendorSearch1] = useState("");
+  const [vendorSearch2, setVendorSearch2] = useState("");
+  const [vendorSearch3, setVendorSearch3] = useState("");
+  const [showVendorDropdown1, setShowVendorDropdown1] = useState(false);
+  const [showVendorDropdown2, setShowVendorDropdown2] = useState(false);
+  const [showVendorDropdown3, setShowVendorDropdown3] = useState(false);
+
   const [formData, setFormData] = useState({
     vendor1Name: "",
     vendor1Rate: "",
     vendor1Terms: "",
     vendor1DeliveryDate: "",
     vendor1Attachment: null as File | null,
-    vendor1WarrantyType: "",
-    vendor1WarrantyFrom: "",
-    vendor1WarrantyTo: "",
     vendor2Name: "",
     vendor2Rate: "",
     vendor2Terms: "",
     vendor2DeliveryDate: "",
     vendor2Attachment: null as File | null,
-    vendor2WarrantyType: "",
-    vendor2WarrantyFrom: "",
-    vendor2WarrantyTo: "",
     vendor3Name: "",
     vendor3Rate: "",
     vendor3Terms: "",
     vendor3DeliveryDate: "",
     vendor3Attachment: null as File | null,
-    vendor3WarrantyType: "",
-    vendor3WarrantyFrom: "",
-    vendor3WarrantyTo: "",
   });
 
   const pending = sheetRecords.filter((r) => r.status === "pending");
@@ -255,6 +256,19 @@ export default function Stage3() {
           });
         setSheetRecords(rows);
       }
+
+      // Fetch vendor list from Dropdown sheet Column G
+      const vendorRes = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
+      if (vendorRes.ok) {
+        const vendorJson = await vendorRes.json();
+        if (vendorJson.success && Array.isArray(vendorJson.data)) {
+          // Column G is index 6, skip header row
+          const vendors = vendorJson.data.slice(1)
+            .map((row: any) => String(row[6] || "").trim())
+            .filter((v: string) => v !== "");
+          setVendorList(vendors);
+        }
+      }
     } catch (e: any) {
       console.error("Stage 3 Fetch error details:", e.message || e);
     }
@@ -291,13 +305,22 @@ export default function Stage3() {
     baseColumns.map((c) => c.accessorKey)
   );
 
-  const vendorOptions = [
-    "Acme Suppliers Ltd.",
-    "Global Traders Inc.",
-    "Metro Distributors",
-    "Prime Industrial Co.",
-    "Sigma Enterprises",
-  ];
+  // Fuzzy filter function for vendor search (case-insensitive and space-insensitive)
+  const fuzzyFilter = (list: string[], search: string) => {
+    if (!search.trim()) return list.slice(0, 50); // Show first 50 when no search
+    const normalizedSearch = search.toLowerCase().replace(/\s+/g, "");
+    return list.filter((item) => {
+      const normalizedItem = item.toLowerCase().replace(/\s+/g, "");
+      return normalizedItem.includes(normalizedSearch);
+    }).slice(0, 50); // Limit to 50 results
+  };
+
+  // Get search state and setter for each vendor
+  const getVendorSearchState = (num: number) => {
+    if (num === 1) return { search: vendorSearch1, setSearch: setVendorSearch1, show: showVendorDropdown1, setShow: setShowVendorDropdown1 };
+    if (num === 2) return { search: vendorSearch2, setSearch: setVendorSearch2, show: showVendorDropdown2, setShow: setShowVendorDropdown2 };
+    return { search: vendorSearch3, setSearch: setVendorSearch3, show: showVendorDropdown3, setShow: setShowVendorDropdown3 };
+  };
 
   const paymentTerms = [
     { value: "15", label: "15 days" },
@@ -378,23 +401,19 @@ export default function Stage3() {
       const now = new Date();
 
       // IMPORTANT: Use a sparse array. Do NOT resubmit A-S (0-18) or any other existing data.
-      // The backend script should skip empty strings to preserve existing values/formulas.
-      const rowArray = new Array(46).fill("");
+      const rowArray: any[] = [];
 
       // Update T (19) and Vendor blocks
       rowArray[19] = formatDate(now); // T (ACTUAL2) - Strictly DD/MM/YYYY
-
-      // PRESERVE K (10): Actual 1 (Approval Date)
-      rowArray[10] = formatDate(recordToUpdate.data.actual1); // Preserve as DD/MM/YYYY
 
       // Vendor 1
       rowArray[21] = submissionData.vendor1Name || "";
       rowArray[22] = submissionData.vendor1Rate || "";
       rowArray[23] = submissionData.vendor1Terms || "";
       rowArray[24] = formatDate(submissionData.vendor1DeliveryDate);
-      rowArray[25] = submissionData.vendor1WarrantyType || "";
-      rowArray[26] = formatDate(submissionData.vendor1WarrantyFrom);
-      rowArray[27] = formatDate(submissionData.vendor1WarrantyTo);
+      rowArray[25] = ""; // Warranty Type (not used)
+      rowArray[26] = ""; // Warranty From (not used)
+      rowArray[27] = ""; // Warranty To (not used)
       rowArray[28] = vendorImageUrls[0] || "";
 
       // Vendor 2
@@ -402,9 +421,9 @@ export default function Stage3() {
       rowArray[30] = submissionData.vendor2Rate || "";
       rowArray[31] = submissionData.vendor2Terms || "";
       rowArray[32] = formatDate(submissionData.vendor2DeliveryDate);
-      rowArray[33] = submissionData.vendor2WarrantyType || "";
-      rowArray[34] = formatDate(submissionData.vendor2WarrantyFrom);
-      rowArray[35] = formatDate(submissionData.vendor2WarrantyTo);
+      rowArray[33] = ""; // Warranty Type (not used)
+      rowArray[34] = ""; // Warranty From (not used)
+      rowArray[35] = ""; // Warranty To (not used)
       rowArray[36] = vendorImageUrls[1] || "";
 
       // Vendor 3
@@ -412,9 +431,9 @@ export default function Stage3() {
       rowArray[38] = submissionData.vendor3Rate || "";
       rowArray[39] = submissionData.vendor3Terms || "";
       rowArray[40] = formatDate(submissionData.vendor3DeliveryDate);
-      rowArray[41] = submissionData.vendor3WarrantyType || "";
-      rowArray[42] = formatDate(submissionData.vendor3WarrantyFrom);
-      rowArray[43] = formatDate(submissionData.vendor3WarrantyTo);
+      rowArray[41] = ""; // Warranty Type (not used)
+      rowArray[42] = ""; // Warranty From (not used)
+      rowArray[43] = ""; // Warranty To (not used)
       rowArray[44] = vendorImageUrls[2] || "";
 
       // 3. Update Sheet
@@ -454,11 +473,8 @@ export default function Stage3() {
     setSubmitError(null); // Clear error on close
     setFormData({
       vendor1Name: "", vendor1Rate: "", vendor1Terms: "", vendor1DeliveryDate: "", vendor1Attachment: null,
-      vendor1WarrantyType: "", vendor1WarrantyFrom: "", vendor1WarrantyTo: "",
       vendor2Name: "", vendor2Rate: "", vendor2Terms: "", vendor2DeliveryDate: "", vendor2Attachment: null,
-      vendor2WarrantyType: "", vendor2WarrantyFrom: "", vendor2WarrantyTo: "",
       vendor3Name: "", vendor3Rate: "", vendor3Terms: "", vendor3DeliveryDate: "", vendor3Attachment: null,
-      vendor3WarrantyType: "", vendor3WarrantyFrom: "", vendor3WarrantyTo: "",
     });
   };
 
@@ -813,7 +829,6 @@ export default function Stage3() {
 
             {/* Vendor Forms */}
             {Array.from({ length: numVendors }, (_, i) => i + 1).map((num) => {
-              const warrantyType = formData[`vendor${num}WarrantyType` as keyof typeof formData];
               return (
                 <div key={num} className="border rounded-lg p-4">
                   <h3 className="font-medium mb-4 flex items-center gap-2">
@@ -826,21 +841,55 @@ export default function Stage3() {
                       <Label htmlFor={`vendor${num}Name`}>
                         Vendor Name
                       </Label>
-                      <Select
-                        value={(formData[`vendor${num}Name` as keyof typeof formData] as string) || ""}
-                        onValueChange={(v) =>
-                          setFormData({ ...formData, [`vendor${num}Name`]: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select vendor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {vendorOptions.map((v) => (
-                            <SelectItem key={v} value={v}>{v}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="relative">
+                        <Input
+                          id={`vendor${num}Name`}
+                          placeholder="Type to search vendor..."
+                          value={getVendorSearchState(num).search || (formData[`vendor${num}Name` as keyof typeof formData] as string) || ""}
+                          onChange={(e) => {
+                            const { setSearch, setShow } = getVendorSearchState(num);
+                            setSearch(e.target.value);
+                            setShow(true);
+                            // Also update formData as user types
+                            setFormData({ ...formData, [`vendor${num}Name`]: e.target.value });
+                          }}
+                          onFocus={() => {
+                            const { setShow } = getVendorSearchState(num);
+                            setShow(true);
+                          }}
+                          onBlur={() => {
+                            // Delay hiding to allow click on dropdown
+                            setTimeout(() => {
+                              const { setShow } = getVendorSearchState(num);
+                              setShow(false);
+                            }, 200);
+                          }}
+                          autoComplete="off"
+                        />
+                        {getVendorSearchState(num).show && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                            {fuzzyFilter(vendorList, getVendorSearchState(num).search).length > 0 ? (
+                              fuzzyFilter(vendorList, getVendorSearchState(num).search).map((v) => (
+                                <div
+                                  key={v}
+                                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setFormData({ ...formData, [`vendor${num}Name`]: v });
+                                    const { setSearch, setShow } = getVendorSearchState(num);
+                                    setSearch(v);
+                                    setShow(false);
+                                  }}
+                                >
+                                  {v}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="px-3 py-2 text-sm text-gray-500">No vendors found</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -897,56 +946,7 @@ export default function Stage3() {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label>Warranty / Guarantee</Label>
-                      <Select
-                        value={(warrantyType as string) || ""}
-                        onValueChange={(v) =>
-                          setFormData({ ...formData, [`vendor${num}WarrantyType`]: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="warranty">
-                            <div className="flex items-center gap-2">
-                              <Shield className="w-4 h-4" /> Warranty
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="guarantee">
-                            <div className="flex items-center gap-2">
-                              <ShieldCheck className="w-4 h-4" /> Guarantee
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {warrantyType && (
-                      <>
-                        <div className="space-y-2">
-                          <Label>From</Label>
-                          <Input
-                            type="date"
-                            value={(formData[`vendor${num}WarrantyFrom` as keyof typeof formData] as string) || ""}
-                            onChange={(e) =>
-                              setFormData({ ...formData, [`vendor${num}WarrantyFrom`]: e.target.value })
-                            }
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>To</Label>
-                          <Input
-                            type="date"
-                            value={(formData[`vendor${num}WarrantyTo` as keyof typeof formData] as string) || ""}
-                            onChange={(e) =>
-                              setFormData({ ...formData, [`vendor${num}WarrantyTo`]: e.target.value })
-                            }
-                          />
-                        </div>
-                      </>
-                    )}
+                    {/* Warranty/Guarantee section removed from UI */}
                   </div>
 
                   <div className="mt-4 space-y-2">

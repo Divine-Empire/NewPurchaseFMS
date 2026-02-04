@@ -25,11 +25,13 @@ import {
 } from "@/components/ui/select";
 
 const ACCOUNTANTS = [
-  "Priya Sharma",
-  "Rajesh Kumar",
-  "Anita Patel",
-  "Vikram Singh",
-  "Sneha Gupta",
+  "Akash Nandi",
+  "T Vishal Patnaik",
+  "Tarini Kumbhakar",
+  "Dipika Dewangan",
+  "Jyoti Gayakwad",
+  "Nandini Nirmalkar",
+  "Pankaj Sahu",
 ];
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
