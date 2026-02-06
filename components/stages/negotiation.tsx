@@ -59,7 +59,9 @@ export default function Stage4() {
     remarks: "",
   });
 
-  const approvers = ["Admin", "Manager", "Finance"];
+  const [approverList, setApproverList] = useState<string[]>([]);
+
+
 
   const formatDate = (date?: Date | string) => {
     if (!date) return "";
@@ -178,6 +180,17 @@ export default function Stage4() {
           });
         setSheetRecords(rows);
       }
+
+      // Fetch Dropdown sheet for Approvers (Column I / Index 8)
+      const dropRes = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
+      const dropJson = await dropRes.json();
+      if (dropJson.success && Array.isArray(dropJson.data)) {
+        const approvers = dropJson.data.slice(1)
+          .map((row: any) => String(row[8] || "").trim())
+          .filter((a: string) => a !== "");
+        setApproverList(approvers);
+      }
+
     } catch (e) {
       console.error("Fetch error Stage 4:", e);
     }
@@ -843,7 +856,7 @@ export default function Stage4() {
                   <SelectValue placeholder="Select approver..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {approvers.map((a) => (
+                  {approverList.map((a) => (
                     <SelectItem key={a} value={a}>{a}</SelectItem>
                   ))}
                 </SelectContent>
@@ -1049,7 +1062,7 @@ export default function Stage4() {
                   <SelectValue placeholder="Select approver..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {approvers.map((a) => (
+                  {approverList.map((a) => (
                     <SelectItem key={a} value={a}>{a}</SelectItem>
                   ))}
                 </SelectContent>

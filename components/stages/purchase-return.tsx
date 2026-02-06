@@ -175,8 +175,6 @@ export default function Stage12() {
     { key: "returnAmount", label: "Ret Amount" },
     { key: "returnReason", label: "Reason" },
     { key: "returnStatus", label: "Status" },
-    { key: "returnItemImage", label: "Item Image" },
-    { key: "creditNoteImage", label: "Credit Note" },
   ];
 
   // -----------------------------------------------------------------
@@ -482,32 +480,14 @@ export default function Stage12() {
                 <Select value={formData.returnStatus} onValueChange={v => setFormData({ ...formData, returnStatus: v })}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Returned">Returned</SelectItem>
-                    <SelectItem value="Credit Note">Credit Note</SelectItem>
-                    <SelectItem value="Replaced">Replaced</SelectItem>
+                    <SelectItem value="Debit Note">Debit Note</SelectItem>
+                    <SelectItem value="Replaced (DN)">Replaced (DN)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Return Item Image</Label>
-                <div className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:bg-gray-50 relative">
-                  <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => setFormData({ ...formData, returnItemImage: e.target.files?.[0] || null })} />
-                  <Upload className="w-6 h-6 mx-auto text-gray-400" />
-                  <span className="text-sm text-gray-500">{formData.returnItemImage?.name || "Upload"}</span>
-                </div>
-              </div>
-              <div>
-                <Label>Credit Note Image</Label>
-                <div className="border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:bg-gray-50 relative">
-                  <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => setFormData({ ...formData, creditNoteImage: e.target.files?.[0] || null })} />
-                  <Upload className="w-6 h-6 mx-auto text-gray-400" />
-                  <span className="text-sm text-gray-500">{formData.creditNoteImage?.name || "Upload"}</span>
-                </div>
-              </div>
-            </div>
+
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

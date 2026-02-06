@@ -30,21 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
-const QC_ENGINEERS = [
-  "Amar Kumar Aggalle",
-  "Himanshu Verma",
-  "Mohammad Shoaib Khan",
-  "Sumit Thawait",
-  "Skgolam Mortuja",
-  "Sunil Kumar Sahu",
-  "Pranjal Deka",
-  "Ayush Vishwakarma",
-  "Satish Nirmalkar",
-  "Nilmani Yadav",
-  "Aadarash Rahangdale",
-  "Sourabh Rathore",
-  "Akash Nandi",
-];
+
 
 export default function Stage8() {
   const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -56,6 +42,7 @@ export default function Stage8() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [srnDetailsOpen, setSrnDetailsOpen] = useState(false);
   const [srnDetailsData, setSrnDetailsData] = useState<{ serialNo: number; srn: string; image: string }[]>([]);
+  const [qcEngineerList, setQcEngineerList] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
     qcBy: "",
@@ -145,6 +132,17 @@ export default function Stage8() {
           });
         setSheetRecords(rows);
       }
+
+      // Fetch Dropdown sheet for QC Engineers (Column L / Index 11)
+      const dropRes = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
+      const dropJson = await dropRes.json();
+      if (dropJson.success && Array.isArray(dropJson.data)) {
+        const qcList = dropJson.data.slice(1)
+          .map((row: any) => String(row[11] || "").trim())
+          .filter((q: string) => q !== "");
+        setQcEngineerList(qcList);
+      }
+
     } catch (e) {
       console.error("Fetch error:", e);
     }
@@ -540,7 +538,7 @@ export default function Stage8() {
                       <SelectValue placeholder="Select engineer" />
                     </SelectTrigger>
                     <SelectContent>
-                      {QC_ENGINEERS.map((n) => (
+                      {qcEngineerList.map((n) => (
                         <SelectItem key={n} value={n}>
                           {n}
                         </SelectItem>

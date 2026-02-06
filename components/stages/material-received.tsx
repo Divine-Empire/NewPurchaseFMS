@@ -107,6 +107,30 @@ export default function Stage7() {
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Bulk State
+    const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
+    const [isBulkMode, setIsBulkMode] = useState(false);
+    const [bulkItems, setBulkItems] = useState<{
+        recordId: string;
+        indentNumber: string;
+        liftNumber: string;
+        itemName: string;
+        receivedQty: string;
+        qcRequirement: string;
+        receivedItemImage: File | null;
+        index: number;
+    }[]>([]);
+    const [commonData, setCommonData] = useState({
+        invoiceNumber: "",
+        invoiceDate: "",
+        billAttachment: null as File | null,
+        paymentAmountHydra: "",
+        paymentAmountLabour: "",
+        paymentAmountHamali: "",
+        remarks: "",
+    });
+    const [bulkError, setBulkError] = useState<string | null>(null);
+
     const formatDate = (date?: Date | string) => {
         if (!date) return "";
         const d = new Date(date);
@@ -224,15 +248,11 @@ export default function Stage7() {
         fetchData();
     }, []);
 
-    const [invoiceType, setInvoiceType] = useState<"independent" | "common">(
-        "independent"
-    );
     const [form, setForm] = useState({
         liftNumber: "",
         receivedQty: "",
         invoiceNumber: "",
         invoiceDate: "",
-        srnNumber: "",
         billAttachment: null as File | null,
         receivedItemImage: null as File | null,
         paymentAmountHydra: "",
@@ -241,6 +261,145 @@ export default function Stage7() {
         qcRequirement: "",
         remarks: "",
     });
+
+    // Check Vendor/PO Match
+    const checkVendorPOMatch = (ids: string[]) => {
+        if (ids.length === 0) return { match: false, vendor: "", po: "" };
+        const first = sheetRecords.find(r => r.id === ids[0]);
+        if (!first) return { match: false, vendor: "", po: "" };
+
+        const v = first.data.vendorName;
+        const p = first.data.poNumber;
+
+        for (let i = 1; i < ids.length; i++) {
+            const rec = sheetRecords.find(r => r.id === ids[i]);
+            if (!rec || rec.data.vendorName !== v || rec.data.poNumber !== p) {
+                return { match: false, vendor: "", po: "" };
+            }
+        }
+        return { match: true, vendor: v, po: p };
+    };
+
+    const handleBulkOpen = () => {
+        if (selectedRecordIds.length === 0) return;
+
+        const { match } = checkVendorPOMatch(selectedRecordIds);
+        if (selectedRecordIds.length > 1 && !match) {
+            toast.error("All selected items must have the same Vendor and PO Number.", {
+                style: { background: "red", color: "white", border: "none" }
+            });
+            return;
+        }
+
+        setIsBulkMode(true);
+        setBulkError(match ? null : "Vendor/PO Mismatch"); // Should be matched if we got here or handled above
+
+        // Init Common Data
+        setCommonData({
+            invoiceNumber: "",
+            invoiceDate: "",
+            billAttachment: null,
+            paymentAmountHydra: "",
+            paymentAmountLabour: "",
+            paymentAmountHamali: "",
+            remarks: "",
+        });
+
+        // Init Bulk Items
+        const items = selectedRecordIds.map(id => {
+            const rec = sheetRecords.find(r => r.id === id);
+            return {
+                recordId: id,
+                indentNumber: rec?.data?.indentNumber || "",
+                liftNumber: rec?.data?.liftNo || "",
+                itemName: rec?.data?.itemName || "",
+                receivedQty: "",
+                qcRequirement: "no",
+                receivedItemImage: null,
+                index: rec?.rowIndex || 0
+            };
+        });
+        setBulkItems(items);
+        setOpen(true);
+    };
+
+    const handleBulkSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+        if (!SHEET_API_URL) return;
+
+        setIsSubmitting(true);
+        try {
+            // Upload Bill Attachment (Common)
+            let billUrl = "";
+            const uploadFile = async (file: File) => {
+                const uploadParams = new URLSearchParams();
+                uploadParams.append("action", "uploadFile");
+                uploadParams.append("base64Data", await toBase64(file));
+                uploadParams.append("fileName", file.name);
+                uploadParams.append("mimeType", file.type);
+                const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
+                uploadParams.append("folderId", folderId);
+
+                const res = await fetch(SHEET_API_URL, { method: "POST", body: uploadParams });
+                const json = await res.json();
+                if (json.success) return json.fileUrl;
+                return "";
+            };
+
+            if (commonData.billAttachment) {
+                billUrl = await uploadFile(commonData.billAttachment);
+            }
+
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+
+            for (const item of bulkItems) {
+                // Upload Item Image (Individual)
+                let itemImgUrl = "";
+                if (item.receivedItemImage) {
+                    itemImgUrl = await uploadFile(item.receivedItemImage);
+                }
+
+                const rowArray = new Array(50).fill("");
+                // Same mapping as single submit
+                rowArray[20] = dateStr; // Actual1
+                rowArray[22] = "independent";
+                rowArray[23] = commonData.invoiceDate;
+                rowArray[24] = commonData.invoiceNumber;
+                rowArray[25] = item.receivedQty;
+                rowArray[26] = itemImgUrl;
+                rowArray[27] = ""; // SRN
+                rowArray[28] = item.qcRequirement;
+                rowArray[29] = billUrl;
+                rowArray[30] = commonData.paymentAmountHydra;
+                rowArray[31] = commonData.paymentAmountLabour;
+                rowArray[32] = commonData.paymentAmountHamali;
+                rowArray[33] = commonData.remarks;
+
+                const params = new URLSearchParams();
+                params.append("action", "update");
+                params.append("sheetName", "RECEIVING-ACCOUNTS");
+                params.append("rowData", JSON.stringify(rowArray));
+                params.append("rowIndex", item.index.toString());
+
+                // Sequential update to avoid rate limits/race conditions
+                await fetch(SHEET_API_URL, { method: "POST", body: params });
+            }
+
+            toast.success("Bulk Receipt recorded successfully!");
+            setOpen(false);
+            setSelectedRecordIds([]);
+            setIsBulkMode(false);
+            fetchData();
+
+        } catch (error) {
+            console.error(error);
+            toast.error("Error submitting bulk form");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     const pending = sheetRecords.filter(
         (r) => r && r.data && r.status === "pending"
@@ -281,14 +440,17 @@ export default function Stage7() {
             return;
         }
 
+        setSelectedRecordIds([]);
+        setIsBulkMode(false);
         setSelectedRecordId(recordId);
-        setInvoiceType("independent");
+        setSelectedRecordId(recordId);
+
         setForm({
             liftNumber: rec.data.liftNo || "",
             receivedQty: "",
             invoiceNumber: "",
             invoiceDate: "",
-            srnNumber: "",
+
             billAttachment: null,
             receivedItemImage: null,
             paymentAmountHydra: "",
@@ -404,7 +566,7 @@ export default function Stage7() {
             // Column V (21): Delay1 → Formula field, skip
 
             // Column W (22): Invoice Type
-            rowArray[22] = invoiceType;
+            rowArray[22] = "independent";
 
             // Column X (23): Invoice Date
             rowArray[23] = form.invoiceDate;
@@ -419,7 +581,7 @@ export default function Stage7() {
             rowArray[26] = imageUrl || "";
 
             // Column AB (27): SRN
-            rowArray[27] = form.srnNumber;
+            rowArray[27] = "";
 
             // Column AC (28): QC Required
             rowArray[28] = form.qcRequirement;
@@ -480,7 +642,7 @@ export default function Stage7() {
             receivedQty: "",
             invoiceNumber: "",
             invoiceDate: "",
-            srnNumber: "",
+
             billAttachment: null,
             receivedItemImage: null,
             paymentAmountHydra: "",
@@ -495,15 +657,11 @@ export default function Stage7() {
         setForm((f) => ({ ...f, [key]: null }));
     };
 
-    const commonValid =
-        form.invoiceNumber && form.srnNumber && form.qcRequirement;
-    const independentValid =
+    const formValid =
         form.receivedQty &&
         form.invoiceNumber &&
         form.invoiceDate &&
-        form.srnNumber &&
         form.qcRequirement;
-    const formValid = invoiceType === "common" ? commonValid : independentValid;
 
     return (
         <div className="p-6">
@@ -518,6 +676,13 @@ export default function Stage7() {
                     </div>
 
                     <div className="flex items-center gap-4">
+                        {/* Bulk Button */}
+                        {activeTab === "pending" && selectedRecordIds.length > 1 && (
+                            <Button onClick={handleBulkOpen}>
+                                Bulk Record ({selectedRecordIds.length})
+                            </Button>
+                        )}
+
                         <Label className="text-sm font-medium">Show Columns:</Label>
                         <Select value="" onValueChange={() => { }}>
                             <SelectTrigger className="w-64">
@@ -624,6 +789,23 @@ export default function Stage7() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
+                                            {activeTab === "pending" && (
+                                                <TableHead>
+                                                    <Checkbox
+                                                        checked={
+                                                            pending.length > 0 &&
+                                                            selectedRecordIds.length === pending.length
+                                                        }
+                                                        onCheckedChange={(checked) => {
+                                                            if (checked) {
+                                                                setSelectedRecordIds(pending.map((r) => r.id));
+                                                            } else {
+                                                                setSelectedRecordIds([]);
+                                                            }
+                                                        }}
+                                                    />
+                                                </TableHead>
+                                            )}
                                             <TableHead>Actions</TableHead>
                                             {PENDING_COLUMNS.filter((c) =>
                                                 selectedPendingColumns.includes(c.key)
@@ -635,6 +817,20 @@ export default function Stage7() {
                                     <TableBody>
                                         {pending.map((rec) => (
                                             <TableRow key={rec.id} className="hover:bg-gray-50">
+                                                {activeTab === "pending" && (
+                                                    <TableCell>
+                                                        <Checkbox
+                                                            checked={selectedRecordIds.includes(rec.id)}
+                                                            onCheckedChange={(checked) => {
+                                                                setSelectedRecordIds((prev) =>
+                                                                    checked
+                                                                        ? [...prev, rec.id]
+                                                                        : prev.filter((id) => id !== rec.id)
+                                                                );
+                                                            }}
+                                                        />
+                                                    </TableCell>
+                                                )}
                                                 <TableCell>
                                                     <Button
                                                         variant="outline"
@@ -749,7 +945,7 @@ export default function Stage7() {
                                                 ? stage7History.data
                                                 : record.data;
                                             const lift =
-                                                ((historyData.liftingData as LiftingEntry[]) ?? [])[0] ??
+                                                ((historyData.liftingData as any[]) ?? [])[0] ??
                                                 {};
                                             const vendor = getVendorData({
                                                 ...record,
@@ -831,7 +1027,7 @@ export default function Stage7() {
                                                                         >
                                                                             <FileText className="w-3.5 h-3.5" />
                                                                             <span className="truncate max-w-20">
-                                                                                {typeof file === 'string' ? `View ${col.label}` : file.name || col.label}
+                                                                                {typeof file === 'string' ? `View ${col.label}` : (file as File).name || col.label}
                                                                             </span>
                                                                         </a>
                                                                     ) : (
@@ -880,170 +1076,324 @@ export default function Stage7() {
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
                     <DialogHeader className="flex-shrink-0">
-                        <DialogTitle>Record Material Receipt</DialogTitle>
+                        <DialogTitle>
+                            {isBulkMode
+                                ? "Bulk Material Receipt"
+                                : "Record Material Receipt"}
+                        </DialogTitle>
                         <p className="text-sm text-gray-600">
                             Confirm delivery, attach documents, and update QC/payment.
                         </p>
                     </DialogHeader>
 
-                    <form
-                        onSubmit={handleSubmit}
-                        className="flex-1 overflow-y-auto space-y-6 pr-2"
-                    >
-                        {/* Invoice Type */}
-                        <div className="space-y-2">
-                            <Label>
-                                Invoice Type <span className="text-red-500">*</span>
-                            </Label>
-                            <Select
-                                value={invoiceType}
-                                onValueChange={(v) => {
-                                    const type = v as "independent" | "common";
-                                    setInvoiceType(type);
-                                    if (type === "common") {
-                                        setForm((f) => ({ ...f, liftNumber: "", receivedQty: "" }));
-                                    }
-                                }}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="independent">Independent</SelectItem>
-                                    <SelectItem value="common">Common</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
+                    {isBulkMode ? (
+                        /* BULK FORM */
+                        <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
+                            {/* Individual Items */}
+                            <div className="space-y-4">
+                                <h3 className="font-semibold text-lg border-b pb-2">Items ({bulkItems.length})</h3>
+                                {bulkItems.map((item, idx) => (
+                                    <div key={item.recordId} className="border p-4 rounded-lg space-y-4">
+                                        <div className="flex items-center gap-4 text-sm font-medium bg-gray-100 p-2 rounded">
+                                            <span>Indent: {item.indentNumber}</span>
+                                            <span>|</span>
+                                            <span>Lift: {item.liftNumber}</span>
+                                            <span>|</span>
+                                            <span>Item: {item.itemName}</span>
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-4">
+                                            <div className="space-y-2">
+                                                <Label>Received Qty <span className="text-red-500">*</span></Label>
+                                                <Input
+                                                    type="number"
+                                                    value={item.receivedQty}
+                                                    onChange={(e) => {
+                                                        const newItems = [...bulkItems];
+                                                        newItems[idx].receivedQty = e.target.value;
+                                                        setBulkItems(newItems);
+                                                    }}
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>QC Required <span className="text-red-500">*</span></Label>
+                                                <Select
+                                                    value={item.qcRequirement}
+                                                    onValueChange={(v) => {
+                                                        const newItems = [...bulkItems];
+                                                        newItems[idx].qcRequirement = v;
+                                                        setBulkItems(newItems);
+                                                    }}
+                                                >
+                                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="yes">Yes</SelectItem>
+                                                        <SelectItem value="no">No</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label>Item Image</Label>
+                                                <input
+                                                    id={`bulkItemImage-${idx}`}
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => {
+                                                        const newItems = [...bulkItems];
+                                                        newItems[idx].receivedItemImage = e.target.files?.[0] || null;
+                                                        setBulkItems(newItems);
+                                                    }}
+                                                    className="hidden"
+                                                />
+                                                <label
+                                                    htmlFor={`bulkItemImage-${idx}`}
+                                                    className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400"
+                                                >
+                                                    <Upload className="w-6 h-6 text-gray-400 mr-2" />
+                                                    <span className="text-sm text-gray-600">Upload Image</span>
+                                                </label>
+                                                {item.receivedItemImage && (
+                                                    <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
+                                                        <div className="flex items-center">
+                                                            <FileText className="w-4 h-4 text-gray-500 mr-2" />
+                                                            <span className="text-sm text-gray-700">
+                                                                {item.receivedItemImage.name}
+                                                            </span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const newItems = [...bulkItems];
+                                                                newItems[idx].receivedItemImage = null;
+                                                                setBulkItems(newItems);
+                                                            }}
+                                                            className="text-red-600 hover:text-red-800"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            {invoiceType === "independent" && (
-                                <>
+                            {/* Common Details */}
+                            <div className="bg-gray-50 p-4 rounded-lg space-y-4">
+                                <h3 className="font-semibold text-lg border-b pb-2">Common Details</h3>
+                                <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label>Lift #</Label>
-                                        <Input
-                                            value={form.liftNumber}
-                                            readOnly
-                                            className="bg-gray-50"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>
-                                            Received Qty <span className="text-red-500">*</span>
-                                        </Label>
-                                        <Input
-                                            type="number"
-                                            value={form.receivedQty}
-                                            onChange={(e) =>
-                                                setForm({ ...form, receivedQty: e.target.value })
-                                            }
-                                            required
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>
-                                            Invoice Date <span className="text-red-500">*</span>
-                                        </Label>
+                                        <Label>Invoice Date <span className="text-red-500">*</span></Label>
                                         <Input
                                             type="date"
-                                            value={form.invoiceDate}
-                                            onChange={(e) =>
-                                                setForm({ ...form, invoiceDate: e.target.value })
-                                            }
+                                            value={commonData.invoiceDate}
+                                            onChange={(e) => setCommonData({ ...commonData, invoiceDate: e.target.value })}
                                             required
                                         />
                                     </div>
-                                </>
-                            )}
-
-                            <div className="space-y-2">
-                                <Label>
-                                    Invoice # <span className="text-red-500">*</span>
-                                </Label>
-                                <Input
-                                    value={form.invoiceNumber}
-                                    onChange={(e) =>
-                                        setForm({ ...form, invoiceNumber: e.target.value })
-                                    }
-                                    required
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>
-                                    SRN # <span className="text-red-500">*</span>
-                                </Label>
-                                <Input
-                                    value={form.srnNumber}
-                                    onChange={(e) =>
-                                        setForm({ ...form, srnNumber: e.target.value })
-                                    }
-                                    required
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label>
-                                    QC Required <span className="text-red-500">*</span>
-                                </Label>
-                                <Select
-                                    value={form.qcRequirement}
-                                    onValueChange={(v) => setForm({ ...form, qcRequirement: v })}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="yes">Yes</SelectItem>
-                                        <SelectItem value="no">No</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-
-                        {/* Received Item Image */}
-                        <div className="space-y-2">
-                            <Label>Received Item Image</Label>
-                            <input
-                                id="receivedItemImage"
-                                type="file"
-                                accept=".jpg,.jpeg,.png"
-                                onChange={(e) =>
-                                    setForm({
-                                        ...form,
-                                        receivedItemImage: e.target.files?.[0] ?? null,
-                                    })
-                                }
-                                className="hidden"
-                            />
-                            <label
-                                htmlFor="receivedItemImage"
-                                className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400"
-                            >
-                                <Upload className="w-6 h-6 text-gray-400 mr-2" />
-                                <span className="text-sm text-gray-600">Upload Image</span>
-                            </label>
-                            {form.receivedItemImage && (
-                                <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
-                                    <div className="flex items-center">
-                                        <FileText className="w-4 h-4 text-gray-500 mr-2" />
-                                        <span className="text-sm text-gray-700">
-                                            {form.receivedItemImage.name}
-                                        </span>
+                                    <div className="space-y-2">
+                                        <Label>Invoice # <span className="text-red-500">*</span></Label>
+                                        <Input
+                                            value={commonData.invoiceNumber}
+                                            onChange={(e) => setCommonData({ ...commonData, invoiceNumber: e.target.value })}
+                                            required
+                                        />
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeFile("receivedItemImage")}
-                                        className="text-red-600 hover:text-red-800"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            )}
-                        </div>
 
-                        {/* Bill Attachment (only independent) */}
-                        {invoiceType === "independent" && (
+                                    <div className="space-y-2 col-span-2">
+                                        <Label>Bill Attachment</Label>
+                                        <input
+                                            id="bulkBillAttachment"
+                                            type="file"
+                                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                            onChange={(e) => setCommonData({ ...commonData, billAttachment: e.target.files?.[0] || null })}
+                                            className="hidden"
+                                        />
+                                        <label
+                                            htmlFor="bulkBillAttachment"
+                                            className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400"
+                                        >
+                                            <Upload className="w-6 h-6 text-gray-400 mr-2" />
+                                            <span className="text-sm text-gray-600">Upload Bill</span>
+                                        </label>
+                                        {commonData.billAttachment && (
+                                            <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
+                                                <div className="flex items-center">
+                                                    <FileText className="w-4 h-4 text-gray-500 mr-2" />
+                                                    <span className="text-sm text-gray-700">
+                                                        {commonData.billAttachment.name}
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCommonData(prev => ({ ...prev, billAttachment: null }))}
+                                                    className="text-red-600 hover:text-red-800"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Hydra Amt</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={commonData.paymentAmountHydra}
+                                            onChange={(e) => setCommonData({ ...commonData, paymentAmountHydra: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Labour Amt</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={commonData.paymentAmountLabour}
+                                            onChange={(e) => setCommonData({ ...commonData, paymentAmountLabour: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Hamali Amt</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={commonData.paymentAmountHamali}
+                                            onChange={(e) => setCommonData({ ...commonData, paymentAmountHamali: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Remarks</Label>
+                                    <textarea
+                                        value={commonData.remarks}
+                                        onChange={(e) => setCommonData({ ...commonData, remarks: e.target.value })}
+                                        className="w-full min-h-24 px-3 py-2 border border-gray-300 rounded resize-none"
+                                        rows={3}
+                                    />
+                                </div>
+                            </div>
+                        </form>
+                    ) : (
+                        /* SINGLE FORM (Existing) */
+                        <form
+                            onSubmit={handleSubmit}
+                            className="flex-1 overflow-y-auto space-y-6 pr-2"
+                        >
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Lift #</Label>
+                                    <Input
+                                        value={form.liftNumber}
+                                        readOnly
+                                        className="bg-gray-50"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>
+                                        Received Qty <span className="text-red-500">*</span>
+                                    </Label>
+                                    <Input
+                                        type="number"
+                                        value={form.receivedQty}
+                                        onChange={(e) =>
+                                            setForm({ ...form, receivedQty: e.target.value })
+                                        }
+                                        required
+                                        placeholder="0"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>
+                                        Invoice Date <span className="text-red-500">*</span>
+                                    </Label>
+                                    <Input
+                                        type="date"
+                                        value={form.invoiceDate}
+                                        onChange={(e) =>
+                                            setForm({ ...form, invoiceDate: e.target.value })
+                                        }
+                                        required
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>
+                                        Invoice # <span className="text-red-500">*</span>
+                                    </Label>
+                                    <Input
+                                        value={form.invoiceNumber}
+                                        onChange={(e) =>
+                                            setForm({ ...form, invoiceNumber: e.target.value })
+                                        }
+                                        required
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>
+                                        QC Required <span className="text-red-500">*</span>
+                                    </Label>
+                                    <Select
+                                        value={form.qcRequirement}
+                                        onValueChange={(v) => setForm({ ...form, qcRequirement: v })}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="yes">Yes</SelectItem>
+                                            <SelectItem value="no">No</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            {/* Received Item Image */}
+                            <div className="space-y-2">
+                                <Label>Received Item Image</Label>
+                                <input
+                                    id="receivedItemImage"
+                                    type="file"
+                                    accept=".jpg,.jpeg,.png"
+                                    onChange={(e) =>
+                                        setForm({
+                                            ...form,
+                                            receivedItemImage: e.target.files?.[0] ?? null,
+                                        })
+                                    }
+                                    className="hidden"
+                                />
+                                <label
+                                    htmlFor="receivedItemImage"
+                                    className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400"
+                                >
+                                    <Upload className="w-6 h-6 text-gray-400 mr-2" />
+                                    <span className="text-sm text-gray-600">Upload Image</span>
+                                </label>
+                                {form.receivedItemImage && (
+                                    <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
+                                        <div className="flex items-center">
+                                            <FileText className="w-4 h-4 text-gray-500 mr-2" />
+                                            <span className="text-sm text-gray-700">
+                                                {form.receivedItemImage.name}
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFile("receivedItemImage")}
+                                            className="text-red-600 hover:text-red-800"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Bill Attachment */}
                             <div className="space-y-2">
                                 <Label>Bill Attachment</Label>
                                 <input
@@ -1083,10 +1433,8 @@ export default function Stage7() {
                                     </div>
                                 )}
                             </div>
-                        )}
 
-                        {/* Payment Heads - Only show for independent invoices */}
-                        {invoiceType === "independent" && (
+                            {/* Payment Heads */}
                             <div className="space-y-4">
                                 <h3 className="font-medium">Others Payment Head</h3>
                                 <div className="grid grid-cols-3 gap-4">
@@ -1131,32 +1479,40 @@ export default function Stage7() {
                                     </div>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Remarks */}
-                        <div className="space-y-2">
-                            <Label>Remarks</Label>
-                            <textarea
-                                value={form.remarks}
-                                onChange={(e) => setForm({ ...form, remarks: e.target.value })}
-                                className="w-full min-h-24 px-3 py-2 border border-gray-300 rounded resize-none"
-                                rows={3}
-                            />
-                        </div>
-                    </form>
+                            {/* Remarks */}
+                            <div className="space-y-2">
+                                <Label>Remarks</Label>
+                                <textarea
+                                    value={form.remarks}
+                                    onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+                                    className="w-full min-h-24 px-3 py-2 border border-gray-300 rounded resize-none"
+                                    rows={3}
+                                />
+                            </div>
+                        </form>
+                    )}
 
                     <DialogFooter className="flex-shrink-0 border-t pt-4">
-                        <Button variant="outline" onClick={() => setOpen(false)}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setOpen(false)}
+                            disabled={isSubmitting}
+                        >
                             Cancel
                         </Button>
-                        <Button onClick={handleSubmit} disabled={!formValid || isSubmitting}>
+                        <Button
+                            onClick={isBulkMode ? handleBulkSubmit : handleSubmit}
+                            disabled={isSubmitting || (!isBulkMode && !formValid)}
+                        >
                             {isSubmitting ? (
                                 <>
                                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Saving...
+                                    Submitting...
                                 </>
                             ) : (
-                                "Record Receipt & Complete"
+                                "Record Receipt"
                             )}
                         </Button>
                     </DialogFooter>

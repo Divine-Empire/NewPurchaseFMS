@@ -82,6 +82,8 @@ export default function Stage3() {
   const [showVendorDropdown1, setShowVendorDropdown1] = useState(false);
   const [showVendorDropdown2, setShowVendorDropdown2] = useState(false);
   const [showVendorDropdown3, setShowVendorDropdown3] = useState(false);
+  // Payment Terms
+  const [paymentTermsList, setPaymentTermsList] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
     vendor1Name: "",
@@ -267,6 +269,12 @@ export default function Stage3() {
             .map((row: any) => String(row[6] || "").trim())
             .filter((v: string) => v !== "");
           setVendorList(vendors);
+
+          // Column H is index 7 (Payment Terms)
+          const terms = vendorJson.data.slice(1)
+            .map((row: any) => String(row[7] || "").trim())
+            .filter((t: string) => t !== "");
+          setPaymentTermsList(terms);
         }
       }
     } catch (e: any) {
@@ -322,14 +330,8 @@ export default function Stage3() {
     return { search: vendorSearch3, setSearch: setVendorSearch3, show: showVendorDropdown3, setShow: setShowVendorDropdown3 };
   };
 
-  const paymentTerms = [
-    { value: "15", label: "15 days" },
-    { value: "30", label: "30 days" },
-    { value: "60", label: "60 days" },
-    { value: "90", label: "90 days" },
-    { value: "advance", label: "Advance" },
-    { value: "PI", label: "PI (Proforma Invoice)" },
-  ];
+  // Hardcoded payment terms removed
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -723,7 +725,7 @@ export default function Stage3() {
                           {v.rate ? `₹${parseFloat(v.rate).toFixed(2)}` : "-"}
                         </TableCell>
                         <TableCell>
-                          {paymentTerms.find((t) => t.value === v.terms)?.label || v.terms || "-"}
+                          {v.terms || "-"}
                         </TableCell>
                         <TableCell>
                           {v.delivery ? formatDate(v.delivery) : "-"}
@@ -923,9 +925,9 @@ export default function Stage3() {
                           <SelectValue placeholder="Select terms" />
                         </SelectTrigger>
                         <SelectContent>
-                          {paymentTerms.map((t) => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
+                          {paymentTermsList.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
                             </SelectItem>
                           ))}
                         </SelectContent>

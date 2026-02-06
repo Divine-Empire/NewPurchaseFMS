@@ -33,18 +33,11 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 
-const CHECKERS = [
-  "Amit Shah",
-  "Neha Jain",
-  "Suresh Patel",
-  "Kavita Rao",
-  "Rohit Verma",
-];
-
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
 
 export default function Stage11() {
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
+  const [checkersList, setCheckersList] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
@@ -52,7 +45,6 @@ export default function Stage11() {
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
 
   const [formData, setFormData] = useState({
-    receivedBy: "",
     checkedBy: "",
     verificationDate: new Date(),
     invoiceNumber: "",
@@ -64,13 +56,29 @@ export default function Stage11() {
     if (!SHEET_API_URL) return;
     setIsLoading(true);
     try {
-      const [liftRes, fmsRes] = await Promise.all([
+      const [liftRes, fmsRes, dropdownRes] = await Promise.all([
         fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`),
-        fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`)
+        fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`),
+        fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`)
       ]);
 
       const liftJson = await liftRes.json();
       const fmsJson = await fmsRes.json();
+      const dropdownJson = await dropdownRes.json();
+
+      // Process Dropdown Data
+      if (dropdownJson.success && Array.isArray(dropdownJson.data)) {
+        // Column J is index 9 (0-A, 1-B... 9-J)
+        // Skip header row if necessary, assuming data starts from row 2 or similar
+        // Typically row[9]
+        const checkers = new Set<string>();
+        dropdownJson.data.slice(1).forEach((row: any) => {
+          if (row[9] && String(row[9]).trim() !== "") {
+            checkers.add(String(row[9]).trim());
+          }
+        });
+        setCheckersList(Array.from(checkers));
+      }
 
       // Create FMS Map (Indent # -> Row)
       const fmsMap = new Map<string, any[]>();
@@ -233,7 +241,6 @@ export default function Stage11() {
 
     setSelectedRecordId(recordId);
     setFormData({
-      receivedBy: "",
       checkedBy: "",
       verificationDate: new Date(),
       invoiceNumber,
@@ -268,7 +275,7 @@ export default function Stage11() {
       rowArray[58] = "";
 
       // 62: Verified Received By
-      rowArray[59] = formData.receivedBy;
+      rowArray[59] = "";
 
       // 63: Verified Checked By
       rowArray[60] = formData.checkedBy;
@@ -362,7 +369,7 @@ export default function Stage11() {
   };
 
   const isFormValid =
-    formData.receivedBy && formData.checkedBy && formData.verificationDate;
+    formData.checkedBy && formData.verificationDate;
 
   if (isLoading && sheetRecords.length === 0) {
     return (
@@ -502,14 +509,10 @@ export default function Stage11() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Received By *</Label>
-                <input className="w-full px-3 py-2 border rounded" value={formData.receivedBy} onChange={(e) => setFormData({ ...formData, receivedBy: e.target.value })} />
-              </div>
-              <div>
                 <Label>Checked By *</Label>
                 <Select value={formData.checkedBy} onValueChange={(v) => setFormData({ ...formData, checkedBy: v })}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{CHECKERS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>{checkersList.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>

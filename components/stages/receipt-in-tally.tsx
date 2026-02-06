@@ -24,15 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const ACCOUNTANTS = [
-  "Akash Nandi",
-  "T Vishal Patnaik",
-  "Tarini Kumbhakar",
-  "Dipika Dewangan",
-  "Jyoti Gayakwad",
-  "Nandini Nirmalkar",
-  "Pankaj Sahu",
-];
+
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
 
@@ -42,6 +34,7 @@ export default function Stage9() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+  const [accountantList, setAccountantList] = useState<string[]>([]);
 
   const [bulkData, setBulkData] = useState({
     doneBy: "",
@@ -181,6 +174,17 @@ export default function Stage9() {
           });
         setSheetRecords(rows);
       }
+
+      // Fetch Dropdown sheet for Accountants (Column M / Index 12)
+      const dropRes = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
+      const dropJson = await dropRes.json();
+      if (dropJson.success && Array.isArray(dropJson.data)) {
+        const accList = dropJson.data.slice(1)
+          .map((row: any) => String(row[12] || "").trim())
+          .filter((a: string) => a !== "");
+        setAccountantList(accList);
+      }
+
     } catch (e) {
       console.error("Fetch error:", e);
     }
@@ -521,7 +525,7 @@ export default function Stage9() {
                     <SelectValue placeholder="Select" />
                   </SelectTrigger>
                   <SelectContent>
-                    {ACCOUNTANTS.map((n) => (
+                    {accountantList.map((n) => (
                       <SelectItem key={n} value={n}>
                         {n}
                       </SelectItem>

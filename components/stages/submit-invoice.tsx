@@ -212,8 +212,7 @@ export default function Stage10() {
   const historyColumns = [
     ...pendingColumns,
     // plan9 and actual9 are already in pendingColumns, so don't re-add explicitly to avoid duplicates
-    { key: "handoverBy", label: "Handover By" },
-    { key: "receivedBy", label: "Received By" },
+    { key: "handoverBy", label: "HardCopy Docs" },
     { key: "invoiceSubmissionDate", label: "Sub. Date" },
   ];
 
@@ -356,7 +355,6 @@ export default function Stage10() {
 
   const isFormValid =
     formData.handoverBy &&
-    formData.receivedBy &&
     formData.invoiceNumber &&
     formData.vendorName;
 
@@ -496,21 +494,15 @@ export default function Stage10() {
               <div><Label>Invoice #</Label><p className="font-mono">{formData.invoiceNumber}</p></div>
               <div><Label>Vendor</Label><p>{formData.vendorName}</p></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Handover By *</Label>
-                <Select value={formData.handoverBy} onValueChange={(v) => setFormData({ ...formData, handoverBy: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{HANDOVER_PERSONNEL.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Received By (Accounts) *</Label>
-                <Select value={formData.receivedBy} onValueChange={(v) => setFormData({ ...formData, receivedBy: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{ACCOUNTS_PERSONNEL.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
+            <div>
+              <Label>Hardcopy Docs submitted to Acc *</Label>
+              <Select value={formData.handoverBy} onValueChange={(v) => setFormData({ ...formData, handoverBy: v })}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Submission Date *</Label>
