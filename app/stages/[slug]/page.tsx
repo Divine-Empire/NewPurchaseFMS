@@ -15,6 +15,7 @@ import Verification from "@/components/stages/verification";
 import PurchaseReturn from "@/components/stages/purchase-return";
 import VendorPayment from "@/components/stages/vendor-payment";
 import FreightPayments from "@/components/stages/freight-payments";
+import ReturnApproval from "@/components/stages/return-approval";
 
 const stageComponents: Record<string, React.ComponentType> = {
     "create-indent": CreateIndent,
@@ -31,6 +32,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "purchase-return": PurchaseReturn,
     "vendor-payment": VendorPayment,
     "freight-payments": FreightPayments,
+    "return-approval": ReturnApproval,
 };
 
 export default function StagePage() {

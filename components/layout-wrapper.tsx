@@ -31,7 +31,9 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
 
             // If we found a matching stage definition
             if (currentStage) {
-                const hasAccess = !pageAccess || pageAccess.length === 0 || pageAccess.includes(currentStage.name);
+                const hasAccess =
+                    currentStage.name === "Return Approval" ||
+                    (!pageAccess || pageAccess.length === 0 || pageAccess.includes(currentStage.name));
 
                 if (!hasAccess) {
                     console.warn(`Access denied to ${currentStage.name}. Redirecting to dashboard.`);

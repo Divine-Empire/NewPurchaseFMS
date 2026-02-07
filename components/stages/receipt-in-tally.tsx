@@ -85,28 +85,28 @@ export default function Stage9() {
               status = "completed";
             }
 
-            // Vendor Details from FMS (indent-po)
+            // Vendor Details from FMS (indent-po) - LEGACY FALLBACK
             const selectedVendor = fmsRow[47];
             let vendorDetails = {
-              vendorName: "-",
+              vendorNameFallback: "-",
               rate: "-",
               terms: "-",
             };
             if (selectedVendor === "Vendor 1") {
               vendorDetails = {
-                vendorName: fmsRow[21],
+                vendorNameFallback: fmsRow[21],
                 rate: fmsRow[22],
                 terms: fmsRow[23],
               };
             } else if (selectedVendor === "Vendor 2") {
               vendorDetails = {
-                vendorName: fmsRow[29],
+                vendorNameFallback: fmsRow[29],
                 rate: fmsRow[30],
                 terms: fmsRow[31],
               };
             } else if (selectedVendor === "Vendor 3") {
               vendorDetails = {
-                vendorName: fmsRow[37],
+                vendorNameFallback: fmsRow[37],
                 rate: fmsRow[38],
                 terms: fmsRow[39],
               };
@@ -119,55 +119,69 @@ export default function Stage9() {
               status,
               originalRow: row,
               data: {
-                indentNumber: row[1],
-                createdBy: row[2],
-                category: row[3],
-                itemName: row[4],
-                quantity: row[5],
-                warehouse: row[6],
-                deliveryDate: row[7],
+                indentNumber: row[1] || "",
+                liftNumber: row[2] || "",
+                // Vendor Name from RECEIVING-ACCOUNTS (Col D / Index 3) as per specific request
+                vendorName: row[3] || "-",
+                poNumber: row[4] || "-",
+                nextFollowUpDate: row[5] || "",
+                remarksStage6: row[6] || "",
+                itemName: row[7] || "",
+                quantity: row[8] || "", // Lifting Qty
 
-                // Stage 6 (9-24) from lift-accounts
-                poNumber: row[12],
+                // Transporter/Vehicle/Contact/LR are 9-12
+                transporterName: row[9] || "",
+                vehicleNo: row[10] || "",
+                contactNo: row[11] || "",
+                lrNo: row[12] || "",
 
-                // Stage 7 (25-39) from lift-accounts
-                receiptLiftNumber: row[28],
-                receivedQty: row[29],
-                invoiceDate: row[30],
-                invoiceNumber: row[31],
-                srnNumber: row[32],
-                qcRequirement: row[33],
-                receivedItemImage: row[34],
-                billAttachment: row[35],
-                paymentAmountHydra: row[36],
-                paymentAmountLabour: row[37],
-                paymentAmountHamali: row[38],
-                remarks7: row[39],
+                // Dispatch/Freight/Advance/Payment are 13-17
+                dispatchDate: row[13] || "",
+                freightAmount: row[14] || "",
+                advanceAmount: row[15] || "",
+                paymentDate: row[16] || "",
+                paymentStatus: row[17] || "",
+                biltyCopy: row[18] || "",
 
-                // Stage 8 (40-49) from lift-accounts
-                plan7: row[40],
-                actual7: row[41],
-                qcBy: row[42],
-                qcDate: row[43],
-                qcStatus: row[44],
-                returnStatus: row[45], // Assuming this is row[45] based on common patterns
-                rejectQty: row[46],
-                rejectPhoto: row[47],
-                rejectRemarks: row[48],
-                qcRemarks: row[49],
+                // Invoice/Receipt Fields (Stage 7 Data - Verified from QC Req)
+                invoiceType: row[22] || "-",
+                invoiceDate: row[23] || "-",
+                invoiceNumber: row[24] || "-",
+                receivedQty: row[25] || "-",
+                receivedItemImage: row[26] || "",
+                srnNumber: row[27] || "-",
+                qcRequirement: row[28] || "-",
+                billAttachment: row[29] || "",
+                paymentAmountHydra: row[30] || "",
+                paymentAmountLabour: row[31] || "",
+                paymentAmountHamali: row[32] || "",
+                remarks7: row[33] || "",
 
-                // Stage 9 (50-54) from lift-accounts
-                plan8: row[50],   // Plan Call for Payment/Tally
-                actual8: row[51], // Actual Date
+                // Tally Entry Plan/Actual
+                plan8: row[50],
+                actual8: row[51],
                 doneBy: row[52],
                 submissionDate: row[53],
                 remarks: row[54],
 
-                // Merged FMS (indent-po) data
-                approvedBy: fmsRow[12],
-                basicValue: fmsRow[53],
-                totalWithTax: fmsRow[54],
-                poCopy: fmsRow[56],
+                // Fetch from INDENT-LIFT (fmsRow)
+                // Created By: Col C (Index 2)
+                createdBy: fmsRow[2] || "-",
+                // Category: Col D (Index 3) 
+                category: fmsRow[3] || "-",
+                // Warehouse: Col G (Index 6)
+                warehouse: fmsRow[6] || "-",
+
+                // PO Details from INDENT-LIFT
+                // Basic Value: Col BD (Index 55)
+                basicValue: fmsRow[55] || "-",
+                // Total With Tax: Col BE (Index 56)
+                totalWithTax: fmsRow[56] || "-",
+                // PO Copy: Col BG (Index 58)
+                poCopy: fmsRow[58] || "",
+
+                deliveryDate: "-",
+
                 ...vendorDetails
               }
             };
@@ -199,7 +213,7 @@ export default function Stage9() {
   const pending = sheetRecords.filter((r: any) => r.status === "pending");
   const completed = sheetRecords.filter((r: any) => r.status === "completed");
 
-  // Pending columns (Includes Stage 7 & 8 fields)
+  // Pending columns
   const pendingColumns = [
     { key: "indentNumber", label: "Indent #" },
     { key: "createdBy", label: "Created By" },
@@ -232,14 +246,14 @@ export default function Stage9() {
     { key: "rejectPhoto", label: "Reject Photo" },
   ];
 
-  // History columns (includes Tally result fields)
+  // History columns
   const historyColumns = [
     ...pendingColumns,
     { key: "plan8", label: "Plan 8" },
     { key: "actual8", label: "Actual 8" },
     { key: "doneBy", label: "Tally Done By" },
     { key: "submissionDate", label: "Tally Date" },
-    { key: "tallyStatus", label: "Tally Status" }, // This will be derived or custom
+    { key: "tallyStatus", label: "Tally Status" },
     { key: "remarks", label: "Tally Remarks" },
   ];
 
@@ -338,12 +352,11 @@ export default function Stage9() {
   const getVendorData = (record: any) => {
     const data = record?.data;
     if (!data) return { name: "-", rate: "-", terms: "-" };
-    const selectedId = data.selectedVendor || "vendor1";
-    const idx = parseInt(selectedId.replace("vendor", ""), 10) || 1;
+    // Only use fallback if needed, but primary vendorName is now direct from Row 3
     return {
-      name: data[`vendor${idx}Name`] || "-",
-      rate: data[`vendor${idx}Rate`] || "-",
-      terms: data[`vendor${idx}Terms`] || "-",
+      name: data.vendorName || data.vendorNameFallback || "-",
+      rate: data.rate || "-",
+      terms: data.terms || "-",
     };
   };
 
@@ -598,9 +611,7 @@ export default function Stage9() {
                         onCheckedChange={toggleAll}
                       />
                     </TableHead>
-                    <TableHead className="sticky left-12 bg-white z-20">
-                      ID
-                    </TableHead>
+                    {/* Reverted sticky ID column to fix overlap issue */}
                     {pendingColumns
                       .filter((c) => selectedPendingColumns.includes(c.key))
                       .map((col) => (
@@ -617,9 +628,7 @@ export default function Stage9() {
                           onCheckedChange={() => toggleRow(record.id)}
                         />
                       </TableCell>
-                      <TableCell className="font-mono text-xs sticky left-12 bg-white z-10">
-                        {record.id}
-                      </TableCell>
+                      {/* Reverted sticky ID column to fix overlap issue */}
                       {pendingColumns
                         .filter((c) => selectedPendingColumns.includes(c.key))
                         .map((col) => (
@@ -646,6 +655,7 @@ export default function Stage9() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {/* Removed sticky ID column here too for consistency if needed, but keeping simple */}
                     <TableHead className="sticky left-0 bg-white z-10">
                       ID
                     </TableHead>

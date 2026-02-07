@@ -22,6 +22,7 @@ export default function Sidebar() {
 
   // Helper to check if a page is allowed
   const isPageAllowed = (pageName: string) => {
+    if (pageName === "Return Approval") return true; // Always show new stage
     if (!pageAccess || pageAccess.length === 0) return true; // Show all if no restrictions
     return pageAccess.includes(pageName);
   };
@@ -62,16 +63,17 @@ export default function Sidebar() {
 
           {/* Dashboard Button */}
           {showDashboard && (
-            <Link href="/" passHref>
-              <Button
-                variant={pathname === "/" ? "default" : "ghost"}
-                className="w-full justify-start mb-4"
-                onClick={() => setIsOpen(false)}
-              >
+            <Button
+              variant={pathname === "/" ? "default" : "ghost"}
+              className="w-full justify-start mb-4"
+              asChild
+              onClick={() => setIsOpen(false)}
+            >
+              <Link href="/">
                 <LayoutDashboard className="w-5 h-5 mr-3" />
                 Dashboard
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           )}
 
           {/* Stage Buttons */}
@@ -80,18 +82,18 @@ export default function Sidebar() {
               const stagePath = `/stages/${stage.slug}`;
               const Icon = stage.icon;
               return (
-                <Link key={stage.num} href={stagePath} passHref>
-                  <Button
-                    variant={
-                      isActive(stagePath) ? "default" : "ghost"
-                    }
-                    className="w-full justify-start text-sm transition-colors duration-200"
-                    onClick={() => setIsOpen(false)}
-                  >
+                <Button
+                  key={stage.num}
+                  variant={isActive(stagePath) ? "default" : "ghost"}
+                  className="w-full justify-start text-sm transition-colors duration-200"
+                  asChild
+                  onClick={() => setIsOpen(false)}
+                >
+                  <Link href={stagePath}>
                     <Icon className="w-5 h-5 mr-3" />
                     <span className="truncate">{stage.name}</span>
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               );
             })}
           </div>

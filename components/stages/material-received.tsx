@@ -229,6 +229,7 @@ export default function Stage7() {
                                 paymentStatus: row[17] || "",    // R: Payment Status
                                 biltyCopy: row[18] || "",        // S: Bilty Copy
                                 poCopy: fmsRow ? (fmsRow[58] || "") : "", // From INDENT-LIFT Column BG (index 58)
+                                qcRequirement: row[28] || "",    // AC: QC Required
 
                                 // Columns T and U for status determination
                                 columnT: row[19] || "",          // T: Planned
@@ -661,7 +662,8 @@ export default function Stage7() {
         form.receivedQty &&
         form.invoiceNumber &&
         form.invoiceDate &&
-        form.qcRequirement;
+        form.qcRequirement &&
+        form.billAttachment;
 
     return (
         <div className="p-6">
@@ -1202,7 +1204,7 @@ export default function Stage7() {
                                     </div>
 
                                     <div className="space-y-2 col-span-2">
-                                        <Label>Bill Attachment</Label>
+                                        <Label>Bill Attachment <span className="text-red-500">*</span></Label>
                                         <input
                                             id="bulkBillAttachment"
                                             type="file"
@@ -1395,7 +1397,7 @@ export default function Stage7() {
 
                             {/* Bill Attachment */}
                             <div className="space-y-2">
-                                <Label>Bill Attachment</Label>
+                                <Label>Bill Attachment <span className="text-red-500">*</span></Label>
                                 <input
                                     id="billAttachment"
                                     type="file"
@@ -1504,7 +1506,17 @@ export default function Stage7() {
                         </Button>
                         <Button
                             onClick={isBulkMode ? handleBulkSubmit : handleSubmit}
-                            disabled={isSubmitting || (!isBulkMode && !formValid)}
+                            disabled={
+                                isSubmitting ||
+                                (isBulkMode
+                                    ? !(
+                                        commonData.invoiceDate &&
+                                        commonData.invoiceNumber &&
+                                        commonData.billAttachment &&
+                                        bulkItems.every((item) => item.receivedQty && item.qcRequirement)
+                                    )
+                                    : !formValid)
+                            }
                         >
                             {isSubmitting ? (
                                 <>

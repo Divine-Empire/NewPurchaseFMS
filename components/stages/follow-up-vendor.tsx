@@ -51,6 +51,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface LiftingEntry {
   liftNumber: string;
@@ -77,6 +87,84 @@ interface RecordLifting {
   liftingData: LiftingEntry;
   indentNumber: string;
 }
+
+const TransporterCombobox = ({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between bg-white border-green-200"
+        >
+          {value
+            ? value
+            : "Select transporter..."}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput
+            placeholder="Search transporter..."
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            <CommandEmpty>
+              <div className="p-2">
+                <p className="text-sm text-muted-foreground pb-2">No transporter found.</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full h-8"
+                  onClick={() => {
+                    onChange(query);
+                    setOpen(false);
+                  }}
+                >
+                  Create "{query}"
+                </Button>
+              </div>
+            </CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option}
+                  value={option}
+                  onSelect={(currentValue) => {
+                    onChange(currentValue);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value === option ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  {option}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 export default function Stage6() {
   const [open, setOpen] = useState(false);
@@ -1312,24 +1400,16 @@ export default function Stage6() {
                         </div>
                         <div>
                           <Label className="text-xs font-semibold uppercase tracking-wider text-green-800">Transporter *</Label>
-                          <Select
+                          <TransporterCombobox
                             value={unifiedFormData.liftingData.transporterName}
-                            onValueChange={(val) =>
+                            onChange={(val) =>
                               setUnifiedFormData((prev) => prev ? {
                                 ...prev,
                                 liftingData: { ...prev.liftingData, transporterName: val }
                               } : null)
                             }
-                          >
-                            <SelectTrigger className="bg-white border-green-200">
-                              <SelectValue placeholder="Select transporter..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {transporterList.map((t) => (
-                                <SelectItem key={t} value={t}>{t}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            options={transporterList}
+                          />
                         </div>
                         <div>
                           <Label className="text-xs font-semibold uppercase tracking-wider text-green-800">Vehicle No *</Label>
@@ -1576,27 +1656,17 @@ export default function Stage6() {
                             </div>
                             <div>
                               <Label className="text-xs font-semibold uppercase tracking-wider text-green-800">Transporter *</Label>
-                              <Select
+                              <TransporterCombobox
                                 value={item.liftingData.transporterName}
-                                onValueChange={(val) =>
+                                onChange={(val) =>
                                   updateLiftingEntry(
                                     recordIdx,
                                     "transporterName",
                                     val
                                   )
                                 }
-                              >
-                                <SelectTrigger className="bg-white border-green-200">
-                                  <SelectValue placeholder="Select transporter..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {transporterList.map((t) => (
-                                    <SelectItem key={t} value={t}>
-                                      {t}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                                options={transporterList}
+                              />
                             </div>
                             <div>
                               <Label className="text-xs font-semibold uppercase tracking-wider text-green-800">Vehicle No *</Label>

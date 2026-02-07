@@ -166,6 +166,15 @@ export default function Stage8() {
   const pending = sheetRecords.filter((r) => r.status === "pending");
   const completed = sheetRecords.filter((r) => r.status === "completed");
 
+  const HISTORY_COLUMNS = [
+    { key: "indentNumber", label: "Indent #" },
+    { key: "vendorName", label: "Vendor" },
+    { key: "invoiceNumber", label: "Invoice #" },
+    { key: "itemName", label: "Item" },
+    { key: "receivedQty", label: "Approved Qty" }, // Renamed from "Received Qty"
+  ];
+
+
   const handleOpenForm = (recordId: string) => {
     const today = new Date().toISOString().split("T")[0];
     setSelectedRecordId(recordId);
@@ -367,6 +376,21 @@ export default function Stage8() {
       }
 
       const val = data[key];
+
+      // Handle receivedQty in History tab -> Show "Total Approved Qty" (count of SRN items)
+      if (key === "receivedQty" && isHistory) {
+        try {
+          const json = data.srnJson;
+          if (json && json !== "-" && json !== "") {
+            const parsed = JSON.parse(json);
+            return Array.isArray(parsed) ? parsed.length : 0;
+          }
+          return 0;
+        } catch (e) {
+          return 0;
+        }
+      }
+
       const lowKey = key.toLowerCase();
       if (lowKey.includes("date") || lowKey.includes("plan") || lowKey.includes("actual")) {
         return formatDisplayDate(val);
@@ -470,7 +494,7 @@ export default function Stage8() {
                       <TableHead className="sticky left-0 bg-white z-10">
                         ID
                       </TableHead>
-                      {FIXED_COLUMNS.map((col) => (
+                      {HISTORY_COLUMNS.map((col) => (
                         <TableHead key={col.key}>{col.label}</TableHead>
                       ))}
                       <TableHead>SRN Details</TableHead>
@@ -482,7 +506,7 @@ export default function Stage8() {
                         <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">
                           {record.id || "-"}
                         </TableCell>
-                        {FIXED_COLUMNS.map((col) => (
+                        {HISTORY_COLUMNS.map((col) => (
                           <TableCell key={col.key}>
                             {safeValue(record, col.key, true)}
                           </TableCell>
