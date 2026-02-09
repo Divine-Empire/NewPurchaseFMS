@@ -21,6 +21,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, RefreshCw, Upload, FileText, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,6 +55,16 @@ export default function Stage13() {
 
     // Calculate delay based on Planned Date (row[76]) vs Actual Date (user input)
     const [plannedDateForDelay, setPlannedDateForDelay] = useState<Date | null>(null);
+
+    // Bulk selection state
+    const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+    const [bulkOpen, setBulkOpen] = useState(false);
+    const [bulkFormData, setBulkFormData] = useState({
+        actualDate: new Date().toISOString().split("T")[0],
+        dnNumber: "",
+        returnImage: null as File | null,
+        remarks: "",
+    });
 
     const fetchData = async () => {
         if (!SHEET_API_URL) return;
@@ -106,6 +117,7 @@ export default function Stage13() {
                                 dnNumber: row[79],               // CB: DN Number (was Status)
                                 remarks: row[80],                // CC
                                 returnImage: row[81],            // CD: Image
+                                returnStatus: row[70],           // BS: Status
                             }
                         };
                     });
@@ -124,6 +136,61 @@ export default function Stage13() {
 
     const pending = sheetRecords.filter((r) => r.status === "pending");
     const completed = sheetRecords.filter((r) => r.status === "completed");
+
+    // Get first selected invoice number for validation
+    const getFirstSelectedInvoice = () => {
+        if (selectedRows.size === 0) return null;
+        const firstId = Array.from(selectedRows)[0];
+        const rec = sheetRecords.find((r) => r.id === firstId);
+        return rec?.data.invoiceNumber || null;
+    };
+
+    // Toggle row (no invoice validation on selection)
+    const toggleRow = (id: string) => {
+        const newSet = new Set(selectedRows);
+        if (newSet.has(id)) {
+            newSet.delete(id);
+        } else {
+            newSet.add(id);
+        }
+        setSelectedRows(newSet);
+    };
+
+    // Toggle all
+    const toggleAll = () => {
+        if (selectedRows.size === pending.length) {
+            setSelectedRows(new Set());
+        } else {
+            // Select all pending rows
+            setSelectedRows(new Set(pending.map((r) => r.id)));
+        }
+    };
+
+    // Open bulk modal with invoice validation
+    const handleOpenBulkForm = () => {
+        if (selectedRows.size === 0) return;
+
+        // Validate all selected items have the same invoice number
+        const selectedRecordsList = pending.filter((r) => selectedRows.has(r.id));
+        const invoices = new Set(selectedRecordsList.map((r) => r.data.invoiceNumber));
+        if (invoices.size > 1) {
+            toast.error("Cannot proceed: All selected items must have the same Invoice #", {
+                style: { background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c' }
+            });
+            return;
+        }
+
+        setBulkFormData({
+            actualDate: new Date().toISOString().split("T")[0],
+            dnNumber: "",
+            returnImage: null,
+            remarks: "",
+        });
+        setBulkOpen(true);
+    };
+
+    // Get selected records
+    const selectedRecords = pending.filter((r) => selectedRows.has(r.id));
 
     const handleOpenForm = (recordId: string) => {
         const rec = sheetRecords.find((r) => r.id === recordId);
@@ -252,6 +319,110 @@ export default function Stage13() {
         }
     };
 
+    // Bulk Submit Handler
+    const handleBulkSubmit = async () => {
+        if (selectedRows.size === 0 || !SHEET_API_URL) return;
+
+        // Validation
+        if (!bulkFormData.dnNumber || !bulkFormData.dnNumber.trim()) {
+            toast.error("Debit Note / DN No. is mandatory.");
+            return;
+        }
+        if (!bulkFormData.returnImage) {
+            toast.error("Image upload is mandatory.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        const toastId = toast.loading(`Processing ${selectedRows.size} approvals...`);
+
+        try {
+            // Upload Image once
+            let imageUrl = "";
+            const uploadFile = async (file: File) => {
+                const uploadParams = new URLSearchParams();
+                uploadParams.append("action", "uploadFile");
+                uploadParams.append("base64Data", await toBase64(file));
+                uploadParams.append("fileName", file.name);
+                uploadParams.append("mimeType", file.type);
+                const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
+                uploadParams.append("folderId", folderId);
+
+                const res = await fetch(SHEET_API_URL, {
+                    method: "POST",
+                    body: uploadParams
+                });
+                const json = await res.json();
+                if (json.success) return json.fileUrl;
+                else throw new Error("Upload failed: " + (json.error || "Unknown error"));
+            };
+
+            imageUrl = await uploadFile(bulkFormData.returnImage);
+
+            // Format Date
+            const d = new Date(bulkFormData.actualDate);
+            const dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+
+            let successCount = 0;
+            let failCount = 0;
+
+            // Process each selected record
+            for (const id of Array.from(selectedRows)) {
+                const rec = sheetRecords.find((r) => r.id === id);
+                if (!rec) continue;
+
+                try {
+                    // Calculate Delay
+                    let delayVal = 0;
+                    const pDate = rec.data.plannedDate ? new Date(rec.data.plannedDate) : null;
+                    if (pDate && !isNaN(pDate.getTime()) && bulkFormData.actualDate) {
+                        const actual = new Date(bulkFormData.actualDate);
+                        const diffTime = actual.getTime() - pDate.getTime();
+                        delayVal = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        if (delayVal < 0) delayVal = 0;
+                    }
+
+                    // Create sparse row
+                    const rowArray = new Array(82).fill("");
+                    rowArray[77] = dateStr; // BZ: Actual
+                    rowArray[78] = delayVal.toString(); // CA: Delay
+                    rowArray[79] = bulkFormData.dnNumber; // CB: DN Number
+                    rowArray[80] = bulkFormData.remarks; // CC: Remarks
+                    rowArray[81] = imageUrl; // CD: Image
+
+                    const params = new URLSearchParams();
+                    params.append("action", "update");
+                    params.append("sheetName", "RECEIVING-ACCOUNTS");
+                    params.append("rowIndex", rec.rowIndex.toString());
+                    params.append("rowData", JSON.stringify(rowArray));
+
+                    const res = await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
+                    const json = await res.json();
+
+                    if (json.success) successCount++;
+                    else failCount++;
+                } catch {
+                    failCount++;
+                }
+            }
+
+            if (successCount > 0) {
+                toast.success(`Successfully approved ${successCount} record(s)!`, { id: toastId });
+                setSelectedRows(new Set());
+                setBulkOpen(false);
+                fetchData();
+            }
+            if (failCount > 0) {
+                toast.error(`Failed to approve ${failCount} record(s).`);
+            }
+
+        } catch (err: any) {
+            toast.error(err.message || "Failed to submit", { id: toastId });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const formatDate = (dateStr: string) => {
         if (!dateStr) return "-";
         const d = new Date(dateStr);
@@ -265,14 +436,34 @@ export default function Stage13() {
 
     return (
         <div className="p-6">
-            <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
-                <div>
-                    <h2 className="text-2xl font-bold">Stage 13: Return Approval</h2>
-                    <p className="text-gray-600 mt-1">Approve return requests</p>
+            <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
+                <div className="flex justify-between items-center">
+                    <div>
+                        <h2 className="text-2xl font-bold">Stage 13: Return Approval</h2>
+                        <p className="text-gray-600 mt-1">Approve return requests</p>
+                    </div>
+                    <Button variant="outline" onClick={fetchData} disabled={isLoading}>
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    </Button>
                 </div>
-                <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                </Button>
+
+                {/* Bulk Approval Controls */}
+                {selectedRows.size > 0 && (
+                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="flex items-center gap-4 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <Checkbox checked={true} disabled />
+                                <span className="font-medium">{selectedRows.size} selected</span>
+                                <span className="text-xs text-gray-500">
+                                    (Invoice: {getFirstSelectedInvoice()})
+                                </span>
+                            </div>
+                            <Button onClick={handleOpenBulkForm}>
+                                Bulk Approval
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
@@ -290,18 +481,31 @@ export default function Stage13() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
+                                        <TableHead className="w-12">
+                                            <Checkbox
+                                                checked={selectedRows.size === pending.length && pending.length > 0}
+                                                onCheckedChange={toggleAll}
+                                            />
+                                        </TableHead>
                                         <TableHead>Action</TableHead>
                                         <TableHead>Indent #</TableHead>
                                         <TableHead>Lift #</TableHead>
                                         <TableHead>Item Name</TableHead>
                                         <TableHead>Invoice #</TableHead>
                                         <TableHead>Return Qty</TableHead>
+                                        <TableHead>Status</TableHead>
                                         <TableHead>Planned Date</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {pending.map((rec) => (
                                         <TableRow key={rec.id}>
+                                            <TableCell className="w-12">
+                                                <Checkbox
+                                                    checked={selectedRows.has(rec.id)}
+                                                    onCheckedChange={() => toggleRow(rec.id)}
+                                                />
+                                            </TableCell>
                                             <TableCell>
                                                 <Button size="sm" onClick={() => handleOpenForm(rec.id)}>Process</Button>
                                             </TableCell>
@@ -310,6 +514,7 @@ export default function Stage13() {
                                             <TableCell>{rec.data.itemName}</TableCell>
                                             <TableCell>{safeValue(rec.data.invoiceNumber)}</TableCell>
                                             <TableCell>{safeValue(rec.data.returnQty)}</TableCell>
+                                            <TableCell>{safeValue(rec.data.returnStatus)}</TableCell>
                                             <TableCell>{formatDate(rec.data.plannedDate)}</TableCell>
                                         </TableRow>
                                     ))}
@@ -332,6 +537,7 @@ export default function Stage13() {
                                         <TableHead>Item Name</TableHead>
                                         <TableHead>Invoice #</TableHead>
                                         <TableHead>Return Qty</TableHead>
+                                        <TableHead>Status</TableHead>
                                         <TableHead>Planned Date</TableHead>
                                         <TableHead>Actual Date</TableHead>
                                         <TableHead>Delay</TableHead>
@@ -347,6 +553,7 @@ export default function Stage13() {
                                             <TableCell>{rec.data.itemName}</TableCell>
                                             <TableCell>{safeValue(rec.data.invoiceNumber)}</TableCell>
                                             <TableCell>{safeValue(rec.data.returnQty)}</TableCell>
+                                            <TableCell>{safeValue(rec.data.returnStatus)}</TableCell>
                                             <TableCell>{formatDate(rec.data.plannedDate)}</TableCell>
                                             <TableCell>{formatDate(rec.data.actualDate)}</TableCell>
                                             <TableCell>{rec.data.delay}</TableCell>
@@ -481,6 +688,134 @@ export default function Stage13() {
                                     Submitting...
                                 </>
                             ) : "Submit"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* BULK APPROVAL MODAL */}
+            <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Bulk Return Approval ({selectedRows.size} items)</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        {/* Selected Items Table */}
+                        <div>
+                            <Label className="text-sm font-medium mb-2 block">Selected Items</Label>
+                            <div className="border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Indent #</TableHead>
+                                            <TableHead>Item Name</TableHead>
+                                            <TableHead>Return Qty</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {selectedRecords.map((rec) => (
+                                            <TableRow key={rec.id}>
+                                                <TableCell className="py-2">{rec.data.indentNumber}</TableCell>
+                                                <TableCell className="py-2">{rec.data.itemName}</TableCell>
+                                                <TableCell className="py-2">{safeValue(rec.data.returnQty)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </div>
+
+                        {/* Common Fields */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Approval Date *</Label>
+                                <Input
+                                    type="date"
+                                    value={bulkFormData.actualDate}
+                                    onChange={(e) => setBulkFormData({ ...bulkFormData, actualDate: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Debit Note / DN No. *</Label>
+                                <Input
+                                    placeholder="Enter DN Number"
+                                    value={bulkFormData.dnNumber}
+                                    onChange={(e) => setBulkFormData({ ...bulkFormData, dnNumber: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Image *</Label>
+                                <div className="flex items-center gap-2">
+                                    <Input
+                                        id="bulk-image-upload"
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        onChange={(e) => {
+                                            if (e.target.files && e.target.files[0]) {
+                                                setBulkFormData({ ...bulkFormData, returnImage: e.target.files[0] });
+                                            }
+                                        }}
+                                        className="hidden"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="flex-1 flex items-center justify-center gap-2 h-8 border-dashed text-xs px-2"
+                                        onClick={() => document.getElementById("bulk-image-upload")?.click()}
+                                    >
+                                        {bulkFormData.returnImage ? (
+                                            <div className="flex items-center gap-2 text-green-600 truncate">
+                                                <FileText className="w-3 h-3 flex-shrink-0" />
+                                                <span className="truncate">{bulkFormData.returnImage.name}</span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <Upload className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                                <span className="text-gray-500 truncate">Upload</span>
+                                            </>
+                                        )}
+                                    </Button>
+                                    {bulkFormData.returnImage && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 flex-shrink-0"
+                                            onClick={() => setBulkFormData({ ...bulkFormData, returnImage: null })}
+                                        >
+                                            <X className="w-3 h-3 text-red-500" />
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Remarks</Label>
+                                <Input
+                                    placeholder="Enter remarks..."
+                                    value={bulkFormData.remarks}
+                                    onChange={(e) => setBulkFormData({ ...bulkFormData, remarks: e.target.value })}
+                                    className="h-8 text-xs"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setBulkOpen(false)}>Cancel</Button>
+                        <Button
+                            onClick={handleBulkSubmit}
+                            disabled={isSubmitting || !bulkFormData.dnNumber || !bulkFormData.dnNumber.trim() || !bulkFormData.returnImage}
+                        >
+                            {isSubmitting ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Processing...
+                                </>
+                            ) : `Approve ${selectedRows.size} Items`}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

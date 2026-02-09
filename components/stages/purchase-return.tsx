@@ -119,9 +119,10 @@ export default function Stage12() {
               data: {
                 indentNumber: row[1],
                 category: row[2], // Assuming Category
-                itemName: row[4],
-                quantity: row[5],
-                vendor: vendorName,
+                itemName: row[7], // Col H (Index 7)
+                rejectedQty: row[41], // Col AP (Index 41) - Rejected Qty
+                vendor: row[3], // Col D (Index 3) - Vendor from RECEIVING-ACCOUNTS
+                invoiceNumber: row[24], // Col Y (Index 24) - Invoice Number
 
                 // QC Reject Qty (Column AP = index 41)
                 rejectQty: row[41],
@@ -163,8 +164,9 @@ export default function Stage12() {
     { key: "indentNumber", label: "Indent #" },
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
-    { key: "quantity", label: "Qty" },
+    { key: "rejectedQty", label: "Rejected Qty" },
     { key: "vendor", label: "Vendor" },
+    { key: "invoiceNumber", label: "Invoice #" },
     { key: "plan6", label: "Plan Date" },
   ];
 
@@ -359,7 +361,6 @@ export default function Stage12() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Actions</TableHead>
-                      <TableHead>ID</TableHead>
                       {pendingColumns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
                     </TableRow>
                   </TableHeader>
@@ -369,9 +370,13 @@ export default function Stage12() {
                         <TableCell>
                           <Button size="sm" onClick={() => handleOpenForm(rec.id)}>Process</Button>
                         </TableCell>
-                        <TableCell>{rec.id}</TableCell>
                         {pendingColumns.map(col => (
-                          <TableCell key={col.key}>{safeValue(rec.data[col.key])}</TableCell>
+                          <TableCell
+                            key={col.key}
+                            className={col.key === "rejectedQty" ? "text-center" : ""}
+                          >
+                            {safeValue(rec.data[col.key])}
+                          </TableCell>
                         ))}
                       </TableRow>
                     ))}
@@ -390,16 +395,17 @@ export default function Stage12() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>ID</TableHead>
                       {historyColumns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {completed.map((rec) => (
                       <TableRow key={rec.id}>
-                        <TableCell>{rec.id}</TableCell>
                         {historyColumns.map(col => (
-                          <TableCell key={col.key}>
+                          <TableCell
+                            key={col.key}
+                            className={col.key === "rejectedQty" ? "text-center" : ""}
+                          >
                             {safeValue(rec.data[col.key], col.key.includes("Image"))}
                           </TableCell>
                         ))}

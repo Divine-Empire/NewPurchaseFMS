@@ -243,6 +243,7 @@ export default function Stage2() {
     { key: "category", label: "Category", icon: FileText },
     { key: "itemName", label: "Item", icon: Package },
     { key: "quantity", label: "Qty", icon: Package },
+    { key: "approvedQty", label: "Approved Qty", icon: Package },
     { key: "warehouseLocation", label: "Warehouse", icon: Warehouse },
     { key: "itemCode", label: "Item Code", icon: Hash },
     { key: "leadTime", label: "Lead Time", icon: Calendar },
@@ -572,7 +573,7 @@ export default function Stage2() {
                     </TableHead>
                     {columns
                       .filter((c) => selectedColumns.includes(c.key) &&
-                        !["plannedDate", "actualDate", "delay", "approvedBy", "status", "remarks"].includes(c.key))
+                        !["plannedDate", "actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
                       .map((col) => (
                         <TableHead key={col.key}>
                           <div className="flex items-center gap-2">
@@ -600,7 +601,7 @@ export default function Stage2() {
 
                       {columns
                         .filter((c) => selectedColumns.includes(c.key) &&
-                          !["plannedDate", "actualDate", "delay", "approvedBy", "status", "remarks"].includes(c.key))
+                          !["plannedDate", "actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
                         .map((col) => (
                           <TableCell key={col.key}>
                             {col.key === "leadTime"
@@ -658,7 +659,10 @@ export default function Stage2() {
                       {columns
                         .filter((c) => selectedColumns.includes(c.key) && c.key !== "plannedDate" && c.key !== "actualDate" && c.key !== "delay")
                         .map((col) => (
-                          <TableCell key={col.key} className="text-sm">
+                          <TableCell
+                            key={col.key}
+                            className={`text-sm ${col.key === "approvedQty" ? "text-center" : ""}`}
+                          >
                             {col.key === "leadTime"
                               ? `${record.data[col.key] ?? "-"} days`
                               : String(record.data[col.key] ?? "-")}

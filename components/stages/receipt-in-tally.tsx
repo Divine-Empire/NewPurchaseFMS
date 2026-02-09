@@ -128,6 +128,7 @@ export default function Stage9() {
                 remarksStage6: row[6] || "",
                 itemName: row[7] || "",
                 quantity: row[8] || "", // Lifting Qty
+                indentQty: fmsRow[14] || "", // Indent-Lift Col O (Index 14)
 
                 // Transporter/Vehicle/Contact/LR are 9-12
                 transporterName: row[9] || "",
@@ -219,7 +220,7 @@ export default function Stage9() {
     { key: "createdBy", label: "Created By" },
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
-    { key: "quantity", label: "Qty" },
+    { key: "indentQty", label: "Qty" },
     { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor" },
     { key: "poNumber", label: "PO Number" },
