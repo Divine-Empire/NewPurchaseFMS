@@ -1,7 +1,7 @@
 import {
     PlusCircle, CheckCircle2, Users, MessagesSquare, FileEdit,
     Phone, Package, ClipboardCheck, FileText, Upload, ShieldCheck,
-    CornerUpLeft, CreditCard, Truck
+    CornerUpLeft, CreditCard, Truck, TruckIcon
 } from "lucide-react";
 
 export const STAGES = [
@@ -11,6 +11,7 @@ export const STAGES = [
     { num: 4, name: "Negotiation", slug: "negotiation", icon: MessagesSquare },
     { num: 5, name: "PO Entry", slug: "po-entry", icon: FileEdit },
     { num: 6, name: "Follow-Up Vendor", slug: "follow-up-vendor", icon: Phone },
+    { num: 6.1, name: "Transporter Follow-Up", slug: "transporter-follow-up", icon: TruckIcon },
     { num: 7, name: "Material Received", slug: "material-received", icon: Package },
     { num: 8, name: "Receipt in Tally", slug: "receipt-in-tally", icon: FileText },
     { num: 9, name: "Submit Invoice", slug: "submit-invoice", icon: Upload },

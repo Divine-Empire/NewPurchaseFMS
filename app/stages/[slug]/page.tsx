@@ -7,6 +7,7 @@ import Update3Vendors from "@/components/stages/update-3-vendors";
 import Negotiation from "@/components/stages/negotiation";
 import POEntry from "@/components/stages/po-entry";
 import FollowUpVendor from "@/components/stages/follow-up-vendor";
+import TransporterFollowUp from "@/components/stages/transporter-follow-up";
 import MaterialReceived from "@/components/stages/material-received";
 import QCRequirement from "@/components/stages/qc-requirement";
 import ReceiptInTally from "@/components/stages/receipt-in-tally";
@@ -24,6 +25,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "negotiation": Negotiation,
     "po-entry": POEntry,
     "follow-up-vendor": FollowUpVendor,
+    "transporter-follow-up": TransporterFollowUp,
     "material-received": MaterialReceived,
     "qc-requirement": QCRequirement,
     "receipt-in-tally": ReceiptInTally,

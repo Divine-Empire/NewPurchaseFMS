@@ -103,6 +103,19 @@ export default function Stage13() {
                         // Parse totals
                         const totalVal = parseFloat(String(row[13]).replace(/,/g, '')) || 0;
 
+                        // Helper to format date
+                        const toDate = (val: any) => {
+                            if (!val || String(val).trim() === "" || String(val).trim() === "-") return "-";
+                            try {
+                                const d = new Date(val);
+                                // Check if valid date
+                                if (isNaN(d.getTime())) return val;
+                                return format(d, "dd-MM-yyyy");
+                            } catch {
+                                return val;
+                            }
+                        };
+
                         return {
                             id: row[1], // Invoice No as ID
                             rowIndex: originalIndex,
@@ -111,24 +124,18 @@ export default function Stage13() {
                                 id: row[1],
                                 invoiceNo: row[1],      // B
                                 invoiceCopy: row[2],    // C
-                                invoiceDate: row[3],    // D
-                                hydraAmount: row[4],    // E
-                                labourAmount: row[5],   // F
-                                hemaliAmount: row[6],   // G
+                                invoiceDate: toDate(row[3]),    // D
                                 vendor: row[7],         // H
                                 item: row[8],           // I
                                 qty: row[9],            // J
-                                srn: row[10],           // K
-                                poNumber: row[11],      // L
                                 basicVal: row[12],      // M
                                 totalVal: row[13],      // N
                                 paymentTerms: row[14],  // O
                                 poCopy: row[15],        // P
-                                rejectQty: row[16],     // Q
 
                                 // Status Drivers
-                                plan1: row[17],         // R
-                                actual1: row[18],       // S
+                                plan1: toDate(row[17]),         // R
+                                actual1: toDate(row[18]),       // S
 
                                 // Defaults for Modal Calc (Presuming not in B-Q list but logic needs something)
                                 totalPaid: 0,
@@ -167,14 +174,6 @@ export default function Stage13() {
         { key: "totalVal", label: "Total Amount" },
         { key: "paymentTerms", label: "Terms" },
         { key: "plan1", label: "Due Date" }, // R
-
-        // Detailed Columns
-        { key: "rejectQty", label: "Reject Qty" },
-        { key: "hydraAmount", label: "Hydra Amt" },
-        { key: "labourAmount", label: "Labour Amt" },
-        { key: "hemaliAmount", label: "Hemali Amt" },
-        { key: "srn", label: "SRN" },
-        { key: "poNumber", label: "PO #" },
         { key: "basicVal", label: "Basic Val" },
         { key: "actual1", label: "Payment Date" }, // S (History)
     ];

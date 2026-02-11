@@ -220,9 +220,15 @@ export default function Stage5() {
 
     const initialData: Record<string, any> = {};
     selectedRecordIds.forEach((id) => {
+      const record = sheetRecords.find((r) => r.id === id);
+      const vendorData = record ? getVendorData(record) : { rate: 0 };
+      const rate = parseFloat(vendorData.rate) || 0;
+      const quantity = parseFloat(record?.data?.quantity) || 0;
+      const basicValue = (rate * quantity).toFixed(2);
+
       initialData[id] = {
-        basicValue: "",
-        totalWithTax: "",
+        basicValue: basicValue,
+        totalWithTax: basicValue, // Initially same until tax selected
         hsn: "",        // renamed from paymentTerms
         gst: "",        // new dropdown (replaces remarks)
       };
@@ -826,15 +832,47 @@ export default function Stage5() {
                         type="number"
                         step="0.01"
                         value={data.basicValue || ""}
-                        onChange={(e) =>
+                        readOnly
+                        className="bg-gray-100 cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor={`${recordId}-gst`}>
+                        GST <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={data.gst || ""}
+                        onValueChange={(val) => {
+                          const basic = parseFloat(data.basicValue) || 0;
+                          let taxRate = 0;
+                          if (val === "5%") taxRate = 0.05;
+                          if (val === "12%") taxRate = 0.12;
+                          if (val === "18%") taxRate = 0.18;
+                          if (val === "28%") taxRate = 0.28;
+
+                          const total = (basic + (basic * taxRate)).toFixed(2);
+
                           setBulkFormData((prev) => ({
                             ...prev,
-                            [recordId]: { ...prev[recordId], basicValue: e.target.value },
+                            [recordId]: {
+                              ...prev[recordId],
+                              gst: val,
+                              totalWithTax: total
+                            },
                           }))
-                        }
-                        required
-                        placeholder="0.00"
-                      />
+                        }}
+                      >
+                        <SelectTrigger id={`${recordId}-gst`}>
+                          <SelectValue placeholder="Select GST" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="5%">5%</SelectItem>
+                          <SelectItem value="12%">12%</SelectItem>
+                          <SelectItem value="18%">18%</SelectItem>
+                          <SelectItem value="28%">28%</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
@@ -846,14 +884,8 @@ export default function Stage5() {
                         type="number"
                         step="0.01"
                         value={data.totalWithTax || ""}
-                        onChange={(e) =>
-                          setBulkFormData((prev) => ({
-                            ...prev,
-                            [recordId]: { ...prev[recordId], totalWithTax: e.target.value },
-                          }))
-                        }
-                        required
-                        placeholder="0.00"
+                        readOnly
+                        className="bg-gray-100 cursor-not-allowed"
                       />
                     </div>
 
@@ -875,29 +907,7 @@ export default function Stage5() {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor={`${recordId}-gst`}>
-                        GST <span className="text-red-500">*</span>
-                      </Label>
-                      <Select
-                        value={data.gst || ""}
-                        onValueChange={(val) =>
-                          setBulkFormData((prev) => ({
-                            ...prev,
-                            [recordId]: { ...prev[recordId], gst: val },
-                          }))
-                        }
-                        required
-                      >
-                        <SelectTrigger id={`${recordId}-gst`}>
-                          <SelectValue placeholder="Select GST" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="5%">5%</SelectItem>
-                          <SelectItem value="18%">18%</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+
                   </div>
                 </div>
               );

@@ -23,6 +23,7 @@ export default function Sidebar() {
   // Helper to check if a page is allowed
   const isPageAllowed = (pageName: string) => {
     if (pageName === "Return Approval") return true; // Always show new stage
+    if (pageName === "Transporter Follow-Up") return true; // Always show new stage
     if (!pageAccess || pageAccess.length === 0) return true; // Show all if no restrictions
     return pageAccess.includes(pageName);
   };

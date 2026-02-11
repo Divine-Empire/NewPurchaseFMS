@@ -24,6 +24,21 @@ import { Badge } from "@/components/ui/badge";
 import { X, Loader2, PlusCircle, History as HistoryIcon, LayoutGrid, ClipboardList, FileText, Upload } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 export default function Stage1() {
   const {
@@ -118,6 +133,7 @@ export default function Stage1() {
                 itemName: row[4],
                 quantity: row[5],
                 itemCode: row[7],
+                uom: row[69] || "",
                 status: row[13] || "pending",
                 remarks: row[16],
                 attachment: row[17] || ""
@@ -154,6 +170,71 @@ export default function Stage1() {
   const pending = sheetRecords.filter((r) => r.status === "pending");
   const history = sheetRecords.filter((r) => r.status === "completed");
 
+  const Combobox = ({
+    options,
+    value,
+    onChange,
+    placeholder,
+    searchPlaceholder,
+    disabled,
+  }: {
+    options: string[];
+    value: string;
+    onChange: (value: string) => void;
+    placeholder: string;
+    searchPlaceholder: string;
+    disabled?: boolean;
+  }) => {
+    const [open, setOpen] = useState(false);
+
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className={cn("w-full justify-between font-normal", !value && "text-muted-foreground")}
+            disabled={disabled}
+          >
+            {value
+              ? options.find((option) => option === value) || value
+              : placeholder}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+          <Command>
+            <CommandInput placeholder={searchPlaceholder} />
+            <CommandList>
+              <CommandEmpty>No option found.</CommandEmpty>
+              <CommandGroup>
+                {options.map((option) => (
+                  <CommandItem
+                    key={option}
+                    value={option}
+                    onSelect={() => {
+                      onChange(option);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        value === option ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    {option}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    );
+  };
+
   // === Existing Indent Creation Modal ===
   const [open, setOpen] = useState(false);
   const [addItemOpen, setAddItemOpen] = useState(false);
@@ -170,6 +251,7 @@ export default function Stage1() {
     category: "",
     itemName: "",
     quantity: "",
+    uom: "",
     itemCode: "",
     attachment: null as File | null,
     existingAttachmentUrl: "",
@@ -184,6 +266,7 @@ export default function Stage1() {
       category: string;
       itemName: string;
       quantity: string;
+      uom: string;
       itemCode: string;
     }>,
   });
@@ -194,6 +277,7 @@ export default function Stage1() {
         category: "",
         itemName: "",
         quantity: "",
+        uom: "",
         itemCode: "",
       },
     ],
@@ -207,6 +291,8 @@ export default function Stage1() {
   const [createdByOptions, setCreatedByOptions] = useState<string[]>([]);
   // Fetch "Warehouse Location" options from Dropdown sheet column B
   const [warehouseOptions, setWarehouseOptions] = useState<string[]>([]);
+  // Fetch "UOM" options from Dropdown sheet column N (Index 13)
+  const [uomOptions, setUomOptions] = useState<string[]>([]);
   // Fetch dropdown data for Category (D), Item Name (E), Item Code (C)
   const [dropdownData, setDropdownData] = useState<Array<{ itemCode: string; category: string; itemName: string }>>([]);
 
@@ -231,6 +317,13 @@ export default function Stage1() {
             .map((row: any) => row[1]) // Column B is index 1
             .filter((val: any) => val && String(val).trim() !== "");
           setWarehouseOptions(warehouseOpts);
+
+          // Get UOM options from column N (Index 13)
+          const uoms = json.data
+            .slice(1)
+            .map((row: any) => row[13]) // Column N is index 13
+            .filter((val: any) => val && String(val).trim() !== "");
+          setUomOptions(uoms);
 
           // Get Category (D), Item Name (E), Item Code (C) from columns
           const itemData = json.data
@@ -284,26 +377,21 @@ export default function Stage1() {
         const indentNum = item.indentNumber || rootIndentNumber;
         // Column Order: Timestamp(A), Indent(B), CreatedBy(C), Category(D), ItemName(E), Qty(F), Warehouse(G), ItemCode(H), LeadTime(I)
 
-        return [
-          timestamp,        // A: Timestamp
-          indentNum,        // B: Indent Number
-          data.createdBy,   // C: Created By
-          item.category,    // D: Category
-          item.itemName,    // E: Item Name
-          item.quantity,    // F: Quantity
-          data.warehouseLocation, // G: Warehouse Location
-          item.itemCode || "", // H: Item Code
-          data.leadTime,    // I: Lead Time
-          "",               // J: Planned 1
-          "",               // K: Actual 1
-          "",               // L: Delay 1
-          "",               // M: Approved By
-          "",               // N: Status
-          "",               // O: Approved Qty
-          "",               // P: Vendor Type
-          "",               // Q: Remarks (Internal)
-          data.attachmentUrl || "" // R: Attachment URL
-        ];
+        const row = new Array(70).fill(""); // Ensure enough columns for UOM (Index 69)
+
+        row[0] = timestamp;
+        row[1] = indentNum;
+        row[2] = data.createdBy;
+        row[3] = item.category;
+        row[4] = item.itemName;
+        row[5] = item.quantity;
+        row[6] = data.warehouseLocation;
+        row[7] = item.itemCode || "";
+        row[8] = data.leadTime;
+        row[17] = data.attachmentUrl || "";
+        row[69] = item.uom || ""; // Column BR (Index 69)
+
+        return row;
       });
 
       console.log(`Submitting ${rows.length} rows to Sheet...`);
@@ -464,7 +552,7 @@ export default function Stage1() {
     if (
       itemForm.items.every(
         (item) =>
-          item.category && item.itemName && item.quantity && item.itemCode
+          item.category && item.itemName && item.quantity && item.itemCode && item.uom
       )
     ) {
       setFormData((prev) => ({
@@ -477,6 +565,7 @@ export default function Stage1() {
             category: "",
             itemName: "",
             quantity: "",
+            uom: "",
             itemCode: "",
           },
         ],
@@ -494,6 +583,7 @@ export default function Stage1() {
           category: "",
           itemName: "",
           quantity: "",
+          uom: "",
           itemCode: "",
         },
       ],
@@ -545,6 +635,7 @@ export default function Stage1() {
       category: record.data.category || "",
       itemName: record.data.itemName || "",
       quantity: record.data.quantity || "",
+      uom: record.data.uom || "",
       itemCode: record.data.itemCode || "",
       attachment: null,
       existingAttachmentUrl: record.data.attachment || "",
@@ -600,9 +691,9 @@ export default function Stage1() {
       }
 
       // Build the row data array - only update specific columns
-      const rowArray = new Array(20).fill("");
+      const rowArray = new Array(70).fill(""); // Increase size to accommodate UOM at index 69
 
-      // Update columns: C (index 2), D (index 3), E (index 4), F (index 5), G (index 6), H (index 7), I (index 8), R (index 17)
+      // Update columns: C (index 2), D (index 3), E (index 4), F (index 5), G (index 6), H (index 7), I (index 8), R (index 17), BR (index 69)
       rowArray[2] = editFormData.createdBy;      // Col C: Created By
       rowArray[3] = editFormData.category;        // Col D: Category
       rowArray[4] = editFormData.itemName;        // Col E: Item Name
@@ -611,6 +702,7 @@ export default function Stage1() {
       rowArray[7] = editFormData.itemCode;        // Col H: Item Code
       rowArray[8] = editFormData.leadTime;        // Col I: Lead Time
       rowArray[17] = finalAttachmentUrl;          // Col R: Attachment URL
+      rowArray[69] = editFormData.uom;            // Col BR: UOM
 
       const params = new URLSearchParams();
       params.append("action", "update");
@@ -727,6 +819,7 @@ export default function Stage1() {
                 { key: "leadTime", label: "Lead Time" },
                 { key: "itemName", label: "Item" },
                 { key: "quantity", label: "Qty" },
+                { key: "uom", label: "UOM" },
                 { key: "itemCode", label: "Item Code" },
                 { key: "status", label: "Status" },
                 { key: "attachment", label: "Attachment" },
@@ -751,6 +844,7 @@ export default function Stage1() {
                 { key: "leadTime", label: "Lead Time" },
                 { key: "itemName", label: "Item" },
                 { key: "quantity", label: "Qty" },
+                { key: "uom", label: "UOM" },
                 { key: "itemCode", label: "Item Code" },
                 { key: "status", label: "Status" },
                 { key: "attachment", label: "Attachment" },
@@ -917,7 +1011,7 @@ export default function Stage1() {
                               </Badge>
                             </div>
                             <div>
-                              <span>Qty: {item.quantity}</span>
+                              <span>Qty: {item.quantity} {item.uom}</span>
                             </div>
                             <div className="col-span-2">
                               <span>
@@ -1018,52 +1112,25 @@ export default function Stage1() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label>Category</Label>
-                      <Select
+                      <Combobox
+                        options={categoryOptions}
                         value={item.category}
-                        onValueChange={(val) =>
-                          updateItem(index, "category", val)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categoryOptions.map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {category}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={(val) => updateItem(index, "category", val)}
+                        placeholder="Select category"
+                        searchPlaceholder="Search category..."
+                      />
                     </div>
 
                     <div className="space-y-2">
                       <Label>Item Name</Label>
-                      <Select
+                      <Combobox
+                        options={item.category ? getItemsByCategory(item.category).map(i => i.itemName) : []}
                         value={item.itemName}
-                        onValueChange={(val) =>
-                          updateItem(index, "itemName", val)
-                        }
+                        onChange={(val) => updateItem(index, "itemName", val)}
+                        placeholder={item.category ? "Select item" : "Select category first"}
+                        searchPlaceholder="Search item..."
                         disabled={!item.category}
-                      >
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={
-                              item.category
-                                ? "Select item"
-                                : "Select category first"
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {item.category &&
-                            getItemsByCategory(item.category).map((dropdownItem) => (
-                              <SelectItem key={dropdownItem.itemName} value={dropdownItem.itemName}>
-                                {dropdownItem.itemName}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     </div>
 
                     <div className="space-y-2">
@@ -1078,6 +1145,27 @@ export default function Stage1() {
                         }
                         required
                       />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>UOM</Label>
+                      <Select
+                        value={item.uom}
+                        onValueChange={(val) =>
+                          updateItem(index, "uom", val)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {uomOptions.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
@@ -1192,9 +1280,10 @@ export default function Stage1() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Category</Label>
-                  <Select
+                  <Combobox
+                    options={categoryOptions}
                     value={editFormData.category}
-                    onValueChange={(val) =>
+                    onChange={(val) =>
                       setEditFormData({
                         ...editFormData,
                         category: val,
@@ -1202,25 +1291,17 @@ export default function Stage1() {
                         itemCode: ""
                       })
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categoryOptions.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select category"
+                    searchPlaceholder="Search category..."
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Item Name</Label>
-                  <Select
+                  <Combobox
+                    options={editFormData.category ? getItemsByCategory(editFormData.category).map(i => i.itemName) : []}
                     value={editFormData.itemName}
-                    onValueChange={(val) => {
+                    onChange={(val) => {
                       const selectedItem = dropdownData.find(
                         d => d.category === editFormData.category && d.itemName === val
                       );
@@ -1230,20 +1311,10 @@ export default function Stage1() {
                         itemCode: selectedItem?.itemCode || ""
                       });
                     }}
+                    placeholder={editFormData.category ? "Select item" : "Select category first"}
+                    searchPlaceholder="Search item..."
                     disabled={!editFormData.category}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={editFormData.category ? "Select item" : "Select category first"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {editFormData.category &&
-                        getItemsByCategory(editFormData.category).map((item) => (
-                          <SelectItem key={item.itemName} value={item.itemName}>
-                            {item.itemName}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
               </div>
 
@@ -1260,6 +1331,27 @@ export default function Stage1() {
                     }
                     required
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>UOM</Label>
+                  <Select
+                    value={editFormData.uom}
+                    onValueChange={(val) =>
+                      setEditFormData({ ...editFormData, uom: val })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select UOM" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uomOptions.map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">

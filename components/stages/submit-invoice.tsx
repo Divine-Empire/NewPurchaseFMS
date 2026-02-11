@@ -61,7 +61,7 @@ export default function Stage10() {
 
   const [formData, setFormData] = useState({
     handoverBy: "",
-    receivedBy: "",
+    submitToHeadOffice: "",
     invoiceSubmissionDate: new Date(),
     invoiceNumber: "",
     vendorName: "",
@@ -132,25 +132,25 @@ export default function Stage10() {
               data: {
                 indentNumber: row[1],
                 createdBy: row[2],
-                category: row[3],
-                itemName: row[4],
-                quantity: row[5],
+                category: fmsRow[3] || row[3], // D: Category (Indent Lift)
+                itemName: fmsRow[4] || row[4], // E: Item Name (Indent Lift)
+                quantity: row[25], // Z: Qty (Receiving Accounts)
                 warehouse: row[6],
                 deliveryDate: row[7],
 
                 // Stage 6 (9-24)
-                poNumber: row[12],
+                poNumber: fmsRow[54], // BC: PO Number (Indent Lift)
 
                 // Stage 7 (25-39)
-                billAttachment: row[35],
-                invoiceNumber: row[31],
-                invoiceDate: row[30],
+                billAttachment: row[18], // S: Bill Attachment (Receiving Accounts)
+                invoiceNumber: row[24], // Y: Invoice Number (Receiving Accounts)
+                invoiceDate: row[23], // X: Invoice Date (Receiving Accounts)
                 srnNumber: row[32],
                 receiptLiftNumber: row[28],
 
                 // Stage 8 (40-49)
-                qcStatus: row[44],
-                qcDate: row[43],
+                qcStatus: row[39], // AN: QC Status (Receiving Accounts)
+                qcDate: row[38], // AM: QC Date (Receiving Accounts)
 
                 // Stage 9 (44-49)
                 tallyDoneBy: row[47],
@@ -161,15 +161,16 @@ export default function Stage10() {
                 plan9: row[50],   // Plan Date
                 actual9: row[51], // Actual Date
                 handoverBy: row[53],
-                receivedBy: row[54],
+                submitToHeadOffice: row[54], // Index 54 = BC
                 invoiceSubmissionDate: row[55],
 
                 // FMS Data
                 approvedBy: fmsRow[12],
-                basicValue: fmsRow[53],
-                totalWithTax: fmsRow[54],
+                basicValue: fmsRow[55], // BD: Basic Value (Indent Lift)
+                totalWithTax: fmsRow[56], // BE: Total Value (Indent Lift)
                 poCopy: fmsRow[56],
-                ...vendorDetails
+                ...vendorDetails,
+                vendorName: row[3], // D: Vendor Name (Receiving Accounts)
               }
             };
           });
@@ -228,14 +229,13 @@ export default function Stage10() {
     const record = sheetRecords.find((r) => r.id === recordId);
     if (!record) return;
 
-    const vendor = getVendorData(record);
     const invoiceNumber = record.data?.invoiceNumber || "-";
-    const vendorName = vendor.name !== "-" ? vendor.name : (record.data?.vendorName || "-");
+    const vendorName = record.data?.vendorName || "-";
 
     setSelectedRecordId(recordId);
     setFormData({
       handoverBy: "",
-      receivedBy: "",
+      submitToHeadOffice: "",
       invoiceSubmissionDate: new Date(),
       invoiceNumber,
       vendorName,
@@ -272,8 +272,8 @@ export default function Stage10() {
       // 57: Handover By
       rowArray[53] = formData.handoverBy;
 
-      // 58: Received By
-      rowArray[54] = formData.receivedBy;
+      // 58: Submit Invoice to Head Office (BC -> Index 54)
+      rowArray[54] = formData.submitToHeadOffice;
 
       // 59: Invoice Submission Date (from Form)
       rowArray[55] = subDate;
@@ -303,24 +303,14 @@ export default function Stage10() {
     }
   };
 
-  const getVendorData = (record: any) => {
-    const data = record?.data;
-    if (!data) return { name: "-", rate: "-", terms: "-" };
-    const selectedId = data.selectedVendor || "vendor1";
-    const idx = parseInt(selectedId.replace("vendor", ""), 10) || 1;
-    return {
-      name: data[`vendor${idx}Name`] || "-",
-      rate: data[`vendor${idx}Rate`] || "-",
-      terms: data[`vendor${idx}Terms`] || "-",
-    };
-  };
+
 
   const safeValue = (record: any, key: string) => {
     try {
       const data = record?.data;
       if (!data) return "-";
 
-      const vendor = getVendorData(record);
+      if (key === "vendorName") return data.vendorName || "-";
 
       if (key === "billAttachment") {
         const url = data.billAttachment;
@@ -338,8 +328,6 @@ export default function Stage10() {
         );
       }
 
-      if (key === "vendorName") return vendor.name;
-
       const val = data[key];
       if (val === undefined || val === null || String(val).trim() === "") return "-";
 
@@ -355,6 +343,7 @@ export default function Stage10() {
 
   const isFormValid =
     formData.handoverBy &&
+    formData.submitToHeadOffice &&
     formData.invoiceNumber &&
     formData.vendorName;
 
@@ -490,32 +479,64 @@ export default function Stage10() {
         <DialogContent className="max-w-3xl">
           <DialogHeader><DialogTitle>Submit Invoice</DialogTitle></DialogHeader>
           <div className="py-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
-              <div><Label>Invoice #</Label><p className="font-mono">{formData.invoiceNumber}</p></div>
-              <div><Label>Vendor</Label><p>{formData.vendorName}</p></div>
+            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100 mb-6">
+              <div>
+                <Label className="text-xs font-semibold uppercase text-gray-500 mb-1 block">Invoice #</Label>
+                <p className="font-mono font-medium text-lg">{formData.invoiceNumber}</p>
+              </div>
+              <div>
+                <Label className="text-xs font-semibold uppercase text-gray-500 mb-1 block">Vendor</Label>
+                <p className="font-medium text-lg text-gray-900">{formData.vendorName}</p>
+              </div>
             </div>
-            <div>
-              <Label>Hardcopy Docs submitted to Acc *</Label>
-              <Select value={formData.handoverBy} onValueChange={(v) => setFormData({ ...formData, handoverBy: v })}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Yes">Yes</SelectItem>
-                  <SelectItem value="No">No</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Submission Date *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full text-left font-normal">
-                    {formData.invoiceSubmissionDate ? format(formData.invoiceSubmissionDate, "PPP") : "Pick date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar mode="single" selected={formData.invoiceSubmissionDate} onSelect={(d) => d && setFormData({ ...formData, invoiceSubmissionDate: d })} initialFocus />
-                </PopoverContent>
-              </Popover>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              <div className="space-y-2">
+                <Label className="font-medium text-gray-700">Hardcopy Submitted? *</Label>
+                <Select value={formData.handoverBy} onValueChange={(v) => setFormData({ ...formData, handoverBy: v })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-gray-500">Confirm physical docs handover to Accounts</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="font-medium text-gray-700">Invoice to Head Office? *</Label>
+                <Select value={formData.submitToHeadOffice} onValueChange={(v) => setFormData({ ...formData, submitToHeadOffice: v })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-gray-500">Confirm invoice submission to Head Office</p>
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label className="font-medium text-gray-700">Submission Date *</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full text-left font-normal border-gray-300">
+                      {formData.invoiceSubmissionDate ? format(formData.invoiceSubmissionDate, "PPP") : "Pick date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.invoiceSubmissionDate}
+                      onSelect={(d) => d && setFormData({ ...formData, invoiceSubmissionDate: d })}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
           </div>
           <DialogFooter>

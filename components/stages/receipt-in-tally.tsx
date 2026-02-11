@@ -23,6 +23,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 
 
@@ -36,11 +43,105 @@ export default function Stage9() {
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [accountantList, setAccountantList] = useState<string[]>([]);
 
-  const [bulkData, setBulkData] = useState({
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({
     doneBy: "",
     submissionDate: new Date().toISOString().split("T")[0],
     remarks: "",
+    checkedStatus: "",
+    checkedByAcc: "",
   });
+
+  // Open Modal with Prefill
+  const handleOpenModal = () => {
+    if (selectedRows.size !== 1) return;
+    const id = Array.from(selectedRows)[0];
+    const rec = sheetRecords.find((r) => r.id === id);
+    if (!rec) return;
+
+    const hasCheckedBy = !!rec.data.checkedByAcc && rec.data.checkedByAcc !== "-";
+    const doneByExists = !!rec.data.doneBy && rec.data.doneBy !== "-";
+
+    let status = "";
+    if (rec.data.checkedStatus && rec.data.checkedStatus !== "-") {
+      status = rec.data.checkedStatus;
+    } else if (doneByExists) {
+      status = "No";
+    }
+
+    setFormData({
+      doneBy: doneByExists ? rec.data.doneBy : "",
+      submissionDate: new Date().toISOString().split("T")[0],
+      remarks: (rec.data.remarks && rec.data.remarks !== "-") ? rec.data.remarks : "",
+      checkedStatus: status,
+      checkedByAcc: hasCheckedBy ? rec.data.checkedByAcc : "",
+    });
+    setIsModalOpen(true);
+  };
+
+  // Submit Handler
+  const handleSubmit = async () => {
+    if (selectedRows.size !== 1 || !formData.doneBy || !formData.checkedStatus || !SHEET_API_URL) return;
+    if (formData.checkedStatus === "Yes" && !formData.checkedByAcc) return;
+
+    const id = Array.from(selectedRows)[0];
+    const rec = sheetRecords.find((r) => r.id === id);
+    if (!rec) return;
+
+    setIsSubmitting(true);
+    try {
+      const now = new Date();
+      const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+
+      const rowArray = new Array(84).fill("");
+
+      // AS (44): DO NOT TOUCH - leave as "" so backend skips it
+      // AU (46): DO NOT TOUCH - leave as "" so backend skips it
+
+      // AT (45): Actual 8 - ONLY write if Checked = Yes
+      if (formData.checkedStatus === "Yes") {
+        rowArray[45] = todayStr;
+      }
+      // If No, rowArray[45] stays "" so backend does not touch AT
+
+      // AV (47): Done By
+      rowArray[47] = formData.doneBy;
+      // AW (48): Submission Date
+      rowArray[48] = formData.submissionDate;
+      // AX (49): Remarks
+      rowArray[49] = formData.remarks;
+
+      // CE (82): Checked Status (Yes/No)
+      rowArray[82] = formData.checkedStatus;
+
+      // CF (83): Checked By (only if Yes)
+      rowArray[83] = formData.checkedStatus === "Yes" ? formData.checkedByAcc : "";
+
+      const params = new URLSearchParams();
+      params.append("action", "update");
+      params.append("sheetName", "RECEIVING-ACCOUNTS");
+      params.append("rowIndex", rec.rowIndex.toString());
+      params.append("rowData", JSON.stringify(rowArray));
+
+      const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
+      const json = await res.json();
+
+      if (json.success) {
+        toast.success(formData.checkedStatus === "Yes" ? "Tally Entry Completed!" : "Tally Entry Saved (Pending)");
+        setIsModalOpen(false);
+        setSelectedRows(new Set());
+        fetchData();
+      } else {
+        toast.error("Failed to update entry");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Submission failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const fetchData = async () => {
     if (!SHEET_API_URL) return;
@@ -73,8 +174,6 @@ export default function Stage9() {
             const fmsRow = fmsMap.get(indentNo) || [];
 
             // Stage 9 Logic
-            // 50: Plan 8
-            // 51: Actual 8
             const hasPlan8 = !!row[44] && String(row[44]).trim() !== "";
             const hasActual8 = !!row[45] && String(row[45]).trim() !== "";
 
@@ -159,11 +258,13 @@ export default function Stage9() {
                 remarks7: row[33] || "",
 
                 // Tally Entry Plan/Actual
-                plan8: row[50],
-                actual8: row[51],
-                doneBy: row[52],
-                submissionDate: row[53],
-                remarks: row[54],
+                plan8: row[44],                  // AS: Plan 8
+                actual8: row[45],                // AT: Actual 8 (Completion Date)
+                doneBy: row[47],                 // AV: Done By
+                submissionDate: row[48],         // AW: Submission Date
+                remarks: row[49],                // AX: Remarks
+                checkedStatus: row[82],          // CE: Checked Status (Yes/No)
+                checkedByAcc: row[83],           // CF: Checked By (Name)
 
                 // Fetch from INDENT-LIFT (fmsRow)
                 // Created By: Col C (Index 2)
@@ -256,6 +357,8 @@ export default function Stage9() {
     { key: "submissionDate", label: "Tally Date" },
     { key: "tallyStatus", label: "Tally Status" },
     { key: "remarks", label: "Tally Remarks" },
+    { key: "checkedStatus", label: "Checked" },
+    { key: "checkedByAcc", label: "Checked By" },
   ];
 
   const [selectedPendingColumns, setSelectedPendingColumns] = useState<string[]>(
@@ -281,72 +384,6 @@ export default function Stage9() {
     } else {
       setSelectedRows(new Set(pending.map((r: any) => r.id)));
     }
-  };
-
-  // Bulk submit
-  const handleBulkSubmit = async () => {
-    if (!bulkData.doneBy || selectedRows.size === 0 || !SHEET_API_URL) return;
-
-    setIsSubmitting(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    const selectedList = Array.from(selectedRows);
-
-    // Process one by one for reliability in this loop
-    for (const id of selectedList) {
-      const rec = sheetRecords.find((r) => r.id === id);
-      if (!rec) continue;
-
-      try {
-        const now = new Date();
-        const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-
-        // Sparse Row Update - indices 50-54 for lift-accounts
-        // Array size 55 to cover up to index 54
-        const rowArray = new Array(55).fill("");
-
-        // 50: Plan 8 (Preserve)
-        rowArray[44] = rec.data.plan8 || "";
-        // 51: Actual 8 (Today)
-        rowArray[45] = todayStr;
-        rowArray[46] = "";
-        // 52: Done By
-        rowArray[47] = bulkData.doneBy;
-        // 53: Submission Date
-        rowArray[48] = bulkData.submissionDate;
-        // 54: Remarks
-        rowArray[49] = bulkData.remarks;
-
-        const params = new URLSearchParams();
-        params.append("action", "update");
-        params.append("sheetName", "RECEIVING-ACCOUNTS");
-        params.append("rowIndex", rec.rowIndex.toString());
-        params.append("rowData", JSON.stringify(rowArray));
-
-        const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
-        const json = await res.json();
-        if (json.success) successCount++;
-        else failCount++;
-      } catch (e) {
-        failCount++;
-      }
-    }
-
-    if (successCount > 0) {
-      toast.success(`Successfully recorded ${successCount} Tally entries.`);
-      setSelectedRows(new Set());
-      setBulkData({
-        doneBy: "",
-        submissionDate: new Date().toISOString().split("T")[0],
-        remarks: "",
-      });
-      fetchData();
-    }
-    if (failCount > 0) {
-      toast.error(`Failed to record ${failCount} entries.`);
-    }
-    setIsSubmitting(false);
   };
 
   // Get vendor data helper
@@ -520,72 +557,115 @@ export default function Stage9() {
           </div>
         </div>
 
-        {/* Bulk Tally Controls */}
-        {selectedRows.size > 0 && (
-          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Checkbox checked={true} disabled />
-                <span className="font-medium">{selectedRows.size} selected</span>
-              </div>
+        {/* Tally Entry Button */}
+        {selectedRows.size === 1 && (
+          <div className="mt-4 flex items-center gap-4">
+            <Button onClick={handleOpenModal} className="bg-blue-600 hover:bg-blue-700 text-white">
+              Tally Entry
+            </Button>
+            <span className="text-sm text-gray-500">
+              1 item selected
+            </span>
+          </div>
+        )}
+      </div>
 
-              <div className="flex items-center gap-2">
-                <Label className="whitespace-nowrap">Done By *</Label>
+      {/* Modal Form */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tally Entry</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+
+            {/* Done By */}
+            <div className="grid gap-2">
+              <Label>Done By *</Label>
+              <Select
+                value={formData.doneBy}
+                onValueChange={(v) => setFormData({ ...formData, doneBy: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Accountant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountantList.map((n) => (
+                    <SelectItem key={n} value={n}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date */}
+            <div className="grid gap-2">
+              <Label>Date</Label>
+              <Input
+                type="date"
+                value={formData.submissionDate}
+                onChange={(e) => setFormData({ ...formData, submissionDate: e.target.value })}
+              />
+            </div>
+
+            {/* Remarks */}
+            <div className="grid gap-2">
+              <Label>Remarks</Label>
+              <Input
+                value={formData.remarks}
+                onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                placeholder="Optional..."
+              />
+            </div>
+
+            {/* Checked Status */}
+            <div className="grid gap-2">
+              <Label>Checked *</Label>
+              <Select
+                value={formData.checkedStatus}
+                onValueChange={(v) => setFormData({ ...formData, checkedStatus: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Checked By (Conditional) */}
+            {formData.checkedStatus === "Yes" && (
+              <div className="grid gap-2">
+                <Label>Checked By *</Label>
                 <Select
-                  value={bulkData.doneBy}
-                  onValueChange={(v) => setBulkData({ ...bulkData, doneBy: v })}
+                  value={formData.checkedByAcc}
+                  onValueChange={(v) => setFormData({ ...formData, checkedByAcc: v })}
                 >
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Select" />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Accountant" />
                   </SelectTrigger>
                   <SelectContent>
                     {accountantList.map((n) => (
-                      <SelectItem key={n} value={n}>
-                        {n}
-                      </SelectItem>
+                      <SelectItem key={n} value={n}>{n}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+            )}
 
-              <div className="flex items-center gap-2">
-                <Label>Date</Label>
-                <Input
-                  type="date"
-                  value={bulkData.submissionDate}
-                  onChange={(e) =>
-                    setBulkData({ ...bulkData, submissionDate: e.target.value })
-                  }
-                  className="w-40"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Label>Remarks</Label>
-                <Input
-                  value={bulkData.remarks}
-                  onChange={(e) =>
-                    setBulkData({ ...bulkData, remarks: e.target.value })
-                  }
-                  placeholder="Optional..."
-                  className="w-64"
-                />
-              </div>
-
-              <Button onClick={handleBulkSubmit} disabled={!bulkData.doneBy || isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Done"
-                )}
-              </Button>
-            </div>
           </div>
-        )}
-      </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={!formData.doneBy || !formData.checkedStatus || (formData.checkedStatus === "Yes" && !formData.checkedByAcc) || isSubmitting}
+            >
+              {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="grid w-full grid-cols-2">

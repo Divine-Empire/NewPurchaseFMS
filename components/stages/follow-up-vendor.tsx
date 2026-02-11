@@ -399,6 +399,7 @@ export default function Stage6() {
                 poNo: row[61],           // BJ
                 nextFollow: row[62],     // BK
                 remarks: row[63],        // BL
+                finalVendorName: row[48] || "", // AW: Final Vendor Name
 
                 // Lifting Data (Indices 64-72)
                 liftingData: {
@@ -450,7 +451,7 @@ export default function Stage6() {
     const selectedId = record.data.selectedVendor || "vendor1";
     const idx = parseInt(selectedId.replace("vendor", ""), 10) || 1;
     return {
-      name: record.data[`vendor${idx}Name`] || "-",
+      name: record.data.finalVendorName || "-",
       rate: record.data[`vendor${idx}Rate`],
       terms: record.data[`vendor${idx}Terms`],
       delivery: record.data[`vendor${idx}DeliveryDate`],
@@ -711,7 +712,7 @@ export default function Stage6() {
         const toYMD = (dateStr: string) => {
           if (!dateStr) return "";
           const d = new Date(dateStr);
-          if (isNaN(d.getTime())) return dateStr; // Return as-is if invalid
+          if (isNaN(d.getTime())) return ""; // Return empty if invalid, do not return raw string
           const yyyy = d.getFullYear();
           const mm = String(d.getMonth() + 1).padStart(2, "0");
           const dd = String(d.getDate()).padStart(2, "0");
@@ -793,8 +794,8 @@ export default function Stage6() {
           receivingAccountRow[17] = lift.paymentStatus || "";                  // 17/R: Payment Status
           receivingAccountRow[18] = biltyLink;                                 // 18/S: Bilty Copy
 
-          // Index 75 (Column BX): Expected Delivery Date
-          receivingAccountRow[75] = expectedDeliveryDateFormatted;
+          // Index 74 (Column BW): Expected Delivery Date
+          receivingAccountRow[74] = expectedDeliveryDateFormatted;
         }
 
         // Insert at next available position

@@ -1466,7 +1466,7 @@ export default function Stage7() {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Hamali Amount</Label>
+                                        <Label>Auto Charge</Label>
                                         <Input
                                             type="number"
                                             step="0.01"

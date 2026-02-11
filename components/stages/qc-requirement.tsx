@@ -43,6 +43,7 @@ export default function Stage8() {
   const [srnDetailsOpen, setSrnDetailsOpen] = useState(false);
   const [srnDetailsData, setSrnDetailsData] = useState<{ serialNo: number; srn: string; image: string }[]>([]);
   const [qcEngineerList, setQcEngineerList] = useState<string[]>([]);
+  const [partialQCRecords, setPartialQCRecords] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
     qcBy: "",
@@ -61,20 +62,62 @@ export default function Stage8() {
     if (!SHEET_API_URL) return;
     setIsLoading(true);
     try {
+      // 1. Fetch Dropdown for QC Engineers
+      const dropRes = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
+      const dropJson = await dropRes.json();
+      if (dropJson.success && Array.isArray(dropJson.data)) {
+        const qcList = dropJson.data.slice(1)
+          .map((row: any) => String(row[11] || "").trim())
+          .filter((q: string) => q !== "");
+        setQcEngineerList(qcList);
+      }
+
+      // 2. Fetch Partial QC Data
+      const partialRes = await fetch(`${SHEET_API_URL}?sheet=${encodeURIComponent("Partial QC")}&action=getAll`);
+      const partialJson = await partialRes.json();
+      let partialMap = new Map<string, number>(); // Indent Number -> Total Approved Qty
+
+      if (partialJson.success && Array.isArray(partialJson.data)) {
+        const pRows = partialJson.data.slice(1); // Skip header
+        pRows.forEach((r: any) => {
+          const indentNo = String(r[0] || "").trim();
+          const approvedQty = parseFloat(r[9] || "0"); // Column J (Index 9)
+          if (indentNo) {
+            const current = partialMap.get(indentNo) || 0;
+            partialMap.set(indentNo, current + approvedQty);
+          }
+        });
+        setPartialQCRecords(pRows);
+      }
+
+      // 3. Fetch Receiving Accounts Data
       const res = await fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`);
       const json = await res.json();
+
       if (json.success && Array.isArray(json.data)) {
         const rows = json.data.slice(6)
           .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
           .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
           .map(({ row, originalIndex }: any) => {
-            // Stage 8 Status Logic based on User Request:
-            // Pending: Plan 7 (Index 40) exists AND Actual 7 (Index 41) does not exist
-            // Completed: Plan 7 (Index 40) exists AND Actual 7 (Index 41) exists
-            const hasPlan7 = !!row[34] && String(row[34]).trim() !== "" && String(row[34]).trim() !== "-";
-            const hasActual7 = !!row[35] && String(row[35]).trim() !== "" && String(row[35]).trim() !== "-";
+            const indentNo = String(row[1] || "").trim();
+            const receivedQty = parseFloat(row[25] || "0"); // Z: Received Qty
+            const totalApproved = partialMap.get(indentNo) || 0;
+            const pendingQty = Math.max(0, receivedQty - totalApproved);
 
-            const status = (hasPlan7 && hasActual7) ? "completed" : (hasPlan7 && !hasActual7 ? "pending" : "not_ready");
+            // Status Logic:
+            // Completed: If Column AJ (Index 35) has a date
+            // Pending: If Plan 7 exists AND Column AJ is empty
+            const hasPlan7 = !!row[34] && String(row[34]).trim() !== "" && String(row[34]).trim() !== "-";
+            const completionDate = row[35]; // AJ: Completion Date (Index 35)
+            const hasCompletionDate = !!completionDate && String(completionDate).trim() !== "" && String(completionDate).trim() !== "-";
+
+            let status = "not_ready";
+            // Status is completed if explicitly marked in sheet OR if pending qty is zero
+            if (hasCompletionDate || pendingQty <= 0) {
+              status = "completed";
+            } else if (hasPlan7) {
+              status = "pending";
+            }
 
             return {
               id: row[1] || `row-${originalIndex}`,
@@ -127,20 +170,15 @@ export default function Stage8() {
                 rejectPhoto: row[42],            // AQ (Updated)
                 rejectRemarks: row[43],          // AR (Updated)
                 srnJson: row[74] || "",          // BW: SRN Details JSON
+
+                // Partial QC Fields
+                totalApproved: totalApproved,
+                pendingQty: pendingQty,
+                completionDate: completionDate // BM
               }
             };
           });
         setSheetRecords(rows);
-      }
-
-      // Fetch Dropdown sheet for QC Engineers (Column L / Index 11)
-      const dropRes = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
-      const dropJson = await dropRes.json();
-      if (dropJson.success && Array.isArray(dropJson.data)) {
-        const qcList = dropJson.data.slice(1)
-          .map((row: any) => String(row[11] || "").trim())
-          .filter((q: string) => q !== "");
-        setQcEngineerList(qcList);
       }
 
     } catch (e) {
@@ -153,25 +191,57 @@ export default function Stage8() {
     fetchData();
   }, []);
 
-  // Fixed columns for both Pending and History tables
-  const FIXED_COLUMNS = [
+  // Fixed columns for Pending table
+  const PENDING_COLUMNS = [
     { key: "indentNumber", label: "Indent #" },
     { key: "vendorName", label: "Vendor" },
     { key: "invoiceNumber", label: "Invoice #" },
     { key: "itemName", label: "Item" },
     { key: "receivedQty", label: "Received Qty" },
+    { key: "totalApproved", label: "Total Approved" },
+    { key: "pendingQty", label: "Pending Qty" },
   ];
 
   // Filtering
   const pending = sheetRecords.filter((r) => r.status === "pending");
-  const completed = sheetRecords.filter((r) => r.status === "completed");
+
+  // History Logic: Show ALL records from "Partial QC" sheet
+  // We join Partial QC rows with the parent details from sheetRecords
+  const history = partialQCRecords
+    .filter(pRow => pRow[0] && String(pRow[0]).trim() !== "") // Filter out empty rows
+    .map((pRow, idx) => {
+      const indentNo = String(pRow[0] || "").trim();
+      const parent = sheetRecords.find(r => r.data.indentNumber === indentNo);
+
+      // If parent not found (should be rare), we return basic info
+      const parentData = parent ? parent.data : {};
+
+      return {
+        id: `partial-${indentNo}-${idx}`,
+        data: {
+          indentNumber: indentNo,
+          vendorName: parentData.vendorName || "-",
+          invoiceNumber: parentData.invoiceNumber || "-",
+          itemName: parentData.itemName || "-",
+          // Partial QC Specifics
+          qcDate: pRow[3] || "-",          // D: QC Date
+          qcBy: pRow[2] || "-",            // C: QC Done By
+          approvedQty: pRow[9] || "0",     // J: Approved Qty
+          qcStatus: pRow[4] || "-",        // E: QC Status
+          remarks: pRow[5] || "-",         // F: Remarks
+        }
+      };
+    }).reverse(); // Show newest first
 
   const HISTORY_COLUMNS = [
     { key: "indentNumber", label: "Indent #" },
     { key: "vendorName", label: "Vendor" },
-    { key: "invoiceNumber", label: "Invoice #" },
     { key: "itemName", label: "Item" },
-    { key: "receivedQty", label: "Approved Qty" }, // Renamed from "Received Qty"
+    { key: "qcDate", label: "QC Date" },
+    { key: "qcBy", label: "QC By" },
+    { key: "qcStatus", label: "Status" },
+    { key: "approvedQty", label: "Approved Qty" },
+    { key: "remarks", label: "Remarks" },
   ];
 
 
@@ -218,7 +288,7 @@ export default function Stage8() {
         else throw new Error("Photo upload failed");
       }
 
-      // Process SRN entries for approved status
+      // Process SRN entries for approved/partial status
       let approvedQtyJson = "";
       if (formData.qcStatus === "approved" && formData.srnEntries.length > 0) {
         const srnData = [];
@@ -247,49 +317,103 @@ export default function Stage8() {
         approvedQtyJson = JSON.stringify(srnData);
       }
 
-      // Prepare Date Strings in M/D/YYYY format strictly
       const now = new Date();
       const mDYYYY = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-
       let qcDateFormatted = "";
       if (formData.qcDate) {
         const d = new Date(formData.qcDate);
         qcDateFormatted = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
       }
 
-      // Sparse Row Update based on USER Request
-      const rowArray = new Array(80).fill("");
-      rowArray[35] = mDYYYY;                  // AJ: Actual QC Date (Status trigger)
-      // AK (36) is skipped as requested
-      rowArray[37] = formData.qcBy;           // AL: QC Done By
-      rowArray[38] = qcDateFormatted;         // AM: QC Date
-      rowArray[39] = formData.qcStatus;       // AN: QC Status
-      rowArray[40] = formData.qcRemarks;      // AO: QC Remarks
+      // ------------------------------------------------------------------
+      // PATH 1: REJECTED STATUS -> Update RECEIVING-ACCOUNTS directly
+      // ------------------------------------------------------------------
+      if (formData.qcStatus === "rejected") {
+        const raRowArray = new Array(65).fill("");
 
-      rowArray[73] = formData.returnStatus;   // BV: Return Status
-      rowArray[41] = formData.rejectQty;      // AP: Reject Qty (Updated)
-      rowArray[42] = photoUrl || "";          // AQ: Reject Photo (Updated)
-      rowArray[43] = formData.rejectRemarks;  // AR: Reject Remarks (Updated)
+        // Fill Rejection Details
+        raRowArray[35] = mDYYYY;                  // AJ: Actual QC Date (Completion Date)
+        raRowArray[37] = formData.qcBy;           // AL: QC Done By
+        raRowArray[38] = qcDateFormatted;         // AM: QC Date
+        raRowArray[39] = "rejected";              // AN: QC Status
+        raRowArray[40] = formData.qcRemarks;      // AO: QC Remarks
+        raRowArray[41] = formData.rejectQty;      // AP: Reject Qty
+        raRowArray[42] = photoUrl;                // AQ: Reject Photo
+        raRowArray[43] = formData.rejectRemarks;  // AR: Reject Remarks
 
-      // Column BW (index 74): Approved Qty with SRN and Image JSON
-      rowArray[74] = approvedQtyJson;
+        const updateParams = new URLSearchParams();
+        updateParams.append("action", "update");
+        updateParams.append("sheetName", "RECEIVING-ACCOUNTS");
+        updateParams.append("rowIndex", rec.rowIndex.toString());
+        updateParams.append("rowData", JSON.stringify(raRowArray));
 
-      const params = new URLSearchParams();
-      params.append("action", "update");
-      params.append("sheetName", "RECEIVING-ACCOUNTS");
-      params.append("rowIndex", rec.rowIndex.toString());
-      params.append("rowData", JSON.stringify(rowArray));
-
-      const updateRes = await fetch(SHEET_API_URL, { method: "POST", body: params });
-      const updateJson = await updateRes.json();
-
-      if (updateJson.success) {
-        toast.success("QC Record updated successfully!");
-        setOpen(false);
-        fetchData();
-      } else {
-        throw new Error(updateJson.error || "Update failed");
+        await fetch(SHEET_API_URL, { method: "POST", body: updateParams });
+        toast.success("QC Rejection Recorded! Moved to History.");
       }
+
+      // ------------------------------------------------------------------
+      // PATH 2: APPROVED STATUS -> Append to Partial QC Sheet
+      // ------------------------------------------------------------------
+      else if (formData.qcStatus === "approved") {
+        // 1. Prepare Partial QC Row
+        const partialQCRow = new Array(11).fill("");
+        partialQCRow[0] = rec.data.indentNumber; // A: Indent No
+        partialQCRow[1] = mDYYYY;                // B: Actual2 (Current Date)
+        partialQCRow[2] = formData.qcBy;         // C: QC Done By
+        partialQCRow[3] = formData.qcDate;       // D: QC Date
+        partialQCRow[4] = "approved";            // E: QC Status
+        partialQCRow[5] = formData.qcRemarks;    // F: QC Remarks
+        partialQCRow[6] = "";                    // G: Reject Qty (Empty)
+        partialQCRow[7] = "";                    // H: Reject Photo (Empty)
+        partialQCRow[8] = "";                    // I: Reject Remarks (Empty)
+        partialQCRow[9] = formData.approvedQty;  // J: Approved Qty
+        partialQCRow[10] = approvedQtyJson;      // K: QC-Approved-Qty with S No. and Img
+
+        // 2. Append to Partial QC Sheet
+        const appendParams = new URLSearchParams();
+        appendParams.append("action", "batchInsert");
+        appendParams.append("sheetName", "Partial QC");
+        appendParams.append("rowsData", JSON.stringify([partialQCRow]));
+        appendParams.append("startRow", "2");
+
+        const appendRes = await fetch(SHEET_API_URL, { method: "POST", body: appendParams });
+        const appendJson = await appendRes.json();
+
+        if (!appendJson.success) {
+          throw new Error(appendJson.message || "Failed to append to Partial QC sheet");
+        }
+
+        // 3. Check for Full Completion (Update Receiving Accounts if needed)
+        const currentApproved = parseFloat(formData.approvedQty || "0");
+        const totalApprovedSoFar = (rec.data.totalApproved || 0) + currentApproved;
+        const receivedQty = parseFloat(rec.data.receivedQty || "0");
+
+        if (totalApprovedSoFar >= receivedQty) {
+          // Update RECEIVING-ACCOUNTS Column AJ (Index 35) to mark completion
+          const raRowArray = new Array(65).fill("");
+
+          raRowArray[35] = mDYYYY;                  // AJ: Actual QC Date (Completion Date)
+          raRowArray[37] = formData.qcBy;           // AL: QC Done By
+          raRowArray[38] = qcDateFormatted;         // AM: QC Date
+          raRowArray[39] = "approved";              // AN: QC Status
+          raRowArray[40] = formData.qcRemarks;      // AO: QC Remarks
+
+          const updateParams = new URLSearchParams();
+          updateParams.append("action", "update");
+          updateParams.append("sheetName", "RECEIVING-ACCOUNTS");
+          updateParams.append("rowIndex", rec.rowIndex.toString());
+          updateParams.append("rowData", JSON.stringify(raRowArray));
+
+          await fetch(SHEET_API_URL, { method: "POST", body: updateParams });
+          toast.success("QC Full Approval Recorded! Moved to History.");
+        } else {
+          toast.success("Partial QC Recorded.");
+        }
+      }
+
+      setOpen(false);
+      fetchData();
+
     } catch (error: any) {
       toast.error(error.message || "Submission failed");
     } finally {
@@ -427,7 +551,7 @@ export default function Stage8() {
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
             <TabsTrigger value="history">
-              History ({completed.length})
+              History ({history.length})
             </TabsTrigger>
           </TabsList>
 
@@ -447,7 +571,7 @@ export default function Stage8() {
                         ID
                       </TableHead>
                       <TableHead className="bg-white z-10">Actions</TableHead>
-                      {FIXED_COLUMNS.map((col) => (
+                      {PENDING_COLUMNS.map((col) => (
                         <TableHead key={col.key}>{col.label}</TableHead>
                       ))}
                     </TableRow>
@@ -467,7 +591,7 @@ export default function Stage8() {
                             Perform QC
                           </Button>
                         </TableCell>
-                        {FIXED_COLUMNS.map((col) => (
+                        {PENDING_COLUMNS.map((col) => (
                           <TableCell key={col.key}>
                             {safeValue(record, col.key)}
                           </TableCell>
@@ -482,49 +606,28 @@ export default function Stage8() {
 
           {/* History */}
           <TabsContent value="history" className="mt-6">
-            {completed.length === 0 ? (
+            {history.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
-                <p className="text-lg">No QC history</p>
+                <p className="text-lg">No QC history found</p>
               </div>
             ) : (
               <div className="border rounded-lg overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="sticky left-0 bg-white z-10">
-                        ID
-                      </TableHead>
                       {HISTORY_COLUMNS.map((col) => (
                         <TableHead key={col.key}>{col.label}</TableHead>
                       ))}
-                      <TableHead>SRN Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {completed.map((record: any) => (
+                    {history.map((record: any) => (
                       <TableRow key={record.id}>
-                        <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">
-                          {record.id || "-"}
-                        </TableCell>
                         {HISTORY_COLUMNS.map((col) => (
                           <TableCell key={col.key}>
-                            {safeValue(record, col.key, true)}
+                            {record.data[col.key]}
                           </TableCell>
                         ))}
-                        <TableCell>
-                          {record.data?.srnJson && record.data.srnJson.trim() !== "" ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs"
-                              onClick={() => openSrnDetails(record.data.srnJson)}
-                            >
-                              View SRN
-                            </Button>
-                          ) : (
-                            <span className="text-gray-400 text-xs">-</span>
-                          )}
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -534,7 +637,6 @@ export default function Stage8() {
           </TabsContent>
         </Tabs>
       )}
-
       {/* Modal */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
@@ -567,9 +669,9 @@ export default function Stage8() {
                           {n}
                         </SelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    </SelectContent >
+                  </Select >
+                </div >
                 <div>
                   <Label>QC Date *</Label>
                   <input
@@ -604,43 +706,46 @@ export default function Stage8() {
                     <SelectContent>
                       <SelectItem value="approved">Approved</SelectItem>
                       <SelectItem value="rejected">Rejected</SelectItem>
+
                     </SelectContent>
                   </Select>
                 </div>
 
                 {/* Approved Qty - appears when status is approved */}
-                {formData.qcStatus === "approved" && (
-                  <div>
-                    <Label>Approved Qty *</Label>
-                    <input
-                      type="number"
-                      min="1"
-                      max={sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty || 999}
-                      className="w-full px-3 py-2 border rounded"
-                      placeholder={`Max: ${sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty || "-"}`}
-                      value={formData.approvedQty}
-                      onChange={(e) => {
-                        const qty = parseInt(e.target.value) || 0;
-                        const maxQty = parseInt(sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty) || 999;
-                        const validQty = Math.min(Math.max(0, qty), maxQty);
+                {
+                  formData.qcStatus === "approved" && (
+                    <div>
+                      <Label>Approved Qty *</Label>
+                      <input
+                        type="number"
+                        min="1"
+                        max={sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty || 999}
+                        className="w-full px-3 py-2 border rounded"
+                        placeholder={`Max: ${sheetRecords.find(r => r.id === selectedRecordId)?.data?.pendingQty || "-"}`}
+                        value={formData.approvedQty}
+                        onChange={(e) => {
+                          const qty = parseInt(e.target.value) || 0;
+                          const maxQty = parseInt(sheetRecords.find(r => r.id === selectedRecordId)?.data?.pendingQty) || 999;
+                          const validQty = Math.min(Math.max(0, qty), maxQty);
 
-                        // Generate SRN entries based on qty
-                        const newEntries = Array.from({ length: validQty }, (_, i) => ({
-                          serialNo: i + 1,
-                          srn: formData.srnEntries[i]?.srn || "",
-                          image: formData.srnEntries[i]?.image || null,
-                        }));
+                          // Generate SRN entries based on qty
+                          const newEntries = Array.from({ length: validQty }, (_, i) => ({
+                            serialNo: i + 1,
+                            srn: formData.srnEntries[i]?.srn || "",
+                            image: formData.srnEntries[i]?.image || null,
+                          }));
 
-                        setFormData({
-                          ...formData,
-                          approvedQty: e.target.value,
-                          srnEntries: newEntries,
-                        });
-                      }}
-                      required
-                    />
-                  </div>
-                )}
+                          setFormData({
+                            ...formData,
+                            approvedQty: e.target.value,
+                            srnEntries: newEntries,
+                          });
+                        }}
+                        required
+                      />
+                    </div>
+                  )
+                }
 
                 <div>
                   <Label>Return Status *</Label>
@@ -659,152 +764,156 @@ export default function Stage8() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              </div >
 
               {/* SRN Entries Section - appears when approved qty > 0 */}
-              {formData.qcStatus === "approved" && formData.srnEntries.length > 0 && (
-                <div className="p-4 border rounded bg-green-50 space-y-3">
-                  <h3 className="font-semibold text-green-800">
-                    SRN Details ({formData.srnEntries.length} items)
-                  </h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-600 sticky top-0 bg-green-50 py-1">
-                      <div className="col-span-1">S.No</div>
-                      <div className="col-span-5">SRN *</div>
-                      <div className="col-span-6">Image</div>
-                    </div>
-                    {formData.srnEntries.map((entry, idx) => (
-                      <div key={entry.serialNo} className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-1 text-sm font-medium text-gray-700">
-                          {entry.serialNo}
-                        </div>
-                        <div className="col-span-5">
-                          <input
-                            type="text"
-                            className="w-full px-2 py-1.5 border rounded text-sm"
-                            placeholder="Enter SRN..."
-                            value={entry.srn}
-                            onChange={(e) => {
-                              const updated = [...formData.srnEntries];
-                              updated[idx] = { ...updated[idx], srn: e.target.value };
-                              setFormData({ ...formData, srnEntries: updated });
-                            }}
-                            required
-                          />
-                        </div>
-                        <div className="col-span-6 flex items-center gap-2">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            id={`srn-image-${idx}`}
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0] || null;
-                              const updated = [...formData.srnEntries];
-                              updated[idx] = { ...updated[idx], image: file };
-                              setFormData({ ...formData, srnEntries: updated });
-                            }}
-                          />
-                          <label
-                            htmlFor={`srn-image-${idx}`}
-                            className="flex-1 px-2 py-1.5 border rounded bg-white cursor-pointer hover:bg-gray-50 text-sm text-center"
-                          >
-                            {entry.image ? (
-                              <span className="text-green-600 truncate block">
-                                {entry.image.name}
-                              </span>
-                            ) : (
-                              <span className="text-gray-500">Upload</span>
-                            )}
-                          </label>
-                          {entry.image && (
-                            <button
-                              type="button"
-                              className="text-red-500 hover:text-red-700 text-xs"
-                              onClick={() => {
+              {
+                formData.qcStatus === "approved" && formData.srnEntries.length > 0 && (
+                  <div className="p-4 border rounded bg-green-50 space-y-3">
+                    <h3 className="font-semibold text-green-800">
+                      SRN Details ({formData.srnEntries.length} items)
+                    </h3>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-600 sticky top-0 bg-green-50 py-1">
+                        <div className="col-span-1">S.No</div>
+                        <div className="col-span-5">SRN *</div>
+                        <div className="col-span-6">Image</div>
+                      </div>
+                      {formData.srnEntries.map((entry, idx) => (
+                        <div key={entry.serialNo} className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-1 text-sm font-medium text-gray-700">
+                            {entry.serialNo}
+                          </div>
+                          <div className="col-span-5">
+                            <input
+                              type="text"
+                              className="w-full px-2 py-1.5 border rounded text-sm"
+                              placeholder="Enter SRN..."
+                              value={entry.srn}
+                              onChange={(e) => {
                                 const updated = [...formData.srnEntries];
-                                updated[idx] = { ...updated[idx], image: null };
+                                updated[idx] = { ...updated[idx], srn: e.target.value };
                                 setFormData({ ...formData, srnEntries: updated });
                               }}
+                              required
+                            />
+                          </div>
+                          <div className="col-span-6 flex items-center gap-2">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              id={`srn-image-${idx}`}
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                const updated = [...formData.srnEntries];
+                                updated[idx] = { ...updated[idx], image: file };
+                                setFormData({ ...formData, srnEntries: updated });
+                              }}
+                            />
+                            <label
+                              htmlFor={`srn-image-${idx}`}
+                              className="flex-1 px-2 py-1.5 border rounded bg-white cursor-pointer hover:bg-gray-50 text-sm text-center"
                             >
-                              ✕
-                            </button>
-                          )}
+                              {entry.image ? (
+                                <span className="text-green-600 truncate block">
+                                  {entry.image.name}
+                                </span>
+                              ) : (
+                                <span className="text-gray-500">Upload</span>
+                              )}
+                            </label>
+                            {entry.image && (
+                              <button
+                                type="button"
+                                className="text-red-500 hover:text-red-700 text-xs"
+                                onClick={() => {
+                                  const updated = [...formData.srnEntries];
+                                  updated[idx] = { ...updated[idx], image: null };
+                                  setFormData({ ...formData, srnEntries: updated });
+                                }}
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              }
 
-              {formData.qcStatus === "rejected" && (
-                <div className="p-4 border rounded bg-red-50 space-y-3">
-                  <h3 className="font-semibold text-red-800">
-                    Rejection Details
-                  </h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Reject Qty *</Label>
-                      <input
-                        type="number"
-                        className="w-full px-3 py-2 border rounded"
-                        placeholder="0"
-                        value={formData.rejectQty}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            rejectQty: e.target.value,
-                          })
-                        }
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label>Reject Photo</Label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            setFormData({ ...formData, rejectPhoto: file });
+              {
+                formData.qcStatus === "rejected" && (
+                  <div className="p-4 border rounded bg-red-50 space-y-3">
+                    <h3 className="font-semibold text-red-800">
+                      Rejection Details
+                    </h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label>Reject Qty *</Label>
+                        <input
+                          type="number"
+                          className="w-full px-3 py-2 border rounded"
+                          placeholder="0"
+                          value={formData.rejectQty}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              rejectQty: e.target.value,
+                            })
                           }
-                        }}
-                        className="hidden"
-                        id="reject-photo"
-                      />
-                      <label
-                        htmlFor="reject-photo"
-                        className="flex items-center justify-center w-full p-2 border rounded cursor-pointer hover:bg-gray-50"
-                      >
-                        {formData.rejectPhoto ? (
-                          <span className="text-green-600">
-                            {" "}
-                            Photo Selected
-                          </span>
-                        ) : (
-                          <span> Upload Photo</span>
-                        )}
-                      </label>
-                    </div>
-                    <div className="col-span-2">
-                      <Label>Reject Remarks *</Label>
-                      <textarea
-                        className="w-full px-3 py-2 border rounded resize-none"
-                        rows={3}
-                        value={formData.rejectRemarks}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            rejectRemarks: e.target.value,
-                          })
-                        }
-                        required
-                      />
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label>Reject Photo</Label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setFormData({ ...formData, rejectPhoto: file });
+                            }
+                          }}
+                          className="hidden"
+                          id="reject-photo"
+                        />
+                        <label
+                          htmlFor="reject-photo"
+                          className="flex items-center justify-center w-full p-2 border rounded cursor-pointer hover:bg-gray-50"
+                        >
+                          {formData.rejectPhoto ? (
+                            <span className="text-green-600">
+                              {" "}
+                              Photo Selected
+                            </span>
+                          ) : (
+                            <span> Upload Photo</span>
+                          )}
+                        </label>
+                      </div>
+                      <div className="col-span-2">
+                        <Label>Reject Remarks *</Label>
+                        <textarea
+                          className="w-full px-3 py-2 border rounded resize-none"
+                          rows={3}
+                          value={formData.rejectRemarks}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              rejectRemarks: e.target.value,
+                            })
+                          }
+                          required
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )
+              }
 
               <div>
                 <Label>QC Remarks</Label>
@@ -817,8 +926,8 @@ export default function Stage8() {
                   }
                 />
               </div>
-            </form>
-          </div>
+            </form >
+          </div >
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>
               Cancel
@@ -834,11 +943,11 @@ export default function Stage8() {
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DialogContent >
+      </Dialog >
 
       {/* SRN Details Modal */}
-      <Dialog open={srnDetailsOpen} onOpenChange={setSrnDetailsOpen}>
+      < Dialog open={srnDetailsOpen} onOpenChange={setSrnDetailsOpen} >
         <DialogContent className="max-w-2xl max-h-[80vh]">
           <DialogHeader>
             <DialogTitle>SRN Details</DialogTitle>
@@ -887,7 +996,7 @@ export default function Stage8() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
-    </div>
+      </Dialog >
+    </div >
   );
 }

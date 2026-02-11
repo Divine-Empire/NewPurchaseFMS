@@ -33,6 +33,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
             if (currentStage) {
                 const hasAccess =
                     currentStage.name === "Return Approval" ||
+                    currentStage.name === "Transporter Follow-Up" ||
                     (!pageAccess || pageAccess.length === 0 || pageAccess.includes(currentStage.name));
 
                 if (!hasAccess) {
