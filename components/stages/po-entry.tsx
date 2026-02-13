@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Upload, X, Shield, ShieldCheck, CheckCircle2, Loader2, ClipboardList, History } from "lucide-react";
+import { FileText, Upload, X, Shield, ShieldCheck, CheckCircle2, Loader2, ClipboardList, History, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Popover,
@@ -193,7 +193,23 @@ export default function Stage5() {
     fetchData();
   }, []);
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      // Safe checks for vendor data
+      const vName = r.data.selectedVendor ? (r.data[`${r.data.selectedVendor}Name`] || "") : "";
+
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        vName.toLowerCase().includes(searchLower) ||
+        vName.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Search
+      );
+    });
   const completed = sheetRecords.filter((r) => r.status === "completed");
 
   const baseColumns = [
@@ -484,6 +500,21 @@ export default function Stage5() {
             <Label className="text-sm font-medium">Show Columns:</Label>
             <ColumnSelector />
           </div>
+        </div>
+      </div>
+
+
+
+      {/* Search Filter */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item Name, Vendor..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
         </div>
       </div>
 
@@ -986,6 +1017,6 @@ export default function Stage5() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }

@@ -49,6 +49,7 @@ import {
   Send,
   ClipboardList,
   History,
+  Search,
 } from "lucide-react";
 import {
   Tabs,
@@ -232,9 +233,23 @@ export default function Stage2() {
       }
     };
     fetchApprovers();
+    fetchApprovers();
   }, []);
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.quantity?.toString().toLowerCase().includes(searchLower) ||
+        r.data.vendorType?.toLowerCase().includes(searchLower)
+      );
+    });
+
   const history = sheetRecords.filter((r) => r.status === "completed");
 
   const columns = [
@@ -497,6 +512,19 @@ export default function Stage2() {
               <ColumnSelector />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Search Filter */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item Name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
         </div>
       </div>
 

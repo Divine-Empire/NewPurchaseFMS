@@ -47,6 +47,7 @@ import {
   Tag,
   ClipboardList,
   History,
+  Search,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -103,7 +104,22 @@ export default function Stage3() {
     vendor3Attachment: null as File | null,
   });
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendor1Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendor2Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendorType?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
   const completed = sheetRecords.filter((r) => r.status === "completed");
 
   const formatDate = (date?: Date | string | null) => {
@@ -253,6 +269,9 @@ export default function Stage3() {
                 vendor3WarrantyFrom: row[42],
                 vendor3WarrantyTo: row[43],
                 vendor3Attachment: row[44],
+
+                // Stage 5 Data (PO Number) for Search
+                poNumber: row[54], // Maps to BC (Index 54)
               }
             };
           });
@@ -563,6 +582,21 @@ export default function Stage3() {
             <Label className="text-sm font-medium">Show Columns:</Label>
             <ColumnSelector />
           </div>
+        </div>
+      </div>
+
+
+
+      {/* Search Filter */}
+      <div className="mb-6 flex items-center gap-4 z-10 relative">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item Name, Vendor..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white shadow-sm border-slate-200 w-full"
+          />
         </div>
       </div>
 
@@ -1031,6 +1065,6 @@ export default function Stage3() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }

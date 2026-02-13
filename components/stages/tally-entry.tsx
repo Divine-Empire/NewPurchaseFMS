@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText } from "lucide-react";
+import { Loader2, FileText, Search, RefreshCw } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -41,7 +41,9 @@ export default function Stage9() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+  const [searchTerm, setSearchTerm] = useState("");
   const [accountantList, setAccountantList] = useState<string[]>([]);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,13 +55,26 @@ export default function Stage9() {
     checkedByAcc: "",
   });
 
-  // Open Modal with Prefill
+  // Open Modal with Bulk Validation
   const handleOpenModal = () => {
-    if (selectedRows.size !== 1) return;
-    const id = Array.from(selectedRows)[0];
-    const rec = sheetRecords.find((r) => r.id === id);
-    if (!rec) return;
+    if (selectedRows.size === 0) return;
+    setBulkError(null);
 
+    const selectedIds = Array.from(selectedRows);
+    const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
+
+    if (selectedRecords.length === 0) return;
+
+    // Validate Invoice Numbers
+    const firstInvoice = selectedRecords[0].data.invoiceNumber;
+    const isConsistent = selectedRecords.every(r => r.data.invoiceNumber === firstInvoice);
+
+    if (!isConsistent) {
+      setBulkError("Selected items have different Invoice Numbers. Cannot submit together.");
+    }
+
+    // Prefill from the first record
+    const rec = selectedRecords[0];
     const hasCheckedBy = !!rec.data.checkedByAcc && rec.data.checkedByAcc !== "-";
     const doneByExists = !!rec.data.doneBy && rec.data.doneBy !== "-";
 
@@ -82,59 +97,57 @@ export default function Stage9() {
 
   // Submit Handler
   const handleSubmit = async () => {
-    if (selectedRows.size !== 1 || !formData.doneBy || !formData.checkedStatus || !SHEET_API_URL) return;
+    if (selectedRows.size === 0 || !formData.doneBy || !formData.checkedStatus || !SHEET_API_URL) return;
     if (formData.checkedStatus === "Yes" && !formData.checkedByAcc) return;
-
-    const id = Array.from(selectedRows)[0];
-    const rec = sheetRecords.find((r) => r.id === id);
-    if (!rec) return;
+    if (bulkError) return; // Prevent submit if there's an error
 
     setIsSubmitting(true);
     try {
       const now = new Date();
       const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+      const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
 
-      const rowArray = new Array(84).fill("");
+      // Process sequentially
+      for (const rec of selectedRecords) {
+        const rowArray = new Array(84).fill("");
 
-      // AS (44): DO NOT TOUCH - leave as "" so backend skips it
-      // AU (46): DO NOT TOUCH - leave as "" so backend skips it
+        // AJ (35): Plan2 (Leave)
+        // AK (36): Actual2 - Write if Checked=Yes
+        if (formData.checkedStatus === "Yes") {
+          rowArray[36] = todayStr;
+        }
 
-      // AT (45): Actual 8 - ONLY write if Checked = Yes
-      if (formData.checkedStatus === "Yes") {
-        rowArray[45] = todayStr;
+        // AL (37): Delay2 (Formula - Skip)
+
+        // AM (38): Done By
+        rowArray[38] = formData.doneBy;
+
+        // AN (39): Done Date
+        rowArray[39] = formData.submissionDate;
+
+        // AO (40): Remarks
+        rowArray[40] = formData.remarks;
+
+        // AP (41): Checked Status
+        rowArray[41] = formData.checkedStatus;
+
+        // AQ (42): Checked By Acc
+        rowArray[42] = formData.checkedStatus === "Yes" ? formData.checkedByAcc : "";
+
+        const params = new URLSearchParams();
+        params.append("action", "update");
+        params.append("sheetName", "RECEIVING-ACCOUNTS");
+        params.append("rowIndex", rec.rowIndex.toString());
+        params.append("rowData", JSON.stringify(rowArray));
+
+        await fetch(SHEET_API_URL, { method: "POST", body: params });
       }
-      // If No, rowArray[45] stays "" so backend does not touch AT
 
-      // AV (47): Done By
-      rowArray[47] = formData.doneBy;
-      // AW (48): Submission Date
-      rowArray[48] = formData.submissionDate;
-      // AX (49): Remarks
-      rowArray[49] = formData.remarks;
+      toast.success(formData.checkedStatus === "Yes" ? "Tally Entry Completed (Bulk)!" : "Tally Entry Saved (Bulk Pending)");
+      setIsModalOpen(false);
+      setSelectedRows(new Set());
+      fetchData();
 
-      // CE (82): Checked Status (Yes/No)
-      rowArray[82] = formData.checkedStatus;
-
-      // CF (83): Checked By (only if Yes)
-      rowArray[83] = formData.checkedStatus === "Yes" ? formData.checkedByAcc : "";
-
-      const params = new URLSearchParams();
-      params.append("action", "update");
-      params.append("sheetName", "RECEIVING-ACCOUNTS");
-      params.append("rowIndex", rec.rowIndex.toString());
-      params.append("rowData", JSON.stringify(rowArray));
-
-      const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
-      const json = await res.json();
-
-      if (json.success) {
-        toast.success(formData.checkedStatus === "Yes" ? "Tally Entry Completed!" : "Tally Entry Saved (Pending)");
-        setIsModalOpen(false);
-        setSelectedRows(new Set());
-        fetchData();
-      } else {
-        toast.error("Failed to update entry");
-      }
     } catch (e) {
       console.error(e);
       toast.error("Submission failed");
@@ -174,8 +187,9 @@ export default function Stage9() {
             const fmsRow = fmsMap.get(indentNo) || [];
 
             // Stage 9 Logic
-            const hasPlan8 = !!row[44] && String(row[44]).trim() !== "";
-            const hasActual8 = !!row[45] && String(row[45]).trim() !== "";
+            // Stage 9 Logic: Check AJ (35) and AK (36)
+            const hasPlan8 = !!row[35] && String(row[35]).trim() !== "";
+            const hasActual8 = !!row[36] && String(row[36]).trim() !== "";
 
             let status = "not_ready";
             if (hasPlan8 && !hasActual8) {
@@ -257,14 +271,15 @@ export default function Stage9() {
                 paymentAmountHamali: row[32] || "",
                 remarks7: row[33] || "",
 
-                // Tally Entry Plan/Actual
-                plan8: row[44],                  // AS: Plan 8
-                actual8: row[45],                // AT: Actual 8 (Completion Date)
-                doneBy: row[47],                 // AV: Done By
-                submissionDate: row[48],         // AW: Submission Date
-                remarks: row[49],                // AX: Remarks
-                checkedStatus: row[82],          // CE: Checked Status (Yes/No)
-                checkedByAcc: row[83],           // CF: Checked By (Name)
+                // Tally Entry Plan/Actual (Dimensions AJ-AQ -> 35-42)
+                plan8: row[35],                  // AJ: Plan 8
+                actual8: row[36],                // AK: Actual 8 (Completion Date)
+                // delay8: row[37],              // AL: Delay 8
+                doneBy: row[38],                 // AM: Done By
+                doneDate: row[39],               // AN: Done Date
+                remarks: row[40],                // AO: Remarks
+                checkedStatus: row[41],          // AP: Checked Status (Yes/No)
+                checkedByAcc: row[42],           // AQ: Checked By (Name)
 
                 // Fetch from INDENT-LIFT (fmsRow)
                 // Created By: Col C (Index 2)
@@ -312,7 +327,19 @@ export default function Stage9() {
   }, []);
 
   // Filter records
-  const pending = sheetRecords.filter((r: any) => r.status === "pending");
+  const pending = sheetRecords
+    .filter((r: any) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendorName?.toLowerCase().includes(searchLower) ||
+        r.data.vendorName?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
   const completed = sheetRecords.filter((r: any) => r.status === "completed");
 
   // Pending columns
@@ -354,7 +381,7 @@ export default function Stage9() {
     { key: "plan8", label: "Plan 8" },
     { key: "actual8", label: "Actual 8" },
     { key: "doneBy", label: "Tally Done By" },
-    { key: "submissionDate", label: "Tally Date" },
+    { key: "doneDate", label: "Tally Date" },
     { key: "tallyStatus", label: "Tally Status" },
     { key: "remarks", label: "Tally Remarks" },
     { key: "checkedStatus", label: "Checked" },
@@ -558,24 +585,51 @@ export default function Stage9() {
         </div>
 
         {/* Tally Entry Button */}
-        {selectedRows.size === 1 && (
+        {selectedRows.size >= 1 && (
           <div className="mt-4 flex items-center gap-4">
             <Button onClick={handleOpenModal} className="bg-blue-600 hover:bg-blue-700 text-white">
               Tally Entry
             </Button>
             <span className="text-sm text-gray-500">
-              1 item selected
+              {selectedRows.size} item(s) selected
             </span>
           </div>
         )}
+      </div>
+
+      {/* Search Filter */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item Name, Vendor, PO, Invoice..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
+        </div>
+        <Button variant="outline" onClick={fetchData} disabled={isLoading}>
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4" />
+          )}
+        </Button>
       </div>
 
       {/* Modal Form */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Tally Entry</DialogTitle>
+            <DialogTitle>Tally Entry ({selectedRows.size} Selected)</DialogTitle>
           </DialogHeader>
+
+          {bulkError && (
+            <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 border border-red-200">
+              {bulkError}
+            </div>
+          )}
+
           <div className="grid gap-4 py-4">
 
             {/* Done By */}
@@ -658,7 +712,7 @@ export default function Stage9() {
             <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
             <Button
               onClick={handleSubmit}
-              disabled={!formData.doneBy || !formData.checkedStatus || (formData.checkedStatus === "Yes" && !formData.checkedByAcc) || isSubmitting}
+              disabled={!formData.doneBy || !formData.checkedStatus || (formData.checkedStatus === "Yes" && !formData.checkedByAcc) || isSubmitting || !!bulkError}
             >
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Save

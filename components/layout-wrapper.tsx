@@ -31,10 +31,13 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
 
             // If we found a matching stage definition
             if (currentStage) {
+                // Check if user has access (or if stage is public/whitelisted)
                 const hasAccess =
                     currentStage.name === "Return Approval" ||
                     currentStage.name === "Transporter Follow-Up" ||
-                    (!pageAccess || pageAccess.length === 0 || pageAccess.includes(currentStage.name));
+                    currentStage.name === "Submit Invoice (HO)" ||
+                    (!pageAccess || pageAccess.length === 0) ||
+                    pageAccess.includes(currentStage.name);
 
                 if (!hasAccess) {
                     console.warn(`Access denied to ${currentStage.name}. Redirecting to dashboard.`);

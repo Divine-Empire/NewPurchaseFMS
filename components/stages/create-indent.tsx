@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { X, Loader2, PlusCircle, History as HistoryIcon, LayoutGrid, ClipboardList, FileText, Upload } from "lucide-react";
+import { X, Loader2, PlusCircle, History as HistoryIcon, LayoutGrid, ClipboardList, FileText, Upload, Search } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Check, ChevronsUpDown } from "lucide-react";
@@ -167,7 +167,22 @@ export default function Stage1() {
     fetchData();
   }, []);
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.quantity?.toString().toLowerCase().includes(searchLower) ||
+        // r.data.poNumber?.toLowerCase().includes(searchLower) || // Not available in Stage 1
+        // r.data.invoiceNumber?.toLowerCase().includes(searchLower) || // Not available in Stage 1
+        r.data.vendorType?.toLowerCase().includes(searchLower)
+      );
+    });
+
   const history = sheetRecords.filter((r) => r.status === "completed");
 
   const Combobox = ({
@@ -762,6 +777,19 @@ export default function Stage1() {
               </Button>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Search Filter */}
+      <div className="mb-6 flex items-center gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item Name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
         </div>
       </div>
 

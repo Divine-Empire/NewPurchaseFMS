@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText, Upload, RefreshCw, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, FileText, Upload, RefreshCw, CheckCircle, XCircle, Search } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -40,6 +40,7 @@ export default function Stage12() {
   const [open, setOpen] = useState(false);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [formData, setFormData] = useState({
     returnedQty: "",
@@ -81,8 +82,8 @@ export default function Stage12() {
       }
 
       if (accJson.success && Array.isArray(accJson.data)) {
-        const rows = accJson.data.slice(7)
-          .map((row: any, i: number) => ({ row, originalIndex: i + 8 }))
+        const rows = accJson.data.slice(6)
+          .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
           .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
           .map(({ row, originalIndex }: any) => {
             const indentNo = String(row[1]).trim();
@@ -96,10 +97,10 @@ export default function Stage12() {
             else if (selectedVendor === "Vendor 3") vendorName = fmsRow[37];
 
             // --- STATUS LOGIC ---
-            // Pending: Plan 6 (Index 63) NOT Empty AND Actual 6 (Index 64) Empty
-            // History: Plan 6 (Index 63) NOT Empty AND Actual 6 (Index 64) NOT Empty
-            const plan6 = row[63];
-            const actual6 = row[64];
+            // Pending: Plan 6 (Index 71) NOT Empty AND Actual 6 (Index 72) Empty
+            // History: Plan 6 (Index 71) NOT Empty AND Actual 6 (Index 72) NOT Empty
+            const plan6 = row[71]; // BT
+            const actual6 = row[72]; // BU
 
             const hasPlan = !!plan6 && String(plan6).trim() !== "" && String(plan6).trim() !== "-";
             const hasActual = !!actual6 && String(actual6).trim() !== "" && String(actual6).trim() !== "-";
@@ -120,24 +121,25 @@ export default function Stage12() {
                 indentNumber: row[1],
                 category: row[2], // Assuming Category
                 itemName: row[7], // Col H (Index 7)
-                rejectedQty: row[41], // Col AP (Index 41) - Rejected Qty
+                rejectedQty: row[68], // Col BQ (Index 68) - Rejected Qty
                 vendor: row[3], // Col D (Index 3) - Vendor from RECEIVING-ACCOUNTS
                 invoiceNumber: row[24], // Col Y (Index 24) - Invoice Number
 
-                // QC Reject Qty (Column AP = index 41)
-                rejectQty: row[41],
+                // QC Reject Qty (Column BQ = index 68)
+                rejectQty: row[68],
 
-                // Stage 12 Fields
-                plan6: row[63],
-                actual6: row[64],
-                delay6: row[65],
-                returnedQty: row[66],
-                returnRate: row[67],
-                returnAmount: row[68],
-                returnReason: row[69],
-                returnStatus: row[70],
-                returnItemImage: row[71],
-                creditNoteImage: row[72],
+                // Stage 12 Fields (BT-CC -> 71-80)
+                poNumber: row[4], // Col E (Index 4)
+                plan6: row[71],   // BT
+                actual6: row[72], // BU
+                delay6: row[73],  // BV
+                returnedQty: row[74], // BW
+                returnRate: row[75],  // BX
+                returnAmount: row[76], // BY
+                returnReason: row[77], // BZ
+                returnStatus: row[78], // CA
+                returnItemImage: row[79], // CB
+                creditNoteImage: row[80], // CC
               }
             };
           });
@@ -157,7 +159,20 @@ export default function Stage12() {
   // -----------------------------------------------------------------
   // FILTER RECORDS
   // -----------------------------------------------------------------
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  // FILTER RECORDS
+  // -----------------------------------------------------------------
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendor?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
   const completed = sheetRecords.filter((r) => r.status === "history");
 
   const pendingColumns = [
@@ -269,20 +284,34 @@ export default function Stage12() {
       // Create sparse row (DO NOT copy original row)
       const rowArray = new Array(80).fill("");
 
-      // Pad array
-      while (rowArray.length <= 75) rowArray.push("");
+      // Pad array (Need up to index 80)
+      while (rowArray.length <= 80) rowArray.push("");
 
-      // Map to Indices 64-72
+      // Map to Indices 61-70 (BJ-BS) // Correct Range?
+      // Wait, User said: Column-BT to CC for purchase return
+      // BT = 71
+      // CC = 80
+      // Range: 71-80
 
-      rowArray[64] = dateStr; // 64: Actual 6
-      rowArray[65] = ""; // 65: Delay 6 (Empty)
-      rowArray[66] = formData.returnedQty; // 66: Return Qty
-      rowArray[67] = formData.returnRate; // 67: Return Rate
-      rowArray[68] = formData.returnAmount; // 68: Total Return Amount
-      rowArray[69] = formData.returnReason; // 69: Return Reason
-      rowArray[70] = formData.returnStatus; // 70: Return Status
-      rowArray[71] = itemImgUrl || "";  // 71: Return Item Image
-      rowArray[72] = creditImgUrl || "";  // 72: Credit Note Image
+      // 71 (BT): Plan 6
+      // 72 (BU): Actual 6 (Return Date)
+      rowArray[72] = dateStr;
+      // 73 (BV): Delay 6
+      rowArray[73] = "";
+      // 74 (BW): Return Qty
+      rowArray[74] = formData.returnedQty;
+      // 75 (BX): Return Rate
+      rowArray[75] = formData.returnRate;
+      // 76 (BY): Return Amount
+      rowArray[76] = formData.returnAmount;
+      // 77 (BZ): Return Reason
+      rowArray[77] = formData.returnReason;
+      // 78 (CA): Return Status
+      rowArray[78] = formData.returnStatus;
+      // 79 (CB): Return Item Image
+      rowArray[79] = itemImgUrl || "";
+      // 80 (CC): Credit Note Image
+      rowArray[80] = creditImgUrl || "";
 
       const params = new URLSearchParams();
       params.append("action", "update");
@@ -315,14 +344,17 @@ export default function Stage12() {
     formData.returnStatus &&
     parseFloat(formData.returnedQty) <= originalQty;
 
-  const safeValue = (val: any, isImage = false) => {
+  const safeValue = (val: any, key: string = "") => {
     if (!val || val === "-" || val === "") return "-";
-    if (isImage) {
+    if (key.includes("Image")) {
       return (
         <a href={String(val)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
           <FileText className="w-3 h-3" /> View
         </a>
       );
+    }
+    if ((key.includes("plan") || key.includes("actual") || key.includes("Date")) && !isNaN(Date.parse(String(val))) && !String(val).match(/^\d+$/)) {
+      return new Date(String(val)).toLocaleDateString("en-IN");
     }
     return String(val);
   };
@@ -334,9 +366,20 @@ export default function Stage12() {
           <h2 className="text-2xl font-bold">Stage 12: Purchase Return</h2>
           <p className="text-gray-600 mt-1">Manage returns and credit notes</p>
         </div>
-        <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-        </Button>
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+            <Input
+              placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 bg-white w-[300px]"
+            />
+          </div>
+          <Button variant="outline" onClick={fetchData} disabled={isLoading}>
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -375,7 +418,7 @@ export default function Stage12() {
                             key={col.key}
                             className={col.key === "rejectedQty" ? "text-center" : ""}
                           >
-                            {safeValue(rec.data[col.key])}
+                            {safeValue(rec.data[col.key], col.key)}
                           </TableCell>
                         ))}
                       </TableRow>
@@ -406,7 +449,7 @@ export default function Stage12() {
                             key={col.key}
                             className={col.key === "rejectedQty" ? "text-center" : ""}
                           >
-                            {safeValue(rec.data[col.key], col.key.includes("Image"))}
+                            {safeValue(rec.data[col.key], col.key)}
                           </TableCell>
                         ))}
                       </TableRow>

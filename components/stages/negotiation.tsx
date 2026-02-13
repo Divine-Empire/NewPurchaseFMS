@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,7 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, FileText, Image, Shield, ShieldCheck, Loader2, Users, ClipboardList, History, Square, CheckSquare } from "lucide-react";
+import { CheckCircle2, FileText, Image, Shield, ShieldCheck, Loader2, Users, ClipboardList, History, Square, CheckSquare, Search } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -118,7 +119,7 @@ export default function Stage4() {
                 createdBy: row[2],
                 category: row[3],
                 itemName: row[4],
-                quantity: row[5],
+                quantity: row[14], // O: Qty (was F:5)
                 warehouseLocation: row[6],
                 deliveryDate: row[7] ? formatDate(row[7]) : "",
                 leadTime: row[8],
@@ -175,6 +176,9 @@ export default function Stage4() {
                 finalApprovedBy: row[49],    // AX
                 negotiationRemarks: row[50], // AY
                 delay3: row[51],             // AZ
+
+                // Stage 5 Data (PO Number) for Search
+                poNumber: row[54], // Maps to BC (Index 54)
               }
             };
           });
@@ -201,7 +205,28 @@ export default function Stage4() {
     fetchData();
   }, []);
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      // Combine relevant fields for search
+      // Note: 'vendor1Name' etc might not be the 'Selected Vendor'.
+      // Usually users search by Indent, Item, or the vendor they are negotiating with.
+      // But let's include all 3 vendors just in case, plus Selected Vendor.
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.selectedVendor?.toLowerCase().includes(searchLower) ||
+        r.data.selectedVendorName?.toLowerCase().includes(searchLower) ||
+        r.data.vendor1Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendor2Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Number search
+      );
+    });
   const completed = sheetRecords.filter((r) => r.status === "completed");
 
   const baseColumns = [
@@ -520,6 +545,19 @@ export default function Stage4() {
           <span className="font-medium">Error:</span> {submitError}
         </div>
       )}
+
+      {/* Search Filter */}
+      <div className="mb-6 flex items-center gap-4 z-10 relative">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item Name, Vendor..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white shadow-sm border-slate-200 w-full"
+          />
+        </div>
+      </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">

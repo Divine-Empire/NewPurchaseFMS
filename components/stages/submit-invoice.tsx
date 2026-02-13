@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText } from "lucide-react";
+import { Loader2, FileText, Search } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -58,10 +59,12 @@ export default function Stage10() {
   const [open, setOpen] = useState(false);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     handoverBy: "",
-    submitToHeadOffice: "",
     invoiceSubmissionDate: new Date(),
     invoiceNumber: "",
     vendorName: "",
@@ -99,10 +102,10 @@ export default function Stage10() {
             const fmsRow = fmsMap.get(indentNo) || [];
 
             // Stage 10 Logic
-            // 55: Plan 9 (Trigger for Pending)
-            // 56: Actual 9 (Completion)
-            const hasPlan9 = !!row[50] && String(row[50]).trim() !== "";
-            const hasActual9 = !!row[51] && String(row[51]).trim() !== "";
+            // AW (48): Plan 9 (Trigger)
+            // AX (49): Actual 9 (Completion)
+            const hasPlan9 = !!row[48] && String(row[48]).trim() !== "";
+            const hasActual9 = !!row[49] && String(row[49]).trim() !== "";
 
             let status = "not_ready";
             if (hasPlan9 && !hasActual9) {
@@ -157,12 +160,13 @@ export default function Stage10() {
                 tallyDate: row[48],
                 tallyRemarks: row[49],
 
-                // Stage 10 (50-55)
-                plan9: row[50],   // Plan Date
-                actual9: row[51], // Actual Date
-                handoverBy: row[53],
-                submitToHeadOffice: row[54], // Index 54 = BC
-                invoiceSubmissionDate: row[55],
+                // Stage 10 (48-53) (AW-BB)
+                plan9: row[48],   // AW: Plan Date
+                actual9: row[49], // AX: Actual Date
+                // Delay: row[50] // AY
+                handoverBy: row[51], // AZ
+                submitToHeadOffice: row[52], // BA
+                invoiceSubmissionDate: row[53], // BB
 
                 // FMS Data
                 approvedBy: fmsRow[12],
@@ -186,7 +190,18 @@ export default function Stage10() {
     fetchData();
   }, []);
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendorName?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
   const completed = sheetRecords.filter((r) => r.status === "completed");
 
   const pendingColumns = [
@@ -225,17 +240,53 @@ export default function Stage10() {
     historyColumns.map((c) => c.key)
   );
 
-  const handleOpenForm = (recordId: string) => {
-    const record = sheetRecords.find((r) => r.id === recordId);
-    if (!record) return;
+  // Toggle Selection
+  const toggleRow = (id: string) => {
+    const newSet = new Set(selectedRows);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedRows(newSet);
+  };
 
-    const invoiceNumber = record.data?.invoiceNumber || "-";
-    const vendorName = record.data?.vendorName || "-";
+  const toggleAll = () => {
+    if (selectedRows.size === pending.length) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(pending.map((r) => r.id)));
+    }
+  };
 
-    setSelectedRecordId(recordId);
+  const handleOpenForm = (recordId?: string) => {
+    setBulkError(null);
+    let targetRecord;
+
+    // Single select or bulk
+    if (recordId) {
+      setSelectedRows(new Set([recordId]));
+      targetRecord = sheetRecords.find((r) => r.id === recordId);
+    } else {
+      if (selectedRows.size === 0) return;
+      const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
+      if (selectedRecords.length === 0) return;
+
+      // Validate Same Invoice Logic
+      const firstInv = selectedRecords[0].data.invoiceNumber || "";
+      const isConsistent = selectedRecords.every(r => (r.data.invoiceNumber || "") === firstInv);
+
+      if (!isConsistent) {
+        setBulkError("Selected items have different Invoice Numbers. Cannot submit together.");
+      }
+      targetRecord = selectedRecords[0];
+    }
+
+    if (!targetRecord) return;
+
+    const invoiceNumber = targetRecord.data?.invoiceNumber || "-";
+    const vendorName = targetRecord.data?.vendorName || "-";
+
+    setSelectedRecordId(targetRecord.id);
     setFormData({
       handoverBy: "",
-      submitToHeadOffice: "",
       invoiceSubmissionDate: new Date(),
       invoiceNumber,
       vendorName,
@@ -245,56 +296,47 @@ export default function Stage10() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRecordId || !isFormValid || !SHEET_API_URL) return;
+    if ((!selectedRecordId && selectedRows.size === 0) || !SHEET_API_URL) return;
+    if (bulkError) return;
+
+    // Additional validation if needed, but 'isFormValid' checks formData presence
+    if (!isFormValid) return;
 
     setIsSubmitting(true);
     try {
-      const rec = sheetRecords.find((r) => r.id === selectedRecordId);
-      if (!rec) throw new Error("Record not found");
+      const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
+      if (selectedRecords.length === 0) return;
 
       const now = new Date();
       // submissionDate is from formData.invoiceSubmissionDate
       const subDate = formData.invoiceSubmissionDate ? `${formData.invoiceSubmissionDate.getMonth() + 1}/${formData.invoiceSubmissionDate.getDate()}/${formData.invoiceSubmissionDate.getFullYear()}` : "";
       const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
 
-      // Create sparse row (DO NOT copy original row)
-      const rowArray = new Array(80).fill(""); // >= sheet width
+      // Iterate and submit for ALL selected records
+      for (const rec of selectedRecords) {
+        // Create sparse row (DO NOT copy original row)
+        const rowArray = new Array(80).fill("");
+        // 49 (AX): Actual 9
+        rowArray[49] = todayStr;
+        // 51 (AZ): Handover By
+        rowArray[51] = formData.handoverBy;
+        // 53 (BB): Invoice Submission Date
+        rowArray[53] = subDate;
 
-      // Ensure array size covers up to index 55
-      while (rowArray.length <= 55) {
-        rowArray.push("");
+        const params = new URLSearchParams();
+        params.append("action", "update");
+        params.append("sheetName", "RECEIVING-ACCOUNTS");
+        params.append("rowIndex", rec.rowIndex.toString());
+        params.append("rowData", JSON.stringify(rowArray));
+
+        await fetch(SHEET_API_URL, { method: "POST", body: params });
       }
 
-      // 56: Actual 9 (Today or Form Date? Typically Actual is completion date)
-      rowArray[51] = todayStr;
-      rowArray[52] = "";
+      toast.success("Invoice(s) submitted successfully!");
+      setOpen(false);
+      setSelectedRows(new Set());
+      fetchData();
 
-      // 57: Handover By
-      rowArray[53] = formData.handoverBy;
-
-      // 58: Submit Invoice to Head Office (BC -> Index 54)
-      rowArray[54] = formData.submitToHeadOffice;
-
-      // 59: Invoice Submission Date (from Form)
-      rowArray[55] = subDate;
-
-      const params = new URLSearchParams();
-      params.append("action", "update");
-      params.append("sheetName", "RECEIVING-ACCOUNTS");
-      params.append("rowIndex", rec.rowIndex.toString());
-      params.append("rowData", JSON.stringify(rowArray));
-
-      const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
-      const json = await res.json();
-      console.log("Submission response:", json);
-
-      if (json.success) {
-        toast.success("Invoice submitted successfully!");
-        setOpen(false);
-        fetchData();
-      } else {
-        toast.error("Failed to submit invoice.");
-      }
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Failed to submit");
@@ -343,7 +385,6 @@ export default function Stage10() {
 
   const isFormValid =
     formData.handoverBy &&
-    formData.submitToHeadOffice &&
     formData.invoiceNumber &&
     formData.vendorName;
 
@@ -365,6 +406,15 @@ export default function Stage10() {
             <p className="text-gray-600 mt-1">Hand over original invoice for payment</p>
           </div>
           <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input
+                placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-white w-[300px]"
+              />
+            </div>
             <Label className="text-sm font-medium">Show Columns:</Label>
             <Select value="" onValueChange={() => { }}>
               <SelectTrigger className="w-64">
@@ -402,6 +452,17 @@ export default function Stage10() {
             </Select>
           </div>
         </div>
+        {/* Header Actions */}
+        <div className="flex items-center gap-4 mb-4">
+          {selectedRows.size > 0 && (
+            <Button
+              onClick={() => handleOpenForm()}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Submit Invoice ({selectedRows.size})
+            </Button>
+          )}
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
@@ -418,7 +479,12 @@ export default function Stage10() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 bg-white z-10">ID</TableHead>
+                    <TableHead className="w-12 sticky left-0 bg-white z-20">
+                      <Checkbox
+                        checked={selectedRows.size === pending.length && pending.length > 0}
+                        onCheckedChange={toggleAll}
+                      />
+                    </TableHead>
                     <TableHead className="bg-white z-10">Actions</TableHead>
                     {pendingColumns.filter(c => selectedPendingColumns.includes(c.key)).map(col => (
                       <TableHead key={col.key}>{col.label}</TableHead>
@@ -429,7 +495,12 @@ export default function Stage10() {
                 <TableBody>
                   {pending.map((record: any) => (
                     <TableRow key={record.id}>
-                      <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">{record.id}</TableCell>
+                      <TableCell className="w-12 sticky left-0 bg-white z-10">
+                        <Checkbox
+                          checked={selectedRows.has(record.id)}
+                          onCheckedChange={() => toggleRow(record.id)}
+                        />
+                      </TableCell>
                       <TableCell className="bg-white z-10">
                         <Button variant="outline" size="sm" onClick={() => handleOpenForm(record.id)}>Submit</Button>
                       </TableCell>
@@ -453,7 +524,7 @@ export default function Stage10() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 bg-white z-10">ID</TableHead>
+                    <TableHead className="sticky left-0 bg-white z-10 w-12"></TableHead>
                     {historyColumns.filter(c => selectedHistoryColumns.includes(c.key)).map(col => (
                       <TableHead key={col.key}>{col.label}</TableHead>
                     ))}
@@ -462,7 +533,7 @@ export default function Stage10() {
                 <TableBody>
                   {completed.map((record: any) => (
                     <TableRow key={record.id}>
-                      <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">{record.id}</TableCell>
+                      <TableCell className="sticky left-0 bg-white z-10"></TableCell>
                       {historyColumns.filter(c => selectedHistoryColumns.includes(c.key)).map(col => (
                         <TableCell key={col.key}>{safeValue(record, col.key)}</TableCell>
                       ))}
@@ -477,7 +548,16 @@ export default function Stage10() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>Submit Invoice</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Submit Invoice ({selectedRows.size} Selected)</DialogTitle>
+          </DialogHeader>
+
+          {bulkError && (
+            <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 border border-red-200">
+              {bulkError}
+            </div>
+          )}
+
           <div className="py-4 space-y-4">
             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100 mb-6">
               <div>
@@ -505,20 +585,6 @@ export default function Stage10() {
                 <p className="text-[10px] text-gray-500">Confirm physical docs handover to Accounts</p>
               </div>
 
-              <div className="space-y-2">
-                <Label className="font-medium text-gray-700">Invoice to Head Office? *</Label>
-                <Select value={formData.submitToHeadOffice} onValueChange={(v) => setFormData({ ...formData, submitToHeadOffice: v })}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Yes">Yes</SelectItem>
-                    <SelectItem value="No">No</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-gray-500">Confirm invoice submission to Head Office</p>
-              </div>
-
               <div className="space-y-2 md:col-span-2">
                 <Label className="font-medium text-gray-700">Submission Date *</Label>
                 <Popover>
@@ -541,7 +607,7 @@ export default function Stage10() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!isFormValid || isSubmitting}>
+            <Button onClick={handleSubmit} disabled={!isFormValid || isSubmitting || !!bulkError}>
               {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</> : "Submit"}
             </Button>
           </DialogFooter>

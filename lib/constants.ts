@@ -14,6 +14,7 @@ export const STAGES = [
     { num: 6.1, name: "Transporter Follow-Up", slug: "transporter-follow-up", icon: TruckIcon },
     { num: 7, name: "Material Received", slug: "material-received", icon: Package },
     { num: 8, name: "Receipt in Tally", slug: "receipt-in-tally", icon: FileText },
+    { num: 8.5, name: "Submit Invoice (HO)", slug: "submit-invoice-ho", icon: FileText },
     { num: 9, name: "Submit Invoice", slug: "submit-invoice", icon: Upload },
     { num: 10, name: "Verification", slug: "verification", icon: ShieldCheck },
     { num: 11, name: "QC Requirement", slug: "qc-requirement", icon: ClipboardCheck },

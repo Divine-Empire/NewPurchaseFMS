@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, ArrowUpDown } from "lucide-react";
+import { Loader2, RefreshCw, ArrowUpDown, Search } from "lucide-react";
 import {
     Table,
     TableBody,
@@ -39,6 +39,7 @@ export default function TransporterFollowUp() {
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+    const [searchTerm, setSearchTerm] = useState("");
 
     // Modal State
     const [open, setOpen] = useState(false);
@@ -57,6 +58,10 @@ export default function TransporterFollowUp() {
     // Selection State
     const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
+    // Bulk State
+    const [isBulkMode, setIsBulkMode] = useState(false);
+    const [bulkError, setBulkError] = useState<string | null>(null);
+
     // -----------------------------------------------------------------
     // FETCH DATA
     // -----------------------------------------------------------------
@@ -67,16 +72,22 @@ export default function TransporterFollowUp() {
             // Fetch Transport Follow-Up Data for Expected Dates
             const resTransport = await fetch(`${SHEET_API_URL}?sheet=Transport Flw-Up&action=getAll`);
             const jsonTransport = await resTransport.json();
-            const transportMap = new Map<string, string>();
+            const transportMap = new Map<string, { status: string, remarks: string, expectedDate: string }>();
 
             if (jsonTransport.success && Array.isArray(jsonTransport.data)) {
                 // Skip header (row 1)
                 jsonTransport.data.slice(1).forEach((row: any) => {
                     const liftNo = row[1]; // Column B
+                    const status = row[2]; // Column C
+                    const remarks = row[3]; // Column D
                     const exDate = row[4]; // Column E
-                    // Store the expected date for this lift number (later rows overwrite earlier ones)
+
                     if (liftNo) {
-                        transportMap.set(liftNo, exDate || "");
+                        transportMap.set(liftNo, {
+                            status: status || "",
+                            remarks: remarks || "",
+                            expectedDate: exDate || ""
+                        });
                     }
                 });
             }
@@ -89,14 +100,14 @@ export default function TransporterFollowUp() {
                 const rows = json.data.slice(6)
                     .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
                     .filter(({ row }: any) => {
-                        // Filter: Only include rows where Column CG (Planned) has a value
-                        const plannedDate = row[84]; // Column CG (index 84)
+                        // Filter: Only include rows where Column CK (Planned) has a value
+                        const plannedDate = row[88]; // Column CK (index 88)
                         return plannedDate && String(plannedDate).trim() !== "" && String(plannedDate).trim() !== "-";
                     })
                     .map(({ row, originalIndex }: any) => {
                         // Status Logic
-                        const plannedDate = row[84]; // Column CG
-                        const actualDate = row[85];  // Column CH
+                        const plannedDate = row[88]; // Column CK
+                        const actualDate = row[89];  // Column CL
 
                         const hasPlanned = !!plannedDate && String(plannedDate).trim() !== "" && String(plannedDate).trim() !== "-";
                         const hasActual = !!actualDate && String(actualDate).trim() !== "" && String(actualDate).trim() !== "-";
@@ -109,7 +120,9 @@ export default function TransporterFollowUp() {
                         }
 
                         const liftNo = row[2]; // Column C
-                        const expectedDate = transportMap.get(liftNo) || "";
+                        const followUpData = transportMap.get(liftNo);
+                        const expectedDate = followUpData?.expectedDate || "";
+                        const latestRemarks = followUpData?.remarks || "";
 
                         return {
                             id: `${liftNo}_${originalIndex}`, // Lift No + row index as unique ID
@@ -121,14 +134,18 @@ export default function TransporterFollowUp() {
                                 liftNo: liftNo,            // Column C
                                 vendorName: row[3],        // Column D
                                 poNumber: row[4],          // Column E
+                                invoiceNumber: row[24],    // Column Y (Added for Search)
+                                itemName: row[7],          // Column H (Added for Search)
                                 liftingQty: row[8],        // Column I
                                 transporterName: row[9],   // Column J
                                 vehicleNo: row[10],        // Column K
                                 contactNo: row[11],        // Column L
                                 freightAmt: row[14],       // Column O
-                                plannedDate: row[84],      // Column CG
-                                actualDate: row[85],       // Column CH
+                                plannedDate: row[88],      // Column CK (Index 88)
+                                actualDate: row[89],       // Column CL (Index 89)
                                 expectedDate: expectedDate, // From Transport Flw-Up
+                                remarks: latestRemarks,      // From Transport Flw-Up
+                                lrCopy: row[18],           // Column S (LR Copy)
                             }
                         };
                     });
@@ -158,7 +175,21 @@ export default function TransporterFollowUp() {
     };
 
     const sortedPending = React.useMemo(() => {
-        const pendingItems = records.filter(r => r.status === "pending");
+        const pendingItems = records
+            .filter(r => r.status === "pending")
+            .filter((r) => {
+                const searchLower = searchTerm.toLowerCase();
+                return (
+                    r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+                    r.data.itemName?.toLowerCase().includes(searchLower) ||
+                    r.data.vendorName?.toLowerCase().includes(searchLower) ||
+                    r.data.vendorName?.toLowerCase().includes(searchLower) ||
+                    String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+                    String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower) ||
+                    String(r.data.lrCopy || "").toLowerCase().includes(searchLower)
+                );
+            });
+
         if (!sortConfig) return pendingItems;
 
         return [...pendingItems].sort((a, b) => {
@@ -179,14 +210,16 @@ export default function TransporterFollowUp() {
             if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
             return 0;
         });
-    }, [records, sortConfig]);
+    }, [records, sortConfig, searchTerm]);
 
     const completed = records.filter(r => r.status === "history");
     const pending = sortedPending; // Use sorted list for display
 
     const columns = [
         { key: "indentNumber", label: "Indent No" },
+        { key: "itemName", label: "Item Name" }, // Added to columns
         { key: "expectedDate", label: "Expected Date" },
+        { key: "remarks", label: "Remarks" }, // Added for latest follow-up remarks
         { key: "liftNo", label: "Lift No" },
         { key: "vendorName", label: "Vendor Name" },
         { key: "poNumber", label: "PO Number" },
@@ -195,6 +228,7 @@ export default function TransporterFollowUp() {
         { key: "freightAmt", label: "Freight Amt" },
         { key: "vehicleNo", label: "Vehicle No" },
         { key: "contactNo", label: "Contact Number" },
+        { key: "lrCopy", label: "LR Copy" },
     ];
 
     // -----------------------------------------------------------------
@@ -207,7 +241,52 @@ export default function TransporterFollowUp() {
             remarks: "",
             expectedDate: "",
         });
+        setIsBulkMode(false);
+        setBulkError(null);
         setOpen(true);
+    };
+
+    const validateBulkSelection = () => {
+        if (selectedRows.size <= 1) return true;
+        const selectedItems = records.filter(r => selectedRows.has(r.id));
+        if (selectedItems.length === 0) return false;
+
+        const first = selectedItems[0];
+        const vendor = first.data.vendorName;
+        const po = first.data.poNumber;
+
+        for (let i = 1; i < selectedItems.length; i++) {
+            if (selectedItems[i].data.vendorName !== vendor || selectedItems[i].data.poNumber !== po) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const handleBulkOpen = () => {
+        if (selectedRows.size === 0) return;
+
+        const isValid = validateBulkSelection();
+        if (!isValid) {
+            toast.error("Vendor and PO No. didn't match");
+            setBulkError("Vendor and PO Number mismatch. Cannot submit.");
+        } else {
+            setBulkError(null);
+        }
+
+        // Use the first selected record to populate common fields (or just for context)
+        const firstId = Array.from(selectedRows)[0];
+        const rec = records.find(r => r.id === firstId);
+        if (rec) {
+            setSelectedRecord(rec);
+            setFormData({
+                status: "",
+                remarks: "",
+                expectedDate: "",
+            });
+            setIsBulkMode(true);
+            setOpen(true);
+        }
     };
 
     // -----------------------------------------------------------------
@@ -215,7 +294,11 @@ export default function TransporterFollowUp() {
     // -----------------------------------------------------------------
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedRecord) return;
+        if (!selectedRecord && !isBulkMode) return;
+        if (isBulkMode && bulkError) {
+            toast.error(bulkError);
+            return;
+        }
 
         // Validation
         if (!formData.status) {
@@ -230,11 +313,13 @@ export default function TransporterFollowUp() {
         }
 
         setIsSubmitting(true);
-        const toastId = toast.loading("Recording Follow-Up...");
+        const toastId = toast.loading(isBulkMode ? "Recording Bulk Follow-Up..." : "Recording Follow-Up...");
 
         try {
-            // Prepare row data for "Transport Flw-Up" sheet
-            // Columns: A=Timestamp, B=Lift No, C=Status, D=Remarks, E=Expected Date
+            const recordsToProcess = isBulkMode
+                ? records.filter(r => selectedRows.has(r.id))
+                : [selectedRecord];
+
             const timestamp = new Date().toLocaleString("en-US", {
                 month: "2-digit",
                 day: "2-digit",
@@ -245,49 +330,48 @@ export default function TransporterFollowUp() {
                 hour12: false
             });
 
-            const rowData = [
-                timestamp,                      // Column A
-                selectedRecord.data.liftNo,     // Column B
-                formData.status,                // Column C
-                formData.remarks || "",         // Column D
-                formData.expectedDate || "",    // Column E (only populated when status is Intransit)
-            ];
+            // Process sequentially to ensure order and avoid rate limits
+            for (const record of recordsToProcess) {
+                // Prepare row data for "Transport Flw-Up" sheet
+                const rowData = [
+                    timestamp,                      // Column A
+                    record.data.liftNo,             // Column B
+                    formData.status,                // Column C
+                    formData.remarks || "",         // Column D
+                    formData.expectedDate || "",    // Column E
+                ];
 
-            // Insert into "Transport Flw-Up" sheet
-            const params = new URLSearchParams();
-            params.append("action", "insert");
-            params.append("sheetName", "Transport Flw-Up");
-            params.append("rowData", JSON.stringify(rowData));
+                // Insert into "Transport Flw-Up" sheet
+                const params = new URLSearchParams();
+                params.append("action", "insert");
+                params.append("sheetName", "Transport Flw-Up");
+                params.append("rowData", JSON.stringify(rowData));
 
-            const res = await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
-            const json = await res.json();
+                await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
 
-            if (json.success) {
-                // If status is "Received", we also need to update Column CH in "RECEIVING-ACCOUNTS"
-                if (formData.status === "Received" && selectedRecord.rowIndex) {
-                    // Create sparse array with only Column CH (index 85) populated
-                    // This ensures we ONLY update Column CH and don't disturb other columns
-                    const updateRow = new Array(86).fill("");
-
-                    // Update ONLY Column CH (index 85) with current date
+                // If status is "Received", update "RECEIVING-ACCOUNTS"
+                if (formData.status === "Received" && record.rowIndex) {
+                    const updateRow = new Array(95).fill("");
                     const currentDate = new Date().toLocaleDateString("en-US");
-                    updateRow[85] = currentDate;
+                    updateRow[89] = currentDate; // Column CL (Index 89)
 
                     const updateParams = new URLSearchParams();
                     updateParams.append("action", "update");
                     updateParams.append("sheetName", "RECEIVING-ACCOUNTS");
-                    updateParams.append("rowIndex", selectedRecord.rowIndex.toString());
+                    updateParams.append("rowIndex", record.rowIndex.toString());
                     updateParams.append("rowData", JSON.stringify(updateRow));
 
                     await fetch(`${SHEET_API_URL}`, { method: "POST", body: updateParams });
                 }
-
-                toast.success("Follow-Up Recorded!", { id: toastId });
-                setOpen(false);
-                fetchData(); // Refresh data
-            } else {
-                toast.error("Failed: " + (json.error || "Unknown"), { id: toastId });
             }
+
+            toast.success("Follow-Up Recorded!", { id: toastId });
+            setOpen(false);
+            if (isBulkMode) {
+                setSelectedRows(new Set());
+                setIsBulkMode(false);
+            }
+            fetchData(); // Refresh data
 
         } catch (err: any) {
             console.error(err);
@@ -333,6 +417,16 @@ export default function TransporterFollowUp() {
                 </div>
 
                 <div className="flex gap-4 items-center">
+                    {/* Bulk Button */}
+                    {activeTab === "pending" && selectedRows.size > 1 && (
+                        <Button
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={handleBulkOpen}
+                        >
+                            Bulk Follow-Up ({selectedRows.size})
+                        </Button>
+                    )}
+
                     {/* Sorting Dropdown - Only for Pending Tab */}
                     {activeTab === "pending" && (
                         <Select
@@ -352,6 +446,19 @@ export default function TransporterFollowUp() {
                     <Button variant="outline" onClick={fetchData} disabled={isLoading}>
                         {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                     </Button>
+                </div>
+            </div>
+
+            {/* Search Filter */}
+            <div className="mb-6 flex items-center gap-4">
+                <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                    <Input
+                        placeholder="Search by Indent No, Item Name, Vendor, PO, Invoice..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9 bg-white"
+                    />
                 </div>
             </div>
 
@@ -401,9 +508,46 @@ export default function TransporterFollowUp() {
                                                         Follow-Up
                                                     </Button>
                                                 </TableCell>
-                                                {columns.map(c => (
-                                                    <TableCell key={c.key}>{safeValue(rec.data[c.key])}</TableCell>
-                                                ))}
+                                                {columns.map((c) => {
+                                                    const val = rec.data[c.key];
+
+                                                    // LR Copy Logic
+                                                    if (c.key === "lrCopy") {
+                                                        return (
+                                                            <TableCell key={c.key}>
+                                                                {val && val.trim() !== "" ? (
+                                                                    <a
+                                                                        href={val}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        className="text-blue-600 underline"
+                                                                    >
+                                                                        View
+                                                                    </a>
+                                                                ) : "-"}
+                                                            </TableCell>
+                                                        );
+                                                    }
+
+                                                    // Expected Date Logic
+                                                    if (c.key === "expectedDate") {
+                                                        let displayDate = safeValue(val);
+                                                        if (displayDate !== "-") {
+                                                            const dateObj = new Date(val);
+                                                            if (!isNaN(dateObj.getTime())) {
+                                                                displayDate = dateObj.toLocaleDateString("en-GB", {
+                                                                    day: "2-digit",
+                                                                    month: "short",
+                                                                    year: "numeric"
+                                                                });
+                                                            }
+                                                        }
+                                                        return <TableCell key={c.key}>{displayDate}</TableCell>;
+                                                    }
+
+                                                    // Default Logic
+                                                    return <TableCell key={c.key}>{safeValue(val)}</TableCell>;
+                                                })}
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -438,9 +582,46 @@ export default function TransporterFollowUp() {
                                                         onCheckedChange={() => toggleRow(rec.id)}
                                                     />
                                                 </TableCell>
-                                                {columns.map(c => (
-                                                    <TableCell key={c.key}>{safeValue(rec.data[c.key])}</TableCell>
-                                                ))}
+                                                {columns.map((c) => {
+                                                    const val = rec.data[c.key];
+
+                                                    // LR Copy Logic
+                                                    if (c.key === "lrCopy") {
+                                                        return (
+                                                            <TableCell key={c.key}>
+                                                                {val && val.trim() !== "" ? (
+                                                                    <a
+                                                                        href={val}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        className="text-blue-600 underline"
+                                                                    >
+                                                                        View
+                                                                    </a>
+                                                                ) : "-"}
+                                                            </TableCell>
+                                                        );
+                                                    }
+
+                                                    // Expected Date Logic
+                                                    if (c.key === "expectedDate") {
+                                                        let displayDate = safeValue(val);
+                                                        if (displayDate !== "-") {
+                                                            const dateObj = new Date(val);
+                                                            if (!isNaN(dateObj.getTime())) {
+                                                                displayDate = dateObj.toLocaleDateString("en-GB", {
+                                                                    day: "2-digit",
+                                                                    month: "short",
+                                                                    year: "numeric"
+                                                                });
+                                                            }
+                                                        }
+                                                        return <TableCell key={c.key}>{displayDate}</TableCell>;
+                                                    }
+
+                                                    // Default Logic
+                                                    return <TableCell key={c.key}>{safeValue(val)}</TableCell>;
+                                                })}
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -454,102 +635,144 @@ export default function TransporterFollowUp() {
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>Transport Follow-Up</DialogTitle>
+                        <DialogTitle>{isBulkMode ? `Bulk Follow-Up (${selectedRows.size} items)` : "Transport Follow-Up"}</DialogTitle>
                     </DialogHeader>
 
+                    {bulkError && (
+                        <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 border border-red-200">
+                            {bulkError}
+                        </div>
+                    )}
+
                     <form onSubmit={handleSubmit} className="space-y-4 py-2">
-                        {/* Read-Only Fields */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label className="text-sm font-medium">Transporter Name</Label>
-                                <Input
-                                    value={selectedRecord?.data.transporterName || ""}
-                                    readOnly
-                                    className="bg-gray-50"
-                                />
-                            </div>
-                            <div>
-                                <Label className="text-sm font-medium">Vehicle Number</Label>
-                                <Input
-                                    value={selectedRecord?.data.vehicleNo || ""}
-                                    readOnly
-                                    className="bg-gray-50"
-                                />
-                            </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label className="text-sm font-medium">Contact Number</Label>
-                                <Input
-                                    value={selectedRecord?.data.contactNo || ""}
-                                    readOnly
-                                    className="bg-gray-50"
-                                />
-                            </div>
-                            <div>
-                                <Label className="text-sm font-medium">Lift No</Label>
-                                <Input
-                                    value={selectedRecord?.data.liftNo || ""}
-                                    readOnly
-                                    className="bg-gray-50"
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <Label className="text-sm font-medium">Indent Number</Label>
-                            <Input
-                                value={selectedRecord?.data.indentNumber || ""}
-                                readOnly
-                                className="bg-gray-50"
-                            />
-                        </div>
-
-                        {/* Editable Fields - Inline Layout */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label>Status <span className="text-red-500">*</span></Label>
-                                <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="Intransit">Intransit</SelectItem>
-                                        <SelectItem value="Received">Received</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            {/* Expected Date - Only show when Status is Intransit */}
-                            {formData.status === "Intransit" && (
-                                <div>
-                                    <Label>Expected Date <span className="text-red-500">*</span></Label>
-                                    <Input
-                                        type="date"
-                                        value={formData.expectedDate}
-                                        onChange={(e) => setFormData({ ...formData, expectedDate: e.target.value })}
-                                        required
-                                    />
+                        {isBulkMode ? (
+                            <div className="space-y-4">
+                                {/* Selected Items List */}
+                                <div className="border rounded-md overflow-hidden">
+                                    <div className="bg-gray-50 px-4 py-2 border-b text-sm font-medium flex justify-between">
+                                        <span>Selected Items ({selectedRows.size})</span>
+                                        <span className="text-gray-500 font-normal">
+                                            Vendor: {selectedRecord?.data.vendorName} | PO: {selectedRecord?.data.poNumber}
+                                        </span>
+                                    </div>
+                                    <div className="max-h-40 overflow-y-auto p-2 bg-slate-50">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="text-left text-gray-500 border-b">
+                                                    <th className="pb-1 font-medium">Indent No</th>
+                                                    <th className="pb-1 font-medium">Lift No</th>
+                                                    <th className="pb-1 font-medium">Transporter</th>
+                                                    <th className="pb-1 font-medium">Vehicle</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {records
+                                                    .filter(r => selectedRows.has(r.id))
+                                                    .map(r => (
+                                                        <tr key={r.id} className="border-b last:border-0 border-gray-100">
+                                                            <td className="py-1">{r.data.indentNumber}</td>
+                                                            <td className="py-1">{r.data.liftNo}</td>
+                                                            <td className="py-1 truncate max-w-[100px]" title={r.data.transporterName}>{r.data.transporterName}</td>
+                                                            <td className="py-1">{r.data.vehicleNo}</td>
+                                                        </tr>
+                                                    ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                            )}
+                            </div>
+                        ) : (
+                            /* Single Item View - Read Only Fields */
+                            <>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <Label className="text-xs text-gray-500">Transporter Name</Label>
+                                        <div className="p-2 bg-gray-50 rounded text-sm font-medium truncate">
+                                            {selectedRecord?.data.transporterName || "-"}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-gray-500">Vehicle Number</Label>
+                                        <div className="p-2 bg-gray-50 rounded text-sm font-medium">
+                                            {selectedRecord?.data.vehicleNo || "-"}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <Label className="text-xs text-gray-500">Contact Number</Label>
+                                        <div className="p-2 bg-gray-50 rounded text-sm font-medium">
+                                            {selectedRecord?.data.contactNo || "-"}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-gray-500">Lift No</Label>
+                                        <div className="p-2 bg-gray-50 rounded text-sm font-medium">
+                                            {selectedRecord?.data.liftNo || "-"}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <Label className="text-xs text-gray-500">Indent Number</Label>
+                                    <div className="p-2 bg-gray-50 rounded text-sm font-medium">
+                                        {selectedRecord?.data.indentNumber || "-"}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Editable Fields - Compact Layout */}
+                        <div className="p-4 bg-white border rounded-md shadow-sm space-y-3">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2">Update Status</h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <Label className="text-xs mb-1 block">Status <span className="text-red-500">*</span></Label>
+                                    <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+                                        <SelectTrigger className="h-9">
+                                            <SelectValue placeholder="Select status" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Intransit">Intransit</SelectItem>
+                                            <SelectItem value="Received">Received</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                {/* Expected Date - Only show when Status is Intransit */}
+                                {formData.status === "Intransit" && (
+                                    <div>
+                                        <Label className="text-xs mb-1 block">Expected Date <span className="text-red-500">*</span></Label>
+                                        <Input
+                                            type="date"
+                                            value={formData.expectedDate}
+                                            onChange={(e) => setFormData({ ...formData, expectedDate: e.target.value })}
+                                            required
+                                            className="h-9"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <Label className="text-xs mb-1 block">Remarks</Label>
+                                <Textarea
+                                    value={formData.remarks}
+                                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                                    placeholder="Enter any remarks..."
+                                    rows={2}
+                                    className="resize-none"
+                                />
+                            </div>
                         </div>
 
-                        <div>
-                            <Label>Remarks</Label>
-                            <Textarea
-                                value={formData.remarks}
-                                onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                                placeholder="Enter any remarks..."
-                                rows={3}
-                            />
-                        </div>
-
-                        <DialogFooter>
+                        <DialogFooter className="pt-2">
                             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                                 Cancel
                             </Button>
-                            <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700">
+                            <Button type="submit" disabled={isSubmitting || !!bulkError} className="bg-blue-600 hover:bg-blue-700">
                                 {isSubmitting ? "Submitting..." : "Submit"}
                             </Button>
                         </DialogFooter>

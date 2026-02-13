@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText } from "lucide-react";
+import { Loader2, FileText, Search } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -43,6 +44,9 @@ export default function Stage11() {
   const [open, setOpen] = useState(false);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     checkedBy: "",
@@ -99,10 +103,10 @@ export default function Stage11() {
             const fmsRow = fmsMap.get(indentNo) || [];
 
             // Stage 11 Logic
-            // 60: Plan 10 (Verification Trigger - likely from Stage 10 submission)
-            // 61: Actual 10 (Verification Completion)
-            const hasPlan10 = !!row[56] && String(row[56]).trim() !== "";
-            const hasActual10 = !!row[57] && String(row[57]).trim() !== "";
+            // BC (54): Plan 5
+            // BD (55): Actual 5
+            const hasPlan10 = !!row[54] && String(row[54]).trim() !== "";
+            const hasActual10 = !!row[55] && String(row[55]).trim() !== "";
 
             let status = "not_ready";
             if (hasPlan10 && !hasActual10) {
@@ -132,52 +136,54 @@ export default function Stage11() {
               data: {
                 indentNumber: row[1],
                 createdBy: row[2],
-                category: row[3],
-                itemName: row[4],
+                category: fmsRow[3], // D: Category (Indent Lift)
+                itemName: fmsRow[4], // E: Item Name (Indent Lift)
                 quantity: row[5],
                 warehouse: row[6],
                 deliveryDate: row[7],
 
                 // Stage 6 (9-24)
-                poNumber: row[12],
+                poNumber: row[4], // E: PO Number (Receiving Accounts)
 
                 // Stage 7 (25-39)
-                billAttachment: row[35],
-                invoiceNumber: row[31],
-                invoiceDate: row[30],
+                billAttachment: row[29], // AD: Bill (Receiving Accounts)
+                invoiceNumber: row[24], // Y: Invoice (Receiving Accounts)
+                invoiceDate: row[23], // X: Invoice Date (Receiving Accounts)
                 srnNumber: row[32],
                 receiptLiftNumber: row[28],
 
                 // Stage 8 QC (40-49)
-                qcStatus: row[44],
+                qcStatus: row[28], // AC: QC Status (Receiving Accounts)
                 qcDate: row[43],
 
                 // Stage 9 Tally (50-54)
-                tallyDoneBy: row[52],
+                tallyDoneBy: row[38], // AM: Tally By (Receiving Accounts)
                 tallyDate: row[53],
                 tallyRemarks: row[54],
 
-                // Stage 10 Invoice Submission (55-59)
-                plan9: row[55],
-                actual9: row[56],
-                handoverBy: row[57],
-                receivedByAccounts: row[58],
-                invoiceSubmissionDate: row[59],
+                // Stage 10 Invoice Submission (AW-BB -> 48-53)
+                plan9: row[48],
+                actual9: row[49],
+                handoverBy: row[51],
+                submitToHeadOffice: row[52],
+                invoiceSubmissionDate: row[53],
 
-                // Stage 11 Verification (60-65)
-                plan10: row[60],
-                actual10: row[61],
-                verifiedReceivedBy: row[62],
-                verifiedCheckedBy: row[63],
-                verificationDate: row[64],
-                verificationRemarks: row[65],
+                // Stage 11 Verification (BC-BI -> 54-60)
+                plan10: row[54],   // BC: Plan 5
+                actual10: row[55], // BD: Actual 5
+                // delay10: row[56], // BE: Delay 5
+                verifiedReceivedBy: row[57], // BF: Received By
+                verifiedCheckedBy: row[58],  // BG: Checked By
+                verificationDate: row[59],   // BH: Verification Date
+                verificationRemarks: row[60], // BI: Verification Remarks
 
                 // FMS Data
                 approvedBy: fmsRow[12],
-                basicValue: fmsRow[53],
-                totalWithTax: fmsRow[54],
+                basicValue: fmsRow[55], // BD: Basic Value (Indent Lift)
+                totalWithTax: fmsRow[56], // BE: Total Value (Indent Lift)
                 poCopy: fmsRow[56],
-                ...vendorDetails
+                ...vendorDetails,
+                vendorName: row[3], // D: Vendor Name (Receiving Accounts)
               }
             };
           });
@@ -193,7 +199,18 @@ export default function Stage11() {
     fetchData();
   }, []);
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendorName?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
   const completed = sheetRecords.filter((r) => r.status === "completed");
 
   const pendingColumns = [
@@ -210,13 +227,12 @@ export default function Stage11() {
     { key: "billAttachment", label: "Bill Attach" },
     { key: "qcStatus", label: "QC Status" },
     { key: "tallyDoneBy", label: "Tally By" },
-    { key: "plan10", label: "Plan 10" },
-    { key: "actual10", label: "Actual 10" },
+    { key: "tallyDoneBy", label: "Tally By" },
   ];
 
   const historyColumns = [
     ...pendingColumns,
-    // plan10/actual10 already in pending
+    // plan10/actual10 removed
     { key: "verifiedReceivedBy", label: "Verified Received By" },
     { key: "verifiedCheckedBy", label: "Verified Checked By" },
     { key: "verificationDate", label: "Verification Date" },
@@ -231,15 +247,51 @@ export default function Stage11() {
     historyColumns.map((c) => c.key)
   );
 
-  const handleOpenForm = (recordId: string) => {
-    const record = sheetRecords.find((r) => r.id === recordId);
-    if (!record) return;
+  // Toggle Selection
+  const toggleRow = (id: string) => {
+    const newSet = new Set(selectedRows);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedRows(newSet);
+  };
 
-    const vendor = getVendorData(record);
-    const invoiceNumber = record.data?.invoiceNumber || "-";
-    const invoiceDate = record.data?.invoiceDate || "";
+  const toggleAll = () => {
+    if (selectedRows.size === pending.length) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(pending.map((r) => r.id)));
+    }
+  };
 
-    setSelectedRecordId(recordId);
+  const handleOpenForm = (recordId?: string) => {
+    setBulkError(null);
+    let targetRecord;
+
+    if (recordId) {
+      setSelectedRows(new Set([recordId]));
+      targetRecord = sheetRecords.find((r) => r.id === recordId);
+    } else {
+      if (selectedRows.size === 0) return;
+      const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
+      if (selectedRecords.length === 0) return;
+
+      // Validate Same Invoice
+      const firstInv = selectedRecords[0].data.invoiceNumber || "";
+      const isConsistent = selectedRecords.every(r => (r.data.invoiceNumber || "") === firstInv);
+
+      if (!isConsistent) {
+        setBulkError("Selected items have different Invoice Numbers. Cannot submit together.");
+      }
+      targetRecord = selectedRecords[0];
+    }
+
+    if (!targetRecord) return;
+
+    const vendor = getVendorData(targetRecord);
+    const invoiceNumber = targetRecord.data?.invoiceNumber || "-";
+    const invoiceDate = targetRecord.data?.invoiceDate || "";
+
+    setSelectedRecordId(targetRecord.id);
     setFormData({
       checkedBy: "",
       verificationDate: new Date(),
@@ -252,57 +304,58 @@ export default function Stage11() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRecordId || !SHEET_API_URL) return;
-
-    const rec = sheetRecords.find((r) => r.id === selectedRecordId);
-    if (!rec) return;
+    if ((!selectedRecordId && selectedRows.size === 0) || !SHEET_API_URL) return;
+    if (bulkError) return; // Prevent submission if there's a bulk error
 
     setIsSubmitting(true);
     try {
+      const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
+      if (selectedRecords.length === 0) return;
+
       // 🔵 UPDATED: convert to M/D/YYYY so Google Sheets recognizes as DATE (not string)
       const d = formData.verificationDate;
       const verDateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-      // Create sparse row (DO NOT copy original row)
-      const rowArray = new Array(70).fill(""); // >= sheet width
 
-      // Ensure array size covers up to index 65
-      while (rowArray.length <= 65) {
-        rowArray.push("");
+      // Iterate and submit for ALL selected records
+      for (const rec of selectedRecords) {
+        // Create sparse row (DO NOT copy original row)
+        const rowArray = new Array(70).fill(""); // >= sheet width
+
+        // Ensure array size covers up to index 60 (BH covers index 59)
+        while (rowArray.length <= 60) {
+          rowArray.push("");
+        }
+
+        // 61: Actual 10 (Verification Date)
+        rowArray[55] = verDateStr; // BD(55): Actual 5
+        // 56 (BE): Delay 5 (Skip)
+
+        // 62: Verified Received By
+        rowArray[57] = ""; // BF(57): Received By
+
+        // 63: Verified Checked By
+        rowArray[58] = formData.checkedBy; // BG(58): Checked By
+
+        // 64: Verification Date
+        rowArray[59] = verDateStr; // BH(59): Verification Date
+
+        // 65: Remarks
+        rowArray[60] = formData.remarks; // BI(60): Remarks
+
+        const params = new URLSearchParams();
+        params.append("action", "update");
+        params.append("sheetName", "RECEIVING-ACCOUNTS");
+        params.append("rowIndex", rec.rowIndex.toString());
+        params.append("rowData", JSON.stringify(rowArray));
+
+        await fetch(SHEET_API_URL, { method: "POST", body: params });
       }
 
-      // 61: Actual 10 (Verification Date)
-      rowArray[57] = verDateStr;
-      rowArray[58] = "";
+      toast.success("Verification completed successfully!");
+      setOpen(false);
+      setSelectedRows(new Set());
+      fetchData();
 
-      // 62: Verified Received By
-      rowArray[59] = "";
-
-      // 63: Verified Checked By
-      rowArray[60] = formData.checkedBy;
-
-      // 64: Verification Date
-      rowArray[61] = verDateStr;
-
-      // 65: Remarks
-      rowArray[62] = formData.remarks;
-
-      const params = new URLSearchParams();
-      params.append("action", "update");
-      params.append("sheetName", "RECEIVING-ACCOUNTS");
-      params.append("rowIndex", rec.rowIndex.toString());
-      params.append("rowData", JSON.stringify(rowArray));
-
-      const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
-      const json = await res.json();
-      console.log("Stage 11 Submission:", json);
-
-      if (json.success) {
-        toast.success("Verification completed successfully!");
-        setOpen(false);
-        fetchData();
-      } else {
-        throw new Error(json.error || "Submission failed");
-      }
     } catch (err: any) {
       toast.error(err.message || "Failed to submit");
     } finally {
@@ -345,7 +398,10 @@ export default function Stage11() {
         );
       }
 
-      if (key === "vendorName") return vendor.name;
+      // Prioritize vendorName from data (Column D) if available
+      if (key === "vendorName") {
+        return data.vendorName && data.vendorName !== "-" ? data.vendorName : vendor.name;
+      }
 
       // Handle QC Status for display
       if (key === "qcStatus") {
@@ -389,6 +445,15 @@ export default function Stage11() {
             <p className="text-gray-600 mt-1">Verify invoice details and complete financial check</p>
           </div>
           <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input
+                placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-white w-[300px]"
+              />
+            </div>
             <Label className="text-sm font-medium">Show Columns:</Label>
             <Select value="" onValueChange={() => { }}>
               <SelectTrigger className="w-64">
@@ -424,6 +489,11 @@ export default function Stage11() {
                 </div>
               </SelectContent>
             </Select>
+            {selectedRows.size > 0 && (
+              <Button onClick={() => handleOpenForm()} className="ml-4">
+                Verify Selected ({selectedRows.size})
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -442,7 +512,12 @@ export default function Stage11() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 bg-white z-10">ID</TableHead>
+                    <TableHead className="w-12 sticky left-0 bg-white z-20">
+                      <Checkbox
+                        checked={selectedRows.size === pending.length && pending.length > 0}
+                        onCheckedChange={toggleAll}
+                      />
+                    </TableHead>
                     <TableHead className="bg-white z-10">Actions</TableHead>
                     {pendingColumns.filter(c => selectedPendingColumns.includes(c.key)).map(col => (
                       <TableHead key={col.key}>{col.label}</TableHead>
@@ -453,7 +528,12 @@ export default function Stage11() {
                 <TableBody>
                   {pending.map((rec: any) => (
                     <TableRow key={rec.id}>
-                      <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">{rec.id}</TableCell>
+                      <TableCell className="w-12 sticky left-0 bg-white z-10">
+                        <Checkbox
+                          checked={selectedRows.has(rec.id)}
+                          onCheckedChange={() => toggleRow(rec.id)}
+                        />
+                      </TableCell>
                       <TableCell className="bg-white z-10">
                         <Button variant="outline" size="sm" onClick={() => handleOpenForm(rec.id)}>Verify</Button>
                       </TableCell>
@@ -477,7 +557,7 @@ export default function Stage11() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 bg-white z-10">ID</TableHead>
+                    <TableHead className="sticky left-0 bg-white z-10 w-12"></TableHead>
                     {historyColumns.filter(c => selectedHistoryColumns.includes(c.key)).map(col => (
                       <TableHead key={col.key}>{col.label}</TableHead>
                     ))}
@@ -486,7 +566,7 @@ export default function Stage11() {
                 <TableBody>
                   {completed.map((rec: any) => (
                     <TableRow key={rec.id}>
-                      <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">{rec.id}</TableCell>
+                      <TableCell className="sticky left-0 bg-white z-10"></TableCell>
                       {historyColumns.filter(c => selectedHistoryColumns.includes(c.key)).map(col => (
                         <TableCell key={col.key}>{safeValue(rec, col.key)}</TableCell>
                       ))}
@@ -501,7 +581,14 @@ export default function Stage11() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>Verification by Accounts</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Verification by Accounts ({selectedRows.size} Selected)</DialogTitle></DialogHeader>
+
+          {bulkError && (
+            <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 border border-red-200">
+              {bulkError}
+            </div>
+          )}
+
           <div className="py-4 space-y-4">
             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
               <div><Label>Invoice #</Label><p className="font-mono">{formData.invoiceNumber}</p></div>
@@ -534,7 +621,7 @@ export default function Stage11() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!isFormValid || isSubmitting}>
+            <Button onClick={handleSubmit} disabled={!isFormValid || isSubmitting || !!bulkError}>
               {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying...</> : "Verify"}
             </Button>
           </DialogFooter>

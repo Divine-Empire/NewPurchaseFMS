@@ -24,6 +24,7 @@ export default function Sidebar() {
   const isPageAllowed = (pageName: string) => {
     if (pageName === "Return Approval") return true; // Always show new stage
     if (pageName === "Transporter Follow-Up") return true; // Always show new stage
+    if (pageName === "Submit Invoice (HO)") return true; // Always show new stage
     if (!pageAccess || pageAccess.length === 0) return true; // Show all if no restrictions
     return pageAccess.includes(pageName);
   };
@@ -32,7 +33,10 @@ export default function Sidebar() {
   const showDashboard = isPageAllowed("Dashboard");
 
   // Determine active state helper
-  const isActive = (path: string) => pathname === path || (path !== "/" && pathname.startsWith(path));
+  const isActive = (path: string) => {
+    if (path === "/") return pathname === "/";
+    return pathname === path || pathname.startsWith(`${path}/`);
+  };
 
   return (
     <>

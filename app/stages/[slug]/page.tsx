@@ -10,13 +10,15 @@ import FollowUpVendor from "@/components/stages/follow-up-vendor";
 import TransporterFollowUp from "@/components/stages/transporter-follow-up";
 import MaterialReceived from "@/components/stages/material-received";
 import QCRequirement from "@/components/stages/qc-requirement";
-import ReceiptInTally from "@/components/stages/receipt-in-tally";
+import ReceiptInTally from "@/components/stages/tally-entry";
 import SubmitInvoice from "@/components/stages/submit-invoice";
 import Verification from "@/components/stages/verification";
 import PurchaseReturn from "@/components/stages/purchase-return";
 import VendorPayment from "@/components/stages/vendor-payment";
 import FreightPayments from "@/components/stages/freight-payments";
 import ReturnApproval from "@/components/stages/return-approval";
+
+import SubmitInvoiceHO from "@/components/stages/submit-invoice-ho";
 
 const stageComponents: Record<string, React.ComponentType> = {
     "create-indent": CreateIndent,
@@ -29,6 +31,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "material-received": MaterialReceived,
     "qc-requirement": QCRequirement,
     "receipt-in-tally": ReceiptInTally,
+    "submit-invoice-ho": SubmitInvoiceHO,
     "submit-invoice": SubmitInvoice,
     "verification": Verification,
     "purchase-return": PurchaseReturn,

@@ -29,7 +29,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Upload, X, Loader2 } from "lucide-react";
+import { FileText, Upload, X, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
 interface LiftingEntry {
@@ -106,6 +106,7 @@ export default function Stage7() {
     const [sheetRecords, setSheetRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
 
     // Bulk State
     const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
@@ -229,6 +230,7 @@ export default function Stage7() {
                                 paymentStatus: row[17] || "",    // R: Payment Status
                                 biltyCopy: row[18] || "",        // S: Bilty Copy
                                 poCopy: fmsRow ? (fmsRow[58] || "") : "", // From INDENT-LIFT Column BG (index 58)
+                                invoiceNumber: row[24] || "",    // Y: Invoice Number
                                 qcRequirement: row[28] || "",    // AC: QC Required
 
                                 // Columns T and U for status determination
@@ -402,9 +404,20 @@ export default function Stage7() {
         }
     };
 
-    const pending = sheetRecords.filter(
-        (r) => r && r.data && r.status === "pending"
-    );
+    const pending = sheetRecords
+        .filter((r) => r && r.data && r.status === "pending")
+        .filter((r) => {
+            const searchLower = searchTerm.toLowerCase();
+            return (
+                r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+                r.data.itemName?.toLowerCase().includes(searchLower) ||
+                r.data.vendorName?.toLowerCase().includes(searchLower) ||
+                r.data.vendorName?.toLowerCase().includes(searchLower) ||
+                String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+                String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+            );
+        });
+
     const completed = sheetRecords.filter((r) => r && r.data && r.status === "completed");
 
     /* --------------------------------------------------------------- */
@@ -596,7 +609,7 @@ export default function Stage7() {
             // Column AF (31): Labour Amount
             rowArray[31] = form.paymentAmountLabour;
 
-            // Column AG (32): Hemali Amount
+            // Column AG (32): Auto Charge (replaces Hamali)
             rowArray[32] = form.paymentAmountHamali;
 
             // Column AH (33): Remarks
@@ -757,6 +770,19 @@ export default function Stage7() {
                                 </div>
                             </SelectContent>
                         </Select>
+                    </div>
+                </div>
+
+                {/* Search Filter */}
+                <div className="mt-4 flex items-center gap-4">
+                    <div className="relative flex-1 max-w-sm">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                        <Input
+                            placeholder="Search by Indent No, Item Name, Vendor, PO, Invoice..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-9 bg-white"
+                        />
                     </div>
                 </div>
             </div>

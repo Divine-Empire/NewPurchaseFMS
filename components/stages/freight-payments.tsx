@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText, RefreshCw, Upload, CalendarIcon, AlertTriangle } from "lucide-react";
+import { Loader2, FileText, RefreshCw, Upload, CalendarIcon, AlertTriangle, Search } from "lucide-react";
 import {
     Table,
     TableBody,
@@ -41,6 +41,7 @@ const IMAGE_FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID;
 
 export default function Stage14() {
     const [records, setRecords] = useState<any[]>([]);
+    const [searchTerm, setSearchTerm] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -100,6 +101,15 @@ export default function Stage14() {
                         const freightAmt = parseFloat(String(row[3]).replace(/,/g, '')) || 0; // Col D (Index 3)
                         const advanceAmt = parseFloat(String(row[4]).replace(/,/g, '')) || 0; // Col E (Index 4)
 
+                        // Format Dates (Remove timestamp)
+                        const formatDate = (d: any) => {
+                            if (!d) return "";
+                            const str = String(d);
+                            // If it contains 'T' (ISO format), split it
+                            if (str.includes("T")) return str.split("T")[0];
+                            return str;
+                        };
+
                         return {
                             id: row[1], // LR No as ID
                             rowIndex: originalIndex,
@@ -111,7 +121,7 @@ export default function Stage14() {
                                 biltyImage: row[2],     // C
                                 freightAmount: row[3],  // D
                                 advanceAmount: row[4],  // E
-                                paymentDate: row[5],    // F
+                                paymentDate: formatDate(row[5]),    // F
                                 vendorName: row[6],     // G
                                 subItem: row[7],        // H
                                 qty: row[8],            // I
@@ -121,8 +131,8 @@ export default function Stage14() {
                                 contact: row[12],       // M
 
                                 // Status Drivers
-                                plan1: row[13],         // N
-                                actual1: row[14],       // O
+                                plan1: formatDate(row[13]),         // N
+                                actual1: formatDate(row[14]),       // O
 
                                 // Calculated for modal
                                 freightVal: freightAmt,
@@ -146,7 +156,20 @@ export default function Stage14() {
     // -----------------------------------------------------------------
     // COLUMNS
     // -----------------------------------------------------------------
-    const pending = records.filter(r => r.status === "pending");
+    // -----------------------------------------------------------------
+    // COLUMNS
+    // -----------------------------------------------------------------
+    const pending = records
+        .filter(r => r.status === "pending")
+        .filter(r => {
+            const searchLower = searchTerm.toLowerCase();
+            return (
+                r.data.lrNo?.toLowerCase().includes(searchLower) ||
+                r.data.transporter?.toLowerCase().includes(searchLower) ||
+                r.data.vendorName?.toLowerCase().includes(searchLower) ||
+                r.data.subItem?.toLowerCase().includes(searchLower)
+            );
+        });
     const completed = records.filter(r => r.status === "history");
 
     const columns = [
@@ -162,6 +185,7 @@ export default function Stage14() {
         { key: "advanceAmount", label: "Advance Amt" },
         { key: "plan1", label: "Planned Date" }, // N
         { key: "actual1", label: "Payment Date" }, // O (History)
+        { key: "biltyImage", label: "Bilty" }, // C
     ];
 
     const [selectedColumns, setSelectedColumns] = useState<string[]>(columns.map(c => c.key));
@@ -325,6 +349,15 @@ export default function Stage14() {
                 </div>
 
                 <div className="flex gap-4 items-center">
+                    <div className="relative flex-1 max-w-sm">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                        <Input
+                            placeholder="Search by LR, Transporter, Vendor, Item..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-9 bg-white w-[300px]"
+                        />
+                    </div>
                     <Select value="" onValueChange={() => { }}>
                         <SelectTrigger className="w-40"><SelectValue placeholder="Columns" /></SelectTrigger>
                         <SelectContent className="max-h-64">

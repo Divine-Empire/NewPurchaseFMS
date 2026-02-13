@@ -44,6 +44,7 @@ import {
   Truck,
   ClipboardList,
   History,
+  Search,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -436,7 +437,23 @@ export default function Stage6() {
     fetchData();
   }, []);
 
-  const pending = sheetRecords.filter((r) => r.status === "pending");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const pending = sheetRecords
+    .filter((r) => r.status === "pending")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      // Safe checks for data
+      const vName = r.data.finalVendorName;
+
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        (vName && vName.toLowerCase().includes(searchLower)) ||
+        (vName && vName.toLowerCase().includes(searchLower)) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Search
+      );
+    });
   const completed = sheetRecords.filter((r) => r.status === "completed");
 
   const getLiftCounter = () => {
@@ -1026,6 +1043,19 @@ export default function Stage6() {
               </PopoverContent>
             </Popover>
           </div>
+        </div>
+      </div>
+
+      {/* Search Filter */}
+      <div className="mb-6 flex items-center gap-4 z-10 relative">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item Name, Vendor..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white shadow-sm border-slate-200 w-full"
+          />
         </div>
       </div>
 

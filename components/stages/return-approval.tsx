@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, RefreshCw, Upload, FileText, X } from "lucide-react";
+import { Loader2, RefreshCw, Upload, FileText, X, Search } from "lucide-react";
 import { toast } from "sonner";
 
 // Helper to convert file to base64
@@ -41,6 +41,7 @@ export default function Stage13() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [open, setOpen] = useState(false);
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState("");
 
     const [formData, setFormData] = useState({
         liftNumber: "",
@@ -78,15 +79,15 @@ export default function Stage13() {
                     .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
                     .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
                     .map(({ row, originalIndex }: any) => {
-                        // Stage Logic
-                        // Planned: Col BY (Index 76)
-                        // Actual: Col BZ (Index 77)
+                        // Stage Logic (Return Approval)
+                        // Planned: Col CE (Index 82)
+                        // Actual: Col CF (Index 83)
 
-                        const plan76 = row[76];
-                        const actual77 = row[77];
+                        const plan = row[82];
+                        const actual = row[83];
 
-                        const hasPlan = !!plan76 && String(plan76).trim() !== "" && String(plan76).trim() !== "-";
-                        const hasActual = !!actual77 && String(actual77).trim() !== "" && String(actual77).trim() !== "-";
+                        const hasPlan = !!plan && String(plan).trim() !== "" && String(plan).trim() !== "-";
+                        const hasActual = !!actual && String(actual).trim() !== "" && String(actual).trim() !== "-";
 
                         let status = "not_ready";
                         if (hasPlan && hasActual) {
@@ -102,22 +103,30 @@ export default function Stage13() {
                             status,
                             data: {
                                 indentNumber: row[1] || "",      // B: Indent Number
+                                poNumber: row[4],                // E: Using Indent-Lift logic, usually mapped here if needed
                                 liftNumber: row[2] || "",        // C: Lift No
                                 vendorName: row[3] || "",        // D: Vendor Name
                                 itemName: row[7] || "",          // H: Item Name
 
-                                // New Fields Requested
-                                invoiceNumber: row[24] || "-",   // Y: Invoice Number
-                                returnQty: row[66] || "-",       // BO: Return Qty
+                                // New Indent/Lift mapping
+                                returnQty: row[74] || "-",       // BW: Return Qty (Index 74)
+                                invoiceNumber: row[24] || "-",   // Y: Invoice Number (Index 24)
 
-                                // Stage Data
-                                plannedDate: row[76],            // BY
-                                actualDate: row[77],             // BZ
-                                delay: row[78],                  // CA
-                                dnNumber: row[79],               // CB: DN Number (was Status)
-                                remarks: row[80],                // CC
-                                returnImage: row[81],            // CD: Image
-                                returnStatus: row[70],           // BS: Status
+                                // Stage 13 (Return Approval): CE-CJ
+                                // CE (82): Plan 8
+                                // CF (83): Actual 8
+                                // CG (84): Delay 8
+                                // CH (85): DN Number
+                                // CI (86): Remarks
+                                // CJ (87): Image
+
+                                plannedDate: row[82],            // CE
+                                actualDate: row[83],             // CF
+                                delay: row[84],                  // CG
+                                dnNumber: row[85],               // CH
+                                remarks: row[86],                // CI
+                                returnImage: row[87],            // CJ
+                                returnStatus: row[78],           // CA: Status (from Stage 12)
                             }
                         };
                     });
@@ -134,7 +143,18 @@ export default function Stage13() {
         fetchData();
     }, []);
 
-    const pending = sheetRecords.filter((r) => r.status === "pending");
+    const pending = sheetRecords
+        .filter((r) => r.status === "pending")
+        .filter((r) => {
+            const searchLower = searchTerm.toLowerCase();
+            return (
+                r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+                r.data.itemName?.toLowerCase().includes(searchLower) ||
+                r.data.vendorName?.toLowerCase().includes(searchLower) ||
+                String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+                String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+            );
+        });
     const completed = sheetRecords.filter((r) => r.status === "completed");
 
     // Get first selected invoice number for validation
@@ -266,51 +286,37 @@ export default function Stage13() {
                 imageUrl = await uploadFile(formData.returnImage);
             }
 
-            // Calculate Delay
-            let delayVal = 0;
-            if (plannedDateForDelay && formData.actualDate) {
-                const actual = new Date(formData.actualDate);
-                const diffTime = actual.getTime() - plannedDateForDelay.getTime();
-                delayVal = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                if (delayVal < 0) delayVal = 0;
-            }
-
             // Format Date
             const d = new Date(formData.actualDate);
             const dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 
-            // Create sparse row
-            // Need up to index 81 (CD)
-            const rowArray = new Array(82).fill("");
+            // 83 (CF): Actual Date
+            // 84 (CG): Delay
+            // 85 (CH): DN Number
+            // 86 (CI): Remarks
+            // 87 (CJ): Image
 
-            // Map to Indices
-            // BZ: Actual
-            rowArray[77] = dateStr;
-            // CA: Delay
-            rowArray[78] = delayVal.toString();
-            // CB: DN Number (was Status)
-            rowArray[79] = formData.dnNumber;
-            // CC: Remarks
-            rowArray[80] = formData.remarks;
-            // CD: Image
-            rowArray[81] = imageUrl;
+            const updates = [
+                { col: "84", val: dateStr },          // CF (83) -> 84 (Actual)
+                // Skip 85 (CG) -> Delay
+                { col: "86", val: formData.dnNumber }, // CH (85) -> 86 (DN No.)
+                { col: "87", val: formData.remarks },  // CI (86) -> 87 (Remarks)
+                { col: "88", val: imageUrl }           // CJ (87) -> 88 (Image)
+            ];
 
-            const params = new URLSearchParams();
-            params.append("action", "update");
-            params.append("sheetName", "RECEIVING-ACCOUNTS");
-            params.append("rowIndex", rec.rowIndex.toString());
-            params.append("rowData", JSON.stringify(rowArray));
-
-            const res = await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
-            const json = await res.json();
-
-            if (json.success) {
-                toast.success("Approved successfully!", { id: toastId });
-                setOpen(false);
-                fetchData();
-            } else {
-                throw new Error(json.error || "Update failed");
+            for (const u of updates) {
+                const params = new URLSearchParams();
+                params.append("action", "updateCell");
+                params.append("sheetName", "RECEIVING-ACCOUNTS");
+                params.append("rowIndex", rec.rowIndex.toString());
+                params.append("columnIndex", u.col);
+                params.append("value", u.val);
+                await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
             }
+
+            toast.success("Approved successfully!", { id: toastId });
+            setOpen(false);
+            fetchData();
 
         } catch (err: any) {
             toast.error(err.message || "Failed to submit", { id: toastId });
@@ -335,6 +341,8 @@ export default function Stage13() {
 
         setIsSubmitting(true);
         const toastId = toast.loading(`Processing ${selectedRows.size} approvals...`);
+        let successCount = 0;
+        let failCount = 0;
 
         try {
             // Upload Image once
@@ -363,44 +371,30 @@ export default function Stage13() {
             const d = new Date(bulkFormData.actualDate);
             const dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 
-            let successCount = 0;
-            let failCount = 0;
-
             // Process each selected record
             for (const id of Array.from(selectedRows)) {
                 const rec = sheetRecords.find((r) => r.id === id);
                 if (!rec) continue;
 
                 try {
-                    // Calculate Delay
-                    let delayVal = 0;
-                    const pDate = rec.data.plannedDate ? new Date(rec.data.plannedDate) : null;
-                    if (pDate && !isNaN(pDate.getTime()) && bulkFormData.actualDate) {
-                        const actual = new Date(bulkFormData.actualDate);
-                        const diffTime = actual.getTime() - pDate.getTime();
-                        delayVal = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                        if (delayVal < 0) delayVal = 0;
+                    const updates = [
+                        { col: "84", val: dateStr },          // CF (83) -> 84 (Actual)
+                        // Skip 85 (CG) -> Delay
+                        { col: "86", val: bulkFormData.dnNumber }, // CH (85) -> 86 (DN No.)
+                        { col: "87", val: bulkFormData.remarks },  // CI (86) -> 87 (Remarks)
+                        { col: "88", val: imageUrl }           // CJ (87) -> 88 (Image)
+                    ];
+
+                    for (const u of updates) {
+                        const params = new URLSearchParams();
+                        params.append("action", "updateCell");
+                        params.append("sheetName", "RECEIVING-ACCOUNTS");
+                        params.append("rowIndex", rec.rowIndex.toString());
+                        params.append("columnIndex", u.col);
+                        params.append("value", u.val);
+                        await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
                     }
-
-                    // Create sparse row
-                    const rowArray = new Array(82).fill("");
-                    rowArray[77] = dateStr; // BZ: Actual
-                    rowArray[78] = delayVal.toString(); // CA: Delay
-                    rowArray[79] = bulkFormData.dnNumber; // CB: DN Number
-                    rowArray[80] = bulkFormData.remarks; // CC: Remarks
-                    rowArray[81] = imageUrl; // CD: Image
-
-                    const params = new URLSearchParams();
-                    params.append("action", "update");
-                    params.append("sheetName", "RECEIVING-ACCOUNTS");
-                    params.append("rowIndex", rec.rowIndex.toString());
-                    params.append("rowData", JSON.stringify(rowArray));
-
-                    const res = await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
-                    const json = await res.json();
-
-                    if (json.success) successCount++;
-                    else failCount++;
+                    successCount++;
                 } catch {
                     failCount++;
                 }
@@ -442,9 +436,20 @@ export default function Stage13() {
                         <h2 className="text-2xl font-bold">Stage 13: Return Approval</h2>
                         <p className="text-gray-600 mt-1">Approve return requests</p>
                     </div>
-                    <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    </Button>
+                    <div className="flex items-center gap-4">
+                        <div className="relative flex-1 max-w-sm">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                            <Input
+                                placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 bg-white w-[300px]"
+                            />
+                        </div>
+                        <Button variant="outline" onClick={fetchData} disabled={isLoading}>
+                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Bulk Approval Controls */}
