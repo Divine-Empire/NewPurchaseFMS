@@ -111,10 +111,10 @@ export default function Stage13() {
                     .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
                     .map(({ row, originalIndex }: any) => {
                         const plan1 = row[17];
-                        const actual1 = row[18];
-                        const storedPaid = parseFloat(String(row[20]).replace(/,/g, '')) || 0;
-                        const storedPendingRaw = row[21];
-                        const totalVal = parseFloat(String(row[13]).replace(/,/g, '')) || 0;
+                        const actual1 = row[16];
+                        const storedPaid = parseFloat(String(row[18]).replace(/,/g, '')) || 0;
+                        const storedPendingRaw = row[19];
+                        const totalVal = parseFloat(String(row[12]).replace(/,/g, '')) || 0;
 
                         let currentPending = 0;
                         if (storedPendingRaw !== undefined && storedPendingRaw !== "" && storedPendingRaw !== "-") {
@@ -160,7 +160,7 @@ export default function Stage13() {
                                 paymentTerms: row[14],
                                 poCopy: row[15],
                                 plan1: toDate(row[17]),
-                                actual1: toDate(row[18]),
+                                actual1: toDate(row[16]),
                                 totalPaid: storedPaid,
                                 pendingAmount: currentPending,
                                 paymentStatus: currentPending <= 1 ? "paid" : (storedPaid > 0 ? "partial" : "pending"),
@@ -359,9 +359,9 @@ export default function Stage13() {
 
                 if (rec.rowIndex) {
                     const updates = [
-                        { col: "19", val: dateStr },
-                        { col: "21", val: newTotalPaid.toString() },
-                        { col: "22", val: (newPending > 0 ? newPending : 0).toString() }
+                        { col: "17", val: newPending <= 1 ? dateStr : "" },
+                        { col: "19", val: newTotalPaid.toString() },
+                        { col: "20", val: (newPending > 0 ? newPending : 0).toString() }
                     ];
 
                     for (const u of updates) {

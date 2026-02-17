@@ -111,7 +111,7 @@ export default function Stage5() {
                 createdBy: row[2],
                 category: row[3],
                 itemName: row[4],
-                quantity: row[5],
+                quantity: row[14],
                 warehouseLocation: row[6],
                 deliveryDate: row[7] ? formatDate(row[7]) : "",
                 leadTime: row[8],

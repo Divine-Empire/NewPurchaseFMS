@@ -73,6 +73,7 @@ export default function Stage3() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [currentRecord, setCurrentRecord] = useState<any>(null);
   const [vendorCount, setVendorCount] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // New state for bulk selection
 
   // Vendor list fetched from Dropdown sheet
   const [vendorList, setVendorList] = useState<string[]>([]);
@@ -351,10 +352,62 @@ export default function Stage3() {
 
   // Hardcoded payment terms removed
 
+  // Check and save new vendors to Dropdown sheet (Column G / Index 6)
+  const checkAndSaveNewVendors = async (names: string[]) => {
+    const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+    if (!SHEET_API_URL || names.length === 0) return;
+
+    const newVendors: string[] = [];
+    names.forEach(name => {
+      if (!name) return;
+      const exists = vendorList.some(v => v.toLowerCase() === name.toLowerCase());
+      const alreadyQueued = newVendors.some(v => v.toLowerCase() === name.toLowerCase());
+      if (!exists && !alreadyQueued) {
+        newVendors.push(name);
+      }
+    });
+
+    if (newVendors.length > 0) {
+      console.log("Saving new vendors:", newVendors);
+
+      // Optimistically update local state
+      setVendorList(prev => [...prev, ...newVendors]);
+
+      try {
+        // Fetch last row to determine startRow
+        const res = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
+        const json = await res.json();
+        const existingRows = Array.isArray(json.data) ? json.data : [];
+        const nextRow = existingRows.length + 1;
+
+        // Prepare row data: Column G is Index 6
+        const rowsToAdd = newVendors.map(name => {
+          const row = new Array(10).fill("");
+          row[6] = name; // Column G
+          return row;
+        });
+
+        const params = new URLSearchParams();
+        params.append("action", "batchInsert");
+        params.append("sheetName", "Dropdown");
+        params.append("rowsData", JSON.stringify(rowsToAdd));
+        params.append("startRow", nextRow.toString());
+
+        await fetch(SHEET_API_URL, {
+          method: "POST",
+          body: params,
+        });
+        console.log("New vendors saved to Dropdown sheet");
+      } catch (e) {
+        console.error("Failed to save new vendors:", e);
+      }
+    }
+  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRecord || !currentRecord) return;
+    if ((!selectedRecord && selectedIds.size === 0) || !currentRecord) return;
 
     // Capture state for background execution
     const recordToUpdate = { ...currentRecord };
@@ -371,9 +424,17 @@ export default function Stage3() {
     }
 
     const submitPromise = (async () => {
+      // Check and save new vendors first
+      const vendorsToCheck = [
+        submissionData.vendor1Name,
+        submissionData.vendor2Name,
+        submissionData.vendor3Name
+      ].filter(Boolean);
+      checkAndSaveNewVendors(vendorsToCheck);
+
       const vendorImageUrls: string[] = ["", "", ""];
 
-      // 1. Upload Attachments
+      // 1. Upload Attachments (ONCE for all selected records)
       for (let i = 1; i <= numVendors; i++) {
         const attachment = submissionData[`vendor${i}Attachment` as keyof typeof submissionData];
 
@@ -388,11 +449,14 @@ export default function Stage3() {
 
             const base64Data = await toBase64(attachment);
 
+            // Use the first selected ID for the filename prefix, or a generic timestamp
+            const filePrefix = selectedIds.size > 0 ? Array.from(selectedIds)[0] : "bulk";
+
             const uploadParams = new URLSearchParams();
             uploadParams.append("action", "uploadFile");
             uploadParams.append("sheetName", "INDENT-LIFT");
             uploadParams.append("base64Data", base64Data);
-            uploadParams.append("fileName", `Stage3_V${i}_${recordToUpdate.id}_${attachment.name}`);
+            uploadParams.append("fileName", `Stage3_V${i}_${filePrefix}_${attachment.name}`);
             uploadParams.append("mimeType", attachment.type);
             const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
             uploadParams.append("folderId", folderId);
@@ -421,66 +485,80 @@ export default function Stage3() {
 
       const now = new Date();
 
-      // IMPORTANT: Use a sparse array. Do NOT resubmit A-S (0-18) or any other existing data.
-      const rowArray: any[] = [];
+      // Process all selected IDs
+      // If opened via button (bulk), use selectedIds. If opened via row click (legacy/fallback), use selectedRecord
+      const idsToProcess = selectedIds.size > 0 ? Array.from(selectedIds) : (selectedRecord ? [selectedRecord] : []);
 
-      // Update T (19) and Vendor blocks
-      rowArray[19] = formatDate(now); // T (ACTUAL2) - Strictly DD/MM/YYYY
+      if (idsToProcess.length === 0) throw new Error("No records selected for update");
 
-      // Vendor 1
-      rowArray[21] = submissionData.vendor1Name || "";
-      rowArray[22] = submissionData.vendor1Rate || "";
-      rowArray[23] = submissionData.vendor1Terms || "";
-      rowArray[24] = formatDate(submissionData.vendor1DeliveryDate);
-      rowArray[25] = ""; // Warranty Type (not used)
-      rowArray[26] = ""; // Warranty From (not used)
-      rowArray[27] = ""; // Warranty To (not used)
-      rowArray[28] = vendorImageUrls[0] || "";
+      const updatePromises = idsToProcess.map(async (id) => {
+        const record = sheetRecords.find(r => r.id === id);
+        if (!record) return;
 
-      // Vendor 2
-      rowArray[29] = submissionData.vendor2Name || "";
-      rowArray[30] = submissionData.vendor2Rate || "";
-      rowArray[31] = submissionData.vendor2Terms || "";
-      rowArray[32] = formatDate(submissionData.vendor2DeliveryDate);
-      rowArray[33] = ""; // Warranty Type (not used)
-      rowArray[34] = ""; // Warranty From (not used)
-      rowArray[35] = ""; // Warranty To (not used)
-      rowArray[36] = vendorImageUrls[1] || "";
+        // IMPORTANT: Use a sparse array. Do NOT resubmit A-S (0-18) or any other existing data.
+        const rowArray: any[] = [];
 
-      // Vendor 3
-      rowArray[37] = submissionData.vendor3Name || "";
-      rowArray[38] = submissionData.vendor3Rate || "";
-      rowArray[39] = submissionData.vendor3Terms || "";
-      rowArray[40] = formatDate(submissionData.vendor3DeliveryDate);
-      rowArray[41] = ""; // Warranty Type (not used)
-      rowArray[42] = ""; // Warranty From (not used)
-      rowArray[43] = ""; // Warranty To (not used)
-      rowArray[44] = vendorImageUrls[2] || "";
+        // Update T (19) and Vendor blocks
+        rowArray[19] = formatDate(now); // T (ACTUAL2) - Strictly DD/MM/YYYY
 
-      // 3. Update Sheet
-      const params = new URLSearchParams();
-      params.append("action", "update");
-      params.append("sheetName", "INDENT-LIFT"); // Correct sheet name
-      params.append("rowIndex", recordToUpdate.rowIndex.toString());
-      params.append("rowData", JSON.stringify(rowArray));
+        // Vendor 1
+        rowArray[21] = submissionData.vendor1Name || "";
+        rowArray[22] = submissionData.vendor1Rate || "";
+        rowArray[23] = submissionData.vendor1Terms || "";
+        rowArray[24] = formatDate(submissionData.vendor1DeliveryDate);
+        rowArray[25] = ""; // Warranty Type
+        rowArray[26] = ""; // Warranty From
+        rowArray[27] = ""; // Warranty To
+        rowArray[28] = vendorImageUrls[0] || "";
 
-      const response = await fetch(SHEET_API_URL, { method: "POST", body: params });
-      if (!response.ok) throw new Error(`Sync failed with status ${response.status}`);
+        // Vendor 2
+        rowArray[29] = submissionData.vendor2Name || "";
+        rowArray[30] = submissionData.vendor2Rate || "";
+        rowArray[31] = submissionData.vendor2Terms || "";
+        rowArray[32] = formatDate(submissionData.vendor2DeliveryDate);
+        rowArray[33] = ""; // Warranty Type
+        rowArray[34] = ""; // Warranty From
+        rowArray[35] = ""; // Warranty To
+        rowArray[36] = vendorImageUrls[1] || "";
 
-      const result = await response.json();
-      if (!result.success) throw new Error(result.error || "Update failed");
+        // Vendor 3
+        rowArray[37] = submissionData.vendor3Name || "";
+        rowArray[38] = submissionData.vendor3Rate || "";
+        rowArray[39] = submissionData.vendor3Terms || "";
+        rowArray[40] = formatDate(submissionData.vendor3DeliveryDate);
+        rowArray[41] = ""; // Warranty Type
+        rowArray[42] = ""; // Warranty From
+        rowArray[43] = ""; // Warranty To
+        rowArray[44] = vendorImageUrls[2] || "";
 
-      // 4. Update Local State
-      updateRecord(selectionId, { ...submissionData });
-      moveToNextStage(selectionId);
-      if (!isThirdParty) moveToNextStage(selectionId);
+        // 3. Update Sheet
+        const params = new URLSearchParams();
+        params.append("action", "update");
+        params.append("sheetName", "INDENT-LIFT");
+        params.append("rowIndex", record.rowIndex.toString());
+        params.append("rowData", JSON.stringify(rowArray));
+
+        const response = await fetch(SHEET_API_URL, { method: "POST", body: params });
+        if (!response.ok) throw new Error(`Sync failed for ${id} with status ${response.status}`);
+
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || `Update failed for ${id}`);
+
+        // 4. Update Local State
+        updateRecord(id, { ...submissionData });
+        moveToNextStage(id);
+        if (!isThirdParty) moveToNextStage(id);
+      });
+
+      await Promise.all(updatePromises);
       await fetchData();
+      setSelectedIds(new Set()); // Clear selection after success
 
-      return result;
+      return { success: true };
     })();
 
     toast.promise(submitPromise, {
-      loading: `Saving Vendor details for ${recordToUpdate.id}...`,
+      loading: `Saving Vendor details for ${selectedIds.size || 1} record(s)...`,
       success: "Vendor details saved successfully!",
       error: (err) => `Failed to save: ${err.message}`,
     });
@@ -497,6 +575,44 @@ export default function Stage3() {
       vendor2Name: "", vendor2Rate: "", vendor2Terms: "", vendor2DeliveryDate: "", vendor2Attachment: null,
       vendor3Name: "", vendor3Rate: "", vendor3Terms: "", vendor3DeliveryDate: "", vendor3Attachment: null,
     });
+  };
+
+
+
+  const toggleSelection = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    // Check if we should select all or deselect all based on current visibility/filtering
+    const allSelected = pending.length > 0 && pending.every(r => selectedIds.has(r.id));
+
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      const newSelected = new Set(selectedIds);
+      pending.forEach(r => newSelected.add(r.id));
+      setSelectedIds(newSelected);
+    }
+  };
+
+  const handleBulkUpdate = () => {
+    if (selectedIds.size === 0) return;
+    // Just use the first selected record to populate defaults if needed, or clear defaults
+    // The requirement says "fill a unified form", so we start with empty form
+    setOpen(true);
+    // You could set `currentRecord` to one of them for display purposes in the modal header/summary,
+    // but the summary shows single item details. We should probably hide specific item details in bulk mode.
+    // For now, let's just pick the first one so the modal doesn't crash if it tries to access currentRecord fields
+    const firstId = Array.from(selectedIds)[0];
+    const rec = sheetRecords.find(r => r.id === firstId);
+    if (rec) setCurrentRecord(rec);
   };
 
   const handleOpenForm = (recordId: string) => {
@@ -585,6 +701,17 @@ export default function Stage3() {
         </div>
       </div>
 
+      <div className="flex justify-end mb-4">
+        {selectedIds.size > 0 && activeTab === "pending" && (
+          <Button
+            onClick={handleBulkUpdate}
+            className="animate-in fade-in zoom-in duration-200"
+          >
+            Update Vendor ({selectedIds.size})
+          </Button>
+        )}
+      </div>
+
 
 
       {/* Search Filter */}
@@ -646,7 +773,12 @@ export default function Stage3() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 bg-white z-10 w-[140px]">Actions</TableHead>
+                    <TableHead className="w-[50px] sticky left-0 bg-white z-10">
+                      <Checkbox
+                        checked={pending.length > 0 && pending.every(r => selectedIds.has(r.id))}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
                     {baseColumns
                       .filter((c) => selectedColumns.includes(c.accessorKey))
                       .map((col) => (
@@ -659,16 +791,14 @@ export default function Stage3() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
+
                   {pending.map((record) => (
                     <TableRow key={record.id} className="hover:bg-muted/50 odd:bg-white even:bg-slate-50/80 group">
-                      <TableCell className="sticky left-0 bg-white group-even:bg-slate-50/80 z-10 w-[140px]">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenForm(record.id)}
-                        >
-                          Update Vendor
-                        </Button>
+                      <TableCell className="w-[50px] sticky left-0 bg-white group-even:bg-slate-50/80 z-10">
+                        <Checkbox
+                          checked={selectedIds.has(record.id)}
+                          onCheckedChange={() => toggleSelection(record.id)}
+                        />
                       </TableCell>
                       {baseColumns
                         .filter((c) => selectedColumns.includes(c.accessorKey))
@@ -821,6 +951,11 @@ export default function Stage3() {
                 ? "Enter details for 3 different vendors"
                 : "Enter details for the selected vendor"}
             </p>
+            {selectedIds.size > 1 && (
+              <div className="mt-2 text-sm font-medium text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
+                Updating {selectedIds.size} records. The same vendor details will be applied to all selected items.
+              </div>
+            )}
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
@@ -921,7 +1056,19 @@ export default function Stage3() {
                                 </div>
                               ))
                             ) : (
-                              <div className="px-3 py-2 text-sm text-gray-500">No vendors found</div>
+                              <div
+                                className="px-3 py-2 text-sm text-blue-600 hover:bg-gray-50 cursor-pointer flex items-center gap-2"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  const newVal = getVendorSearchState(num).search;
+                                  setFormData({ ...formData, [`vendor${num}Name`]: newVal });
+                                  const { setSearch, setShow } = getVendorSearchState(num);
+                                  setSearch(newVal); // Confirm the custom value
+                                  setShow(false);
+                                }}
+                              >
+                                <span className="font-semibold">+ Create "{getVendorSearchState(num).search}"</span>
+                              </div>
                             )}
                           </div>
                         )}

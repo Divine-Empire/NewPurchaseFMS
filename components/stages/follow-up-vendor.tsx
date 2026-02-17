@@ -811,8 +811,8 @@ export default function Stage6() {
           receivingAccountRow[17] = lift.paymentStatus || "";                  // 17/R: Payment Status
           receivingAccountRow[18] = biltyLink;                                 // 18/S: Bilty Copy
 
-          // Index 74 (Column BW): Expected Delivery Date
-          receivingAccountRow[74] = expectedDeliveryDateFormatted;
+          // Index 34 (Column AI): Expected Delivery Date
+          receivingAccountRow[34] = expectedDeliveryDateFormatted;
         }
 
         // Insert at next available position

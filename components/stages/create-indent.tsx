@@ -201,6 +201,7 @@ export default function Stage1() {
     disabled?: boolean;
   }) => {
     const [open, setOpen] = useState(false);
+    const [searchValue, setSearchValue] = useState("");
 
     return (
       <Popover open={open} onOpenChange={setOpen}>
@@ -220,9 +221,25 @@ export default function Stage1() {
         </PopoverTrigger>
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
           <Command>
-            <CommandInput placeholder={searchPlaceholder} />
+            <CommandInput
+              placeholder={searchPlaceholder}
+              onValueChange={setSearchValue}
+            />
             <CommandList>
-              <CommandEmpty>No option found.</CommandEmpty>
+              <CommandEmpty>
+                <div
+                  className="py-2 px-4 text-sm text-blue-600 cursor-pointer hover:bg-slate-100 flex items-center gap-2"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange(searchValue); // Set custom value
+                    setOpen(false);
+                  }}
+                >
+                  <PlusCircle className="w-3 h-3" />
+                  Create "{searchValue}"
+                </div>
+              </CommandEmpty>
               <CommandGroup>
                 {options.map((option) => (
                   <CommandItem
@@ -366,6 +383,101 @@ export default function Stage1() {
     const items = dropdownData.filter(item => item.category === category);
     // Deduplicate by itemName to prevent duplicate key errors in the dropdown
     return Array.from(new Map(items.map(item => [item.itemName, item])).values());
+  };
+
+
+  // Check and save new options to Dropdown sheet
+  const checkAndSaveNewOptions = async (items: any[]) => {
+    const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+    if (!SHEET_API_URL) return;
+
+    const newOptions: any[] = [];
+    const newLocalDropdowns: any[] = [];
+
+    items.forEach(item => {
+      // Check if this combo exists
+      const exists = dropdownData.some(
+        d => d.category === item.category &&
+          d.itemName === item.itemName &&
+          d.itemCode === item.itemCode
+      );
+
+      // Also check if we already queued it to prevent duplicates in update
+      const alreadyQueued = newOptions.some(
+        d => d.category === item.category &&
+          d.itemName === item.itemName &&
+          d.itemCode === item.itemCode
+      );
+
+      if (!exists && !alreadyQueued) {
+        newOptions.push({
+          category: item.category,
+          itemName: item.itemName,
+          itemCode: item.itemCode
+        });
+        // Prepare for local update
+        newLocalDropdowns.push({
+          category: item.category,
+          itemName: item.itemName,
+          itemCode: item.itemCode
+        });
+      }
+    });
+
+    if (newOptions.length > 0) {
+      console.log("Saving new dropdown options:", newOptions);
+
+      // Optimistically update local state immediately so user sees them if they add more items
+      setDropdownData(prev => [...prev, ...newLocalDropdowns]);
+
+      try {
+        // Prepare row data: [CreatedBy(A), Warehouse(B), ItemCode(C), Category(D), ItemName(E), ...]
+        // Dropdown sheet structure: 
+        // A: Created By, B: Warehouse, C: Item Code, D: Category, E: Item Name, ...
+
+        const rowsToAdd = newOptions.map(opt => {
+          const row = new Array(20).fill("");
+          row[2] = opt.itemCode; // Column C
+          row[3] = opt.category; // Column D
+          row[4] = opt.itemName; // Column E
+          return row;
+        });
+
+        const params = new URLSearchParams();
+        params.append("action", "batchInsert"); // Using batchInsert or append
+        params.append("sheetName", "Dropdown");
+        params.append("rowsData", JSON.stringify(rowsToAdd));
+        // We append to the end, so no startRow needed if the backend handles 'append' logic with batchInsert
+        // If backend needs startRow, we might need to fetch it first, but let's try assuming batchInsert appends if no startRow or use a dedicated 'append' action if available.
+        // Based on previous code, the backend supports "update" and "batchInsert". 
+        // Let's rely on the fact that we can just calculate where to put it or use a simpler "append" loop if robust batch isn't there.
+        // Actually, safe bet is to use a loop of "appendRow" if available, or just "batchInsert" at a high row index?
+        // "batchInsert" in `submitToSheet` used `startRow`. 
+
+        // LET'S USE A "append" action if we can infer it exists or fallback to `batchInsert`.
+        // The safest implementation based on standard Google Apps Script patterns is usually an 'append' action.
+        // I'll assume 'append' action is supported or I'll implement a loop using 'update' at the end.
+        // Wait, I can just use 'batchInsert' with a high start row? No, that leaves gaps.
+        // Let's try to assume the backend has an 'append' or 'appendRow' feature.
+        // If not, I'll fetch the last row index first.
+
+        // Fetch last row to be safe
+        const res = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
+        const json = await res.json();
+        const existingRows = Array.isArray(json.data) ? json.data : [];
+        const nextRow = existingRows.length + 1; // 1-based index
+
+        params.append("startRow", nextRow.toString());
+
+        await fetch(SHEET_API_URL, {
+          method: "POST",
+          body: params,
+        });
+        console.log("New options saved to Dropdown sheet");
+      } catch (e) {
+        console.error("Failed to save new options:", e);
+      }
+    }
   };
 
 
@@ -526,6 +638,9 @@ export default function Stage1() {
           }
         }
 
+        // Check and save new dropdown options in background
+        checkAndSaveNewOptions(createdRecords);
+
         await submitToSheet({
           ...formData,
           items: createdRecords,
@@ -628,6 +743,8 @@ export default function Stage1() {
         const selectedItem = dropdownData.find(
           d => d.category === item.category && d.itemName === value
         );
+
+        // If we found a match, auto-fill. If not (new item), leave empty for manual entry
         return {
           ...item,
           itemName: value,
@@ -1155,8 +1272,8 @@ export default function Stage1() {
                         options={item.category ? getItemsByCategory(item.category).map(i => i.itemName) : []}
                         value={item.itemName}
                         onChange={(val) => updateItem(index, "itemName", val)}
-                        placeholder={item.category ? "Select item" : "Select category first"}
-                        searchPlaceholder="Search item..."
+                        placeholder={item.category ? "Select or type item" : "Select category first"}
+                        searchPlaceholder="Search or create item..."
                         disabled={!item.category}
                       />
                     </div>

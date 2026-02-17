@@ -164,10 +164,10 @@ export default function Stage14() {
         .filter(r => {
             const searchLower = searchTerm.toLowerCase();
             return (
-                r.data.lrNo?.toLowerCase().includes(searchLower) ||
-                r.data.transporter?.toLowerCase().includes(searchLower) ||
-                r.data.vendorName?.toLowerCase().includes(searchLower) ||
-                r.data.subItem?.toLowerCase().includes(searchLower)
+                String(r.data.lrNo || "").toLowerCase().includes(searchLower) ||
+                String(r.data.transporter || "").toLowerCase().includes(searchLower) ||
+                String(r.data.vendorName || "").toLowerCase().includes(searchLower) ||
+                String(r.data.subItem || "").toLowerCase().includes(searchLower)
             );
         });
     const completed = records.filter(r => r.status === "history");
