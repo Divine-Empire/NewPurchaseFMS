@@ -481,104 +481,54 @@ export default function Stage1() {
   };
 
 
-  const submitToSheet = async (data: any, rootIndentNumber: string) => {
+  // submitToSheet: Uses insertIndent GAS action which atomically generates
+  // unique IN-NNN[A/B/C] IDs under a LockService lock, preventing duplicates
+  // when multiple users submit simultaneously.
+  // Returns the generated indent IDs so the counter can be synced.
+  const submitToSheet = async (data: any, attachmentUrl: string): Promise<string[]> => {
+    const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+    if (!SHEET_API_URL) throw new Error("Sheet API URL is not defined");
+
+    // Build rows WITHOUT Col B (index 1) — GAS will fill it with unique IDs
+    const rows = data.items.map((item: any, i: number) => {
+      const d = new Date(new Date().getTime() + i * 1000);
+      const timestamp = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+
+      const row = new Array(70).fill("");
+      row[0] = timestamp;                    // A: Timestamp
+      row[1] = "";                           // B: Indent No — filled by GAS
+      row[2] = data.createdBy;              // C: Created By
+      row[3] = item.category;              // D: Category
+      row[4] = item.itemName;              // E: Item Name
+      row[5] = item.quantity;              // F: Qty
+      row[6] = data.warehouseLocation;     // G: Warehouse
+      row[7] = item.itemCode || "";        // H: Item Code
+      row[8] = data.leadTime;              // I: Lead Time
+      row[17] = attachmentUrl || "";       // R: Attachment
+      row[69] = item.uom || "";            // BR: UOM
+      return row;
+    });
+
+    console.log(`Submitting ${rows.length} rows via insertIndent...`);
+
+    const params = new URLSearchParams();
+    params.append("action", "insertIndent");
+    params.append("rowsData", JSON.stringify(rows));
+
+    const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
+    const text = await res.text();
+    let result: any;
     try {
-      const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+      result = JSON.parse(text);
+    } catch (e) {
+      throw new Error("Failed to parse insertIndent response: " + text);
+    }
 
-      if (!SHEET_API_URL) {
-        console.error("Sheet API URL is not defined");
-        return;
-      }
-
-      // 1. Prepare data rows (Array of Arrays)
-      const rows = data.items.map((item: any, i: number) => {
-        const d = new Date(new Date().getTime() + i * 1000);
-        const day = d.getDate();
-        const month = d.getMonth() + 1;
-        const year = d.getFullYear();
-        const hours = String(d.getHours()).padStart(2, "0");
-        const minutes = String(d.getMinutes()).padStart(2, "0");
-        const seconds = String(d.getSeconds()).padStart(2, "0");
-        const timestamp = `${day}/${month}/${year}`;
-
-        const indentNum = item.indentNumber || rootIndentNumber;
-        // Column Order: Timestamp(A), Indent(B), CreatedBy(C), Category(D), ItemName(E), Qty(F), Warehouse(G), ItemCode(H), LeadTime(I)
-
-        const row = new Array(70).fill(""); // Ensure enough columns for UOM (Index 69)
-
-        row[0] = timestamp;
-        row[1] = indentNum;
-        row[2] = data.createdBy;
-        row[3] = item.category;
-        row[4] = item.itemName;
-        row[5] = item.quantity;
-        row[6] = data.warehouseLocation;
-        row[7] = item.itemCode || "";
-        row[8] = data.leadTime;
-        row[17] = data.attachmentUrl || "";
-        row[69] = item.uom || ""; // Column BR (Index 69)
-
-        return row;
-      });
-
-      console.log(`Submitting ${rows.length} rows to Sheet...`);
-
-      // 2. Check if this is first-time insert (no data after row 6)
-      const checkRes = await fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`);
-      const checkJson = await checkRes.json();
-      const existingRows = Array.isArray(checkJson.data) ? checkJson.data : [];
-      const dataRowsCount = existingRows.slice(6).filter((r: any) => r[1] && String(r[1]).trim() !== "").length;
-
-      if (dataRowsCount === 0) {
-        // First time insert - use update action to place at row 7
-        console.log("First time insert - placing data starting at row 7");
-        let successCount = 0;
-        for (let i = 0; i < rows.length; i++) {
-          const rowIndex = 7 + i;
-          const params = new URLSearchParams();
-          params.append("action", "update");
-          params.append("sheetName", "INDENT-LIFT");
-          params.append("rowIndex", rowIndex.toString());
-          params.append("rowData", JSON.stringify(rows[i]));
-
-          const res = await fetch(SHEET_API_URL, {
-            method: "POST",
-            body: params,
-          });
-          const result = await res.json();
-          if (result && result.success) successCount++;
-        }
-        console.log(`Saved ${successCount}/${rows.length} rows at row 7+ ✅`);
-      } else {
-        // Data exists - use batchInsert to append
-        const params = new URLSearchParams();
-        params.append("action", "batchInsert");
-        params.append("sheetName", "INDENT-LIFT");
-        params.append("rowsData", JSON.stringify(rows));
-        params.append("startRow", "7");
-
-        const res = await fetch(SHEET_API_URL, {
-          method: "POST",
-          body: params,
-        });
-
-        const text = await res.text();
-        let result;
-        try {
-          result = JSON.parse(text);
-        } catch (e) {
-          console.error("Failed to parse response JSON:", text);
-          return;
-        }
-
-        if (result && result.success === true) {
-          console.log("Saved in sheet ✅");
-        } else {
-          console.error("Sheet error:", JSON.stringify(result, null, 2));
-        }
-      }
-    } catch (error) {
-      console.error("Error submitting to sheet:", error);
+    if (result && result.success) {
+      console.log("Saved in sheet ✅ IDs:", result.generatedIds);
+      return result.generatedIds as string[];
+    } else {
+      throw new Error(result?.error || "insertIndent failed");
     }
   };
 
@@ -592,20 +542,13 @@ export default function Stage1() {
     ) {
       setIsSubmitting(true);
 
-      const createdRecords = formData.items.map((item, index) => {
-        const indentNumber = `IN-${indentCounter
-          .toString()
-          .padStart(3, "0")}${String.fromCharCode(65 + index)}`;
-        return { indentNumber, ...item };
-      });
-
       const submitPromise = (async () => {
-        // Handle file upload if exists
+        const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+        if (!SHEET_API_URL) throw new Error("API URL is missing");
+
+        // 1. Handle file upload first (before we know the indent number)
         let attachmentUrl = "";
         if (formData.attachment) {
-          const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
-          if (!SHEET_API_URL) throw new Error("API URL is missing");
-
           const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
@@ -618,18 +561,13 @@ export default function Stage1() {
           uploadParams.append("action", "uploadFile");
           uploadParams.append("sheetName", "INDENT-LIFT");
           uploadParams.append("base64Data", base64Data);
-          uploadParams.append("fileName", `Stage1_${createdRecords[0].indentNumber}_${formData.attachment.name}`);
+          uploadParams.append("fileName", `Stage1_attachment_${formData.attachment.name}`);
           uploadParams.append("mimeType", formData.attachment.type);
           const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
           uploadParams.append("folderId", folderId);
 
-          const uploadRes = await fetch(SHEET_API_URL, {
-            method: "POST",
-            body: uploadParams,
-          });
-
+          const uploadRes = await fetch(SHEET_API_URL, { method: "POST", body: uploadParams });
           if (!uploadRes.ok) throw new Error(`Upload failed with status ${uploadRes.status}`);
-
           const uploadJson = await uploadRes.json();
           if (uploadJson.success) {
             attachmentUrl = uploadJson.url || uploadJson.fileUrl;
@@ -638,25 +576,25 @@ export default function Stage1() {
           }
         }
 
-        // Check and save new dropdown options in background
+        // 2. Submit to sheet — GAS generates unique IDs atomically under a lock
+        const generatedIds = await submitToSheet({ ...formData }, attachmentUrl);
+
+        // 3. Save new dropdown options in background (using generated IDs for reference)
+        const createdRecords = formData.items.map((item, i) => ({
+          indentNumber: generatedIds[i] || "",
+          ...item,
+        }));
         checkAndSaveNewOptions(createdRecords);
 
-        await submitToSheet({
-          ...formData,
-          items: createdRecords,
-          attachmentUrl: attachmentUrl
-        }, createdRecords[0].indentNumber);
+        // 4. Sync counter from returned IDs
+        const maxFromGenerated = generatedIds.reduce((max, id) => {
+          const m = id.match(/IN-(\d+)/);
+          return m ? Math.max(max, parseInt(m[1], 10)) : max;
+        }, 0);
+        if (maxFromGenerated > 0) setIndentCounter(maxFromGenerated + 1);
 
-        setIndentCounter((prev) => prev + createdRecords.length);
         fetchData();
-
-        setFormData({
-          createdBy: "",
-          warehouseLocation: "",
-          leadTime: "",
-          attachment: null,
-          items: [],
-        });
+        setFormData({ createdBy: "", warehouseLocation: "", leadTime: "", attachment: null, items: [] });
         setOpen(false);
         return true;
       })();

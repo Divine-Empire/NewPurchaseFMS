@@ -193,6 +193,8 @@ export default function Stage6() {
     { key: "indentNumber", label: "Indent #", icon: null },
     { key: "itemName", label: "Item", icon: null },
     { key: "quantity", label: "Qty", icon: null },
+    { key: "totalLifted", label: "Total Lifted", icon: null },
+    { key: "pendingLifted", label: "Pending Lifted", icon: null },
   ];
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
@@ -322,11 +324,20 @@ export default function Stage6() {
             // if (isLiftDone) { status = "completed"; } else ...
 
             if (hasPlan5) {
-              if (hasRemaining) {
-                status = "pending"; // Stay pending if there is remaining quantity to lift
-              } else if (hasActual5) {
+              const totalLifted = parseFloat(String(row[63] || "0"));
+              const pendingLifted = parseFloat(String(row[64] || "0"));
+              const isFirstTime = !row[63] && !row[64];
+
+              if (pendingLifted > 0) {
+                status = "pending";
+              } else if (totalLifted > 0 && pendingLifted <= 0) {
+                // Fully lifted
                 status = "completed";
+              } else if (isFirstTime) {
+                // Initial state
+                status = "pending";
               } else {
+                // Default fallback
                 status = "pending";
               }
             }
@@ -345,10 +356,7 @@ export default function Stage6() {
                 createdBy: row[2],
                 category: row[3],
                 itemName: row[4],
-                quantity: (() => {
-                  const remaining = parseFloat(row[68] || "0");
-                  return remaining > 0 ? remaining : row[5];
-                })(),
+                quantity: row[14],
                 warehouseLocation: row[6],
                 deliveryDate: row[7] ? formatDate(row[7]) : "",
                 leadTime: row[8],
@@ -400,6 +408,8 @@ export default function Stage6() {
                 poNo: row[61],           // BJ
                 nextFollow: row[62],     // BK
                 remarks: row[63],        // BL
+                totalLifted: row[63],    // BL
+                pendingLifted: row[64],  // BM
                 finalVendorName: row[48] || "", // AW: Final Vendor Name
 
                 // Lifting Data (Indices 64-72)
@@ -534,7 +544,7 @@ export default function Stage6() {
       remarks: "",
       liftingData: {
 
-        liftNumber: `LIFT-${String(getLiftCounter()).padStart(3, "0")}`,
+        liftNumber: "", // Assigned by GAS on insert
         liftingQty: "",
         transporterName: "",
         vehicleNumber: "",
@@ -562,7 +572,7 @@ export default function Stage6() {
 
         remarks: "",
         liftingData: {
-          liftNumber: existLift.liftNumber || `LIFT-${String(getLiftCounter()).padStart(3, "0")}`,
+          liftNumber: existLift.liftNumber || "", // Assigned by GAS on insert
           liftingQty: existLift.liftQty || String(record.data.quantity || 0),
           transporterName: existLift.transporter || "",
           vehicleNumber: existLift.vehicleNo || "",
@@ -620,37 +630,7 @@ export default function Stage6() {
       }
 
 
-      // 1. Fetch current RECEIVING-ACCOUNTS to check for existing rows
-      let existingLiftData: any[] = [];
-      try {
-        const res = await fetch(`${API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`);
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          existingLiftData = json.data;
-        }
-      } catch (err) {
-        console.error("Failed to fetch RECEIVING-ACCOUNTS for deduplication", err);
-      }
-
-
-      // Calculate the next available row index manually to avoid gaps
-      // Row 1-6 are headers (0-indexed: 0-5). Data starts at Row 7 (0-indexed: 6)
-      // Find the last index that has data in Column 1 (Indent Number).
-      let lastOccupiedIndex = 5; // Default: last header row is index 5 (Row 6)
-      if (existingLiftData.length > 6) {
-        for (let k = existingLiftData.length - 1; k >= 6; k--) {
-          const row = existingLiftData[k];
-          // Check Col 1 (Indent #) to see if row is real data
-          if (row && row[1] && String(row[1]).trim() !== "") {
-            lastOccupiedIndex = k;
-            break;
-          }
-        }
-      }
-      let nextInsertIndex = lastOccupiedIndex + 1; // 0-based index for next insert (starts at 6 = Row 7)
-
-      const rowsToInsert: any[] = []; // Will remain empty now, we use updatesToProcess for controlled insertion
-      const updatesToProcess: { rowIndex: number, rowData: any[] }[] = [];
+      const rowsToInsert: any[] = []; // Rows to insert into RECEIVING-ACCOUNTS via insertLift
       const updatesToFMS: { rowIndex: number, rowData: any[] }[] = [];
 
 
@@ -675,7 +655,7 @@ export default function Stage6() {
               // Logic check: If all lifted together, maybe one Lift #? Or sequential?
               // Implementation: Let's assume unique Lift # per record is safer, but other details are common.
               // We'll regenerate a unique lift number if needed or keep existing one from record.
-              liftNumber: record.liftingData.liftNumber || `LIFT-${String(getLiftCounter() + i).padStart(3, "0")}`,
+              liftNumber: record.liftingData.liftNumber || "", // Will be assigned by GAS
               biltyCopy: unifiedFormData.liftingData.biltyCopy
             }
           };
@@ -815,12 +795,8 @@ export default function Stage6() {
           receivingAccountRow[34] = expectedDeliveryDateFormatted;
         }
 
-        // Insert at next available position
-        updatesToProcess.push({
-          rowIndex: nextInsertIndex + 1, // 0-based to 1-based
-          rowData: receivingAccountRow
-        });
-        nextInsertIndex++;
+        // Collect row for batch insert via insertLift (GAS assigns unique LIFT-NNN)
+        rowsToInsert.push(receivingAccountRow);
 
         // PREPARE UPDATE FOR INDENT-LIFT (Mark as Completed or Update Follow-up)
         // Safety Check for sheetRecord.row
@@ -840,12 +816,9 @@ export default function Stage6() {
 
         // If lifting, update Dispatch Date and Remaining Qty
         if (record.status === "lift-material") {
-          fmsRow[61] = `${yyyy}-${mm}-${dd}`; // BJ (Index 61): Current Date (YYYY-MM-DD) - as before
-          fmsRow[68] = remainingQty.toString(); // BQ (Index 68): Remaining Qty
+          fmsRow[61] = `${yyyy}-${mm}-${dd}`; // BJ (Index 61): Current Date (YYYY-MM-DD)
+          // Do NOT touch BL (63) or BM (64) - handled by sheet formula
         } else {
-          // For follow-up, maybe update something else? Kept logic minimal to avoid side effects
-          // fmsRow[61] = ...? If just follow up, maybe don't set BJ?
-          // Original code set BJ for everything. Keeping consistent:
           fmsRow[61] = `${yyyy}-${mm}-${dd}`;
         }
 
@@ -855,19 +828,19 @@ export default function Stage6() {
         });
       }
 
-      // 2. Perform Batch Insert to RECEIVING-ACCOUNTS (via updatesToProcess logical append)
-      // Note: updatesToProcess now contains NEW rows only.
-
-      // 3. Perform Updates to RECEIVING-ACCOUNTS
-      if (updatesToProcess.length > 0) {
-        console.log(`Inserting ${updatesToProcess.length} rows to RECEIVING-ACCOUNTS...`);
-        for (const update of updatesToProcess) {
-          const uParams = new URLSearchParams();
-          uParams.append("action", "update");
-          uParams.append("sheetName", "RECEIVING-ACCOUNTS");
-          uParams.append("rowIndex", update.rowIndex.toString());
-          uParams.append("rowData", JSON.stringify(update.rowData));
-          await fetch(API_URL, { method: "POST", body: uParams });
+      // 3. Insert all new rows into RECEIVING-ACCOUNTS via insertLift (unique LIFT-NNN generated by GAS under lock)
+      if (rowsToInsert.length > 0) {
+        console.log(`Inserting ${rowsToInsert.length} rows to RECEIVING-ACCOUNTS via insertLift...`);
+        const uParams = new URLSearchParams();
+        uParams.append("action", "insertLift");
+        uParams.append("rowsData", JSON.stringify(rowsToInsert));
+        const insertRes = await fetch(API_URL, { method: "POST", body: uParams });
+        const insertJson = await insertRes.json();
+        if (insertJson.success) {
+          console.log("RECEIVING-ACCOUNTS rows inserted ✅ Lift IDs:", insertJson.generatedIds);
+        } else {
+          console.error("insertLift failed:", insertJson.error);
+          toast.error("Failed to insert lift rows: " + (insertJson.error || "Unknown error"));
         }
       }
 

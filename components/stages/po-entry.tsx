@@ -54,6 +54,24 @@ export default function Stage5() {
   const [commonPONumber, setCommonPONumber] = useState("");
   const [commonPOCopy, setCommonPOCopy] = useState<File | null>(null);
 
+  // Shared Packaging/Forwarding fields
+  const [commonPkgAmount, setCommonPkgAmount] = useState("");
+  const [commonPkgGST, setCommonPkgGST] = useState("");
+
+  // Derived: total packaging (base + gst)
+  const getPkgTotals = (pkgAmount: string, pkgGST: string, count: number) => {
+    const base = parseFloat(pkgAmount) || 0;
+    let gstRate = 0;
+    if (pkgGST === "5%") gstRate = 0.05;
+    if (pkgGST === "12%") gstRate = 0.12;
+    if (pkgGST === "18%") gstRate = 0.18;
+    if (pkgGST === "28%") gstRate = 0.28;
+    const totalPkg = base + base * gstRate;
+    const perItemPkgTotal = count > 0 ? totalPkg / count : 0;
+    const perItemPkgBase = count > 0 ? base / count : 0;
+    return { totalPkg, perItemPkgTotal, perItemPkgBase };
+  };
+
   const formatDate = (date?: Date | string) => {
     if (!date) return "";
     const d = new Date(date);
@@ -252,6 +270,8 @@ export default function Stage5() {
     setBulkFormData(initialData);
     setCommonPONumber("");
     setCommonPOCopy(null);
+    setCommonPkgAmount("");
+    setCommonPkgGST("");
     setOpen(true);
   };
 
@@ -336,22 +356,36 @@ export default function Stage5() {
 
           try {
             // Prepare Update Data - Only update specific columns
-            const rowArray = new Array(60).fill("");
+            const rowArray = new Array(72).fill("");
 
             // Format current date as YYYY-MM-DD
             const yyyy = now.getFullYear();
             const mm = String(now.getMonth() + 1).padStart(2, "0");
             const dd = String(now.getDate()).padStart(2, "0");
 
+            // Calculate per-item packaging share
+            const { perItemPkgTotal, perItemPkgBase } = getPkgTotals(
+              commonPkgAmount,
+              commonPkgGST,
+              recordsToProcess.length
+            );
+
+            // Recalculate totalWithTax including packaging share
+            const basicVal = parseFloat(data.basicValue) || 0;
+            const existingTax = parseFloat(data.totalWithTax) - basicVal; // tax portion from item GST
+            const finalTotalWithTax = (basicVal + existingTax + perItemPkgTotal).toFixed(2);
+
             // Only update the required columns
             rowArray[52] = `${yyyy}-${mm}-${dd}`;                  // BA: Current Date (Actual 4)
             // BB (Index 53) - User requested skip
             rowArray[54] = commonPONumber;                         // BC: PO Number (shared)
             rowArray[55] = data.basicValue;                        // BD: Basic Value
-            rowArray[56] = data.totalWithTax;                      // BE: Total with Tax
-            rowArray[57] = data.hsn;                               // BF: HSN (renamed from Payment Terms)
+            rowArray[56] = finalTotalWithTax;                      // BE: Total with Tax (incl. packaging)
+            rowArray[57] = data.hsn;                               // BF: HSN
             rowArray[58] = finalFileUrl;                           // BG: PO Copy URL (shared)
-            rowArray[59] = data.gst || "";                         // BH: GST (replaces Remarks)
+            rowArray[59] = data.gst || "";                         // BH: GST
+            rowArray[70] = perItemPkgBase > 0 ? perItemPkgBase.toFixed(2) : ""; // BS: Pkg/Fwd Amount per item
+            rowArray[71] = commonPkgGST || "";                     // BT: Pkg/Fwd GST%
 
 
             const updateParams = new URLSearchParams();
@@ -833,6 +867,55 @@ export default function Stage5() {
               </div>
             </div>
 
+            {/* SHARED PACKAGING/FORWARDING SECTION */}
+            <div className="border rounded-lg p-4 bg-amber-50">
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">
+                  Packaging / Forwarding
+                  <span className="text-xs font-normal text-gray-500 ml-2">(applies to all items, divided equally)</span>
+                </Label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="common-pkgAmount">Amount</Label>
+                    <Input
+                      id="common-pkgAmount"
+                      type="number"
+                      step="0.01"
+                      value={commonPkgAmount}
+                      onChange={(e) => setCommonPkgAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="common-pkgGST">GST on Packaging</Label>
+                    <Select value={commonPkgGST} onValueChange={setCommonPkgGST}>
+                      <SelectTrigger id="common-pkgGST" className="bg-white">
+                        <SelectValue placeholder="Select GST" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0%">0%</SelectItem>
+                        <SelectItem value="5%">5%</SelectItem>
+                        <SelectItem value="12%">12%</SelectItem>
+                        <SelectItem value="18%">18%</SelectItem>
+                        <SelectItem value="28%">28%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Total Packaging / Forwarding</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={getPkgTotals(commonPkgAmount, commonPkgGST, selectedRecordIds.length).totalPkg.toFixed(2)}
+                      readOnly
+                      className="bg-gray-100 cursor-not-allowed font-semibold"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* PER-ITEM SECTIONS */}
             {selectedRecordIds.map((recordId) => {
               const record = sheetRecords.find((r) => r.id === recordId);
@@ -907,6 +990,17 @@ export default function Stage5() {
                     </div>
 
                     <div className="space-y-2">
+                      <Label>Pkg/Fwd Share</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={getPkgTotals(commonPkgAmount, commonPkgGST, selectedRecordIds.length).perItemPkgTotal.toFixed(2)}
+                        readOnly
+                        className="bg-gray-100 cursor-not-allowed text-amber-700"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
                       <Label htmlFor={`${recordId}-totalWithTax`}>
                         Total With Tax <span className="text-red-500">*</span>
                       </Label>
@@ -914,9 +1008,12 @@ export default function Stage5() {
                         id={`${recordId}-totalWithTax`}
                         type="number"
                         step="0.01"
-                        value={data.totalWithTax || ""}
+                        value={(
+                          (parseFloat(data.totalWithTax) || 0) +
+                          getPkgTotals(commonPkgAmount, commonPkgGST, selectedRecordIds.length).perItemPkgTotal
+                        ).toFixed(2)}
                         readOnly
-                        className="bg-gray-100 cursor-not-allowed"
+                        className="bg-gray-100 cursor-not-allowed font-semibold"
                       />
                     </div>
 
