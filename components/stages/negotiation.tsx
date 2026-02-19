@@ -227,7 +227,20 @@ export default function Stage4() {
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Number search
       );
     });
-  const completed = sheetRecords.filter((r) => r.status === "completed");
+  const completed = sheetRecords
+    .filter((r) => r.status === "completed")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      if (!searchLower) return true;
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendor1Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendor2Name?.toLowerCase().includes(searchLower) ||
+        r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
 
   const baseColumns = [
     { key: "indentNumber", label: "Indent #", icon: null },

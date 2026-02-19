@@ -169,21 +169,31 @@ export default function Stage1() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
+  // Helper for search filtering
+  const matchesSearch = (r: any) => {
+    const searchLower = searchTerm.toLowerCase();
+    const indNum = r.data.indentNumber || "";
+    const iName = r.data.itemName || "";
+    const qty = r.data.quantity ? r.data.quantity.toString() : "";
+    const vType = r.data.vendorType || ""; // vendorType might be undefined
+
+    return (
+      indNum.toLowerCase().includes(searchLower) ||
+      iName.toLowerCase().includes(searchLower) ||
+      qty.toLowerCase().includes(searchLower) ||
+      // r.data.poNumber?.toLowerCase().includes(searchLower) || // Not available in Stage 1
+      // r.data.invoiceNumber?.toLowerCase().includes(searchLower) || // Not available in Stage 1
+      vType.toLowerCase().includes(searchLower)
+    );
+  };
+
   const pending = sheetRecords
     .filter((r) => r.status === "pending")
-    .filter((r) => {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-        r.data.itemName?.toLowerCase().includes(searchLower) ||
-        r.data.quantity?.toString().toLowerCase().includes(searchLower) ||
-        // r.data.poNumber?.toLowerCase().includes(searchLower) || // Not available in Stage 1
-        // r.data.invoiceNumber?.toLowerCase().includes(searchLower) || // Not available in Stage 1
-        r.data.vendorType?.toLowerCase().includes(searchLower)
-      );
-    });
+    .filter(matchesSearch);
 
-  const history = sheetRecords.filter((r) => r.status === "completed");
+  const history = sheetRecords
+    .filter((r) => r.status === "completed")
+    .filter(matchesSearch);
 
   const Combobox = ({
     options,

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText, Upload, RefreshCw, CheckCircle, XCircle, Search } from "lucide-react";
+import { Loader2, FileText, RefreshCw, Search } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -15,7 +15,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -32,9 +31,60 @@ import {
 } from "@/components/ui/dialog";
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+const FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
+
+// Static columns definition
+const PENDING_COLUMNS = [
+  { key: "indentNumber", label: "Indent #" },
+  { key: "category", label: "Category" },
+  { key: "itemName", label: "Item" },
+  { key: "rejectedQty", label: "Rejected Qty" },
+  { key: "vendor", label: "Vendor" },
+  { key: "invoiceNumber", label: "Invoice #" },
+  { key: "plan6", label: "Plan Date" },
+];
+
+const HISTORY_COLUMNS = [
+  { key: "indentNumber", label: "Indent #" },
+  { key: "itemName", label: "Item" },
+  { key: "vendor", label: "Vendor" },
+  { key: "invoiceNumber", label: "Invoice #" },
+  { key: "plan6", label: "Plan Date" },
+  { key: "actual6", label: "Return Date" },
+  { key: "returnedQty", label: "Ret Qty" },
+  { key: "returnAmount", label: "Ret Amount" },
+  { key: "returnReason", label: "Reason" },
+  { key: "returnStatus", label: "Status" },
+  { key: "returnItemImage", label: "Item Img" },
+  { key: "creditNoteImage", label: "Credit Note" },
+];
+
+// Helper functions
+const safeValue = (val: any, key: string = "") => {
+  if (!val || val === "-" || val === "") return "-";
+  if (key.includes("Image")) {
+    return (
+      <a href={String(val)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+        <FileText className="w-3 h-3" /> View
+      </a>
+    );
+  }
+  if ((key.includes("plan") || key.includes("actual") || key.includes("Date")) && !isNaN(Date.parse(String(val))) && !String(val).match(/^\d+$/)) {
+    return new Date(String(val)).toLocaleDateString("en-IN");
+  }
+  return String(val);
+};
+
+const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+  reader.onload = () => resolve(reader.result as string);
+  reader.onerror = error => reject(error);
+});
 
 export default function Stage12() {
-  const [sheetRecords, setSheetRecords] = useState<any[]>([]);
+  const [sheetRecords, setSheetRecords] = useState<any[]>([]); // Used for Pending tab
+  const [partialReturnRecords, setPartialReturnRecords] = useState<any[]>([]); // Used for History tab
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
@@ -58,113 +108,139 @@ export default function Stage12() {
   // -----------------------------------------------------------------
   // FETCH DATA
   // -----------------------------------------------------------------
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!SHEET_API_URL) return;
     setIsLoading(true);
     try {
-      // Fetch both sheets to join data like Stage 14 did
-      const [accRes, fmsRes] = await Promise.all([
-        fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`),
-        fetch(`${SHEET_API_URL}?sheet=INDENT_LIFT&action=getAll`) // Assuming we need Vendor info from here
+      // Parallel fetch for speed
+      const [accRes, fmsRes, partialRes] = await Promise.all([
+        fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`, { cache: "no-store" }),
+        fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`, { cache: "no-store" }),
+        fetch(`${SHEET_API_URL}?sheet=Partial QC&action=getAll`, { cache: "no-store" }),
       ]);
 
-      const accJson = await accRes.json();
-      const fmsJson = await fmsRes.json();
+      const [accJson, fmsJson, partialJson] = await Promise.all([
+        accRes.json(),
+        fmsRes.json(),
+        partialRes.json(),
+      ]);
 
-      // Create FMS Map for Vendor Info
+      if (!accJson.success) console.error("Receiving Accounts fetch failed:", accJson);
+      if (!fmsJson.success) console.error("Indent Lift fetch failed:", fmsJson);
+      if (!partialJson.success) console.error("Partial QC fetch failed:", partialJson);
+
+      if (!accJson.success || !fmsJson.success || !partialJson.success) {
+        throw new Error("Failed to load sheet data. Check console for details.");
+      }
+
+      // Build FMS map for vendor info
       const fmsMap = new Map<string, any[]>();
-      if (fmsJson.success && Array.isArray(fmsJson.data)) {
+      if (Array.isArray(fmsJson.data)) {
         fmsJson.data.slice(7).forEach((r: any) => {
-          if (r[1] && String(r[1]).trim()) {
-            fmsMap.set(String(r[1]).trim(), r);
+          if (r[1] && String(r[1]).trim()) fmsMap.set(String(r[1]).trim(), r);
+        });
+      }
+
+      // 1. Process RECEIVING-ACCOUNTS first to build a lookup map for Indent Details
+      const indentMap = new Map<string, any>();
+      if (Array.isArray(accJson.data)) {
+        accJson.data.slice(6).forEach((row: any) => {
+          const indentNo = String(row[1] || "").trim();
+          if (!indentNo) return;
+
+          const fmsRow = fmsMap.get(indentNo) || [];
+          const selectedVendor = fmsRow[47]; // Index 47
+          let vendorName = "-";
+          if (selectedVendor === "Vendor 1") vendorName = fmsRow[21];
+          else if (selectedVendor === "Vendor 2") vendorName = fmsRow[29];
+          else if (selectedVendor === "Vendor 3") vendorName = fmsRow[37];
+
+          indentMap.set(indentNo, {
+            indentNumber: indentNo,
+            liftNo: row[2] || "",
+            category: row[2],
+            itemName: row[7],
+            vendor: row[3],
+            invoiceNumber: row[24],
+            poNumber: row[4],
+          });
+        });
+      }
+
+      // 2. Process Partial QC rows to determine Pending & History
+      let newPending: any[] = [];
+      let newHistory: any[] = [];
+
+      if (Array.isArray(partialJson.data)) {
+        partialJson.data.slice(1).forEach((r: any, idx: number) => {
+          const rowIndex = idx + 2; // Data starts at row 2
+          const indentNo = String(r[1] || "").trim();
+          const status = String(r[5] || "").toLowerCase();
+          const returnStatus = String(r[12] || "").toLowerCase(); // M
+          const plan7 = String(r[13] || "").trim(); // N
+          const actual7 = String(r[14] || "").trim(); // O
+          const rejectQty = parseFloat(r[7] || "0"); // H
+
+          // Basic Criteria: QC Rejected AND Return Status is 'return'
+          if (!indentNo || status !== "rejected" || !returnStatus.includes("return")) return;
+
+          const parent = indentMap.get(indentNo) || {};
+
+          const record = {
+            id: `partial-${rowIndex}`,
+            rowIndex,
+            data: {
+              ...parent,
+              indentNumber: indentNo,
+              rejectedQty: rejectQty,
+              rejectQty: rejectQty,
+              plan6: plan7,
+              actual6: actual7,
+
+              // Return Details (Cols Q-W / 16-22)
+              returnedQty: r[16], // Q
+              returnRate: r[17],  // R
+              returnAmount: r[18],// S
+              returnReason: r[19],// T
+              returnStatus: r[20],// U
+              returnItemImage: r[21], // V
+              creditNoteImage: r[22], // W
+              originalRow: r,
+            }
+          };
+
+          const hasPlan = plan7 && plan7 !== "-" && plan7 !== "#VALUE!";
+          const hasActual = actual7 && actual7 !== "-" && actual7 !== "#VALUE!";
+
+          if (hasActual) {
+            newHistory.push(record);
+          } else if (hasPlan) {
+            newPending.push(record);
           }
         });
       }
 
-      if (accJson.success && Array.isArray(accJson.data)) {
-        const rows = accJson.data.slice(6)
-          .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
-          .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
-          .map(({ row, originalIndex }: any) => {
-            const indentNo = String(row[1]).trim();
-            const fmsRow = fmsMap.get(indentNo) || [];
+      setSheetRecords(newPending);
+      setPartialReturnRecords(newHistory);
 
-            // Vendor Logic (from Stage 14 pattern)
-            const selectedVendor = fmsRow[47];
-            let vendorName = "-";
-            if (selectedVendor === "Vendor 1") vendorName = fmsRow[21];
-            else if (selectedVendor === "Vendor 2") vendorName = fmsRow[29];
-            else if (selectedVendor === "Vendor 3") vendorName = fmsRow[37];
-
-            // --- STATUS LOGIC ---
-            // Pending: Plan 6 (Index 71) NOT Empty AND Actual 6 (Index 72) Empty
-            // History: Plan 6 (Index 71) NOT Empty AND Actual 6 (Index 72) NOT Empty
-            const plan6 = row[71]; // BT
-            const actual6 = row[72]; // BU
-
-            const hasPlan = !!plan6 && String(plan6).trim() !== "" && String(plan6).trim() !== "-";
-            const hasActual = !!actual6 && String(actual6).trim() !== "" && String(actual6).trim() !== "-";
-
-            let status = "not_ready";
-            if (hasPlan && hasActual) {
-              status = "history";
-            } else if (hasPlan && !hasActual) {
-              status = "pending";
-            }
-
-            return {
-              id: row[1], // Indent # as ID
-              rowIndex: originalIndex,
-              status,
-              originalRow: row,
-              data: {
-                indentNumber: row[1],
-                category: row[2], // Assuming Category
-                itemName: row[7], // Col H (Index 7)
-                rejectedQty: row[68], // Col BQ (Index 68) - Rejected Qty
-                vendor: row[3], // Col D (Index 3) - Vendor from RECEIVING-ACCOUNTS
-                invoiceNumber: row[24], // Col Y (Index 24) - Invoice Number
-
-                // QC Reject Qty (Column BQ = index 68)
-                rejectQty: row[68],
-
-                // Stage 12 Fields (BT-CC -> 71-80)
-                poNumber: row[4], // Col E (Index 4)
-                plan6: row[71],   // BT
-                actual6: row[72], // BU
-                delay6: row[73],  // BV
-                returnedQty: row[74], // BW
-                returnRate: row[75],  // BX
-                returnAmount: row[76], // BY
-                returnReason: row[77], // BZ
-                returnStatus: row[78], // CA
-                returnItemImage: row[79], // CB
-                creditNoteImage: row[80], // CC
-              }
-            };
-          });
-        setSheetRecords(rows);
-      }
     } catch (e) {
       console.error("Fetch error:", e);
       toast.error("Failed to fetch data");
     }
     setIsLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   // -----------------------------------------------------------------
-  // FILTER RECORDS
+  // MEMOIZED FILTER RECORDS
   // -----------------------------------------------------------------
-  // FILTER RECORDS
-  // -----------------------------------------------------------------
-  const pending = sheetRecords
-    .filter((r) => r.status === "pending")
-    .filter((r) => {
+  const pending = useMemo(() => {
+    return sheetRecords.filter((r) => {
       const searchLower = searchTerm.toLowerCase();
+      if (!searchLower) return true;
       return (
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
         r.data.itemName?.toLowerCase().includes(searchLower) ||
@@ -173,41 +249,35 @@ export default function Stage12() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  const completed = sheetRecords.filter((r) => r.status === "history");
+  }, [sheetRecords, searchTerm]);
 
-  const pendingColumns = [
-    { key: "indentNumber", label: "Indent #" },
-    { key: "category", label: "Category" },
-    { key: "itemName", label: "Item" },
-    { key: "rejectedQty", label: "Rejected Qty" },
-    { key: "vendor", label: "Vendor" },
-    { key: "invoiceNumber", label: "Invoice #" },
-    { key: "plan6", label: "Plan Date" },
-  ];
-
-  const historyColumns = [
-    ...pendingColumns,
-    { key: "actual6", label: "Return Date" },
-    { key: "returnedQty", label: "Ret Qty" },
-    { key: "returnAmount", label: "Ret Amount" },
-    { key: "returnReason", label: "Reason" },
-    { key: "returnStatus", label: "Status" },
-  ];
+  const completed = useMemo(() => {
+    const searchLower = searchTerm.toLowerCase();
+    if (!searchLower) return partialReturnRecords;
+    return partialReturnRecords.filter((r) => {
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendor?.toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
+  }, [partialReturnRecords, searchTerm]);
 
   // -----------------------------------------------------------------
-  // OPEN MODAL
+  // HANDLERS
   // -----------------------------------------------------------------
-  const handleOpenForm = (recordId: string) => {
+  const handleOpenForm = useCallback((recordId: string) => {
     const rec = sheetRecords.find((r) => r.id === recordId);
     if (!rec) return;
 
-    // Use Reject Qty from QC (Column AP) as the max return quantity
-    const rejectQty = parseInt(rec.data?.rejectQty || "0", 10) || 0;
+    // Use Reject Qty as max
+    const rejectQty = parseFloat(rec.data.rejectQty || "0") || 0;
     setOriginalQty(rejectQty);
 
     setSelectedRecordId(recordId);
     setFormData({
-      returnedQty: rejectQty > 0 ? rejectQty.toString() : "", // Pre-fill with reject qty
+      returnedQty: rejectQty > 0 ? rejectQty.toString() : "",
       returnRate: "",
       returnAmount: "",
       returnReason: "",
@@ -217,46 +287,35 @@ export default function Stage12() {
       actual6Date: new Date(),
     });
     setOpen(true);
-  };
+  }, [sheetRecords]);
 
-  // -----------------------------------------------------------------
-  // CALCULATE AMOUNT
-  // -----------------------------------------------------------------
+  // Calculate amount effect safely
   useEffect(() => {
     const qty = parseFloat(formData.returnedQty) || 0;
     const rate = parseFloat(formData.returnRate) || 0;
-    setFormData(prev => ({ ...prev, returnAmount: (qty * rate).toFixed(2) }));
+    setFormData(prev => {
+      const newAmount = (qty * rate).toFixed(2);
+      if (prev.returnAmount === newAmount) return prev;
+      return { ...prev, returnAmount: newAmount };
+    });
   }, [formData.returnedQty, formData.returnRate]);
 
-  // -----------------------------------------------------------------
-  // HELPER: UPLOAD
-  // -----------------------------------------------------------------
-  const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
 
-  const uploadFile = async (file: File) => {
+  const uploadFile = useCallback(async (file: File) => {
     const upParams = new URLSearchParams();
     upParams.append("action", "uploadFile");
     upParams.append("base64Data", await toBase64(file));
     upParams.append("fileName", file.name);
     upParams.append("mimeType", file.type);
-    const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
-    upParams.append("folderId", folderId);
+    upParams.append("folderId", FOLDER_ID);
 
     const upRes = await fetch(`${SHEET_API_URL}`, { method: "POST", body: upParams });
     const upJson = await upRes.json();
     if (upJson.success) return upJson.fileUrl;
     throw new Error("Upload failed");
-  };
+  }, []);
 
-  // -----------------------------------------------------------------
-  // SUBMIT
-  // -----------------------------------------------------------------
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRecordId) return;
 
@@ -270,94 +329,62 @@ export default function Stage12() {
       let itemImgUrl = "";
       let creditImgUrl = "";
 
-      if (formData.returnItemImage) {
-        itemImgUrl = await uploadFile(formData.returnItemImage);
-      }
-      if (formData.creditNoteImage) {
-        creditImgUrl = await uploadFile(formData.creditNoteImage);
-      }
+      // Parallel uploads
+      const uploadPromises = [];
+      if (formData.returnItemImage) uploadPromises.push(uploadFile(formData.returnItemImage).then(url => { itemImgUrl = url; }));
+      if (formData.creditNoteImage) uploadPromises.push(uploadFile(formData.creditNoteImage).then(url => { creditImgUrl = url; }));
 
-      // 🔵 UPDATED: use selected date instead of auto today
+      if (uploadPromises.length > 0) await Promise.all(uploadPromises);
+
       const d = formData.actual6Date;
       const dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 
-      // Create sparse row (DO NOT copy original row)
-      const rowArray = new Array(80).fill("");
+      // Update specific Partial QC cells using updateCell to avoid overwriting row data (col A-N) or formulas (col P)
+      // O: Actual7 (Return Date) -> Col 15
+      // P: Delay7 -> Col 16 (Formula, SKIP)
+      // Q-W: Return columns -> Col 17-23
 
-      // Pad array (Need up to index 80)
-      while (rowArray.length <= 80) rowArray.push("");
+      const updates = [
+        { col: 15, val: dateStr },            // O: Actual7
+        { col: 17, val: formData.returnedQty }, // Q: Return Qty
+        { col: 18, val: formData.returnRate },  // R: Return Rate
+        { col: 19, val: formData.returnAmount },// S: Total Return Amount
+        { col: 20, val: formData.returnReason },// T: Return Reason
+        { col: 21, val: formData.returnStatus },// U: Return Status
+        { col: 22, val: itemImgUrl },           // V: Return Item Image
+        { col: 23, val: creditImgUrl },         // W: Credit Note Image
+      ];
 
-      // Map to Indices 61-70 (BJ-BS) // Correct Range?
-      // Wait, User said: Column-BT to CC for purchase return
-      // BT = 71
-      // CC = 80
-      // Range: 71-80
+      // Parallel updates for speed
+      await Promise.all(updates.map(u => {
+        const params = new URLSearchParams();
+        params.append("action", "updateCell");
+        params.append("sheetName", "Partial QC");
+        params.append("rowIndex", rec.rowIndex.toString());
+        params.append("columnIndex", u.col.toString());
+        params.append("value", String(u.val || ""));
 
-      // 71 (BT): Plan 6
-      // 72 (BU): Actual 6 (Return Date)
-      rowArray[72] = dateStr;
-      // 73 (BV): Delay 6
-      rowArray[73] = "";
-      // 74 (BW): Return Qty
-      rowArray[74] = formData.returnedQty;
-      // 75 (BX): Return Rate
-      rowArray[75] = formData.returnRate;
-      // 76 (BY): Return Amount
-      rowArray[76] = formData.returnAmount;
-      // 77 (BZ): Return Reason
-      rowArray[77] = formData.returnReason;
-      // 78 (CA): Return Status
-      rowArray[78] = formData.returnStatus;
-      // 79 (CB): Return Item Image
-      rowArray[79] = itemImgUrl || "";
-      // 80 (CC): Credit Note Image
-      rowArray[80] = creditImgUrl || "";
+        return fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
+      }));
 
-      const params = new URLSearchParams();
-      params.append("action", "update");
-      params.append("sheetName", "RECEIVING-ACCOUNTS");
-      params.append("rowIndex", rec.rowIndex.toString());
-      params.append("rowData", JSON.stringify(rowArray));
-
-      const res = await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
-      const json = await res.json();
-
-      if (json.success) {
-        toast.success("Return processed successfully!", { id: toastId });
-        setOpen(false);
-        fetchData();
-      } else {
-        throw new Error(json.error || "Update failed");
-      }
-
+      toast.success("Return processed successfully!", { id: toastId });
+      setOpen(false);
+      fetchData(); // Refresh data
     } catch (err: any) {
       toast.error(err.message || "Failed to submit", { id: toastId });
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [selectedRecordId, sheetRecords, formData, uploadFile, fetchData]);
 
-  const isFormValid =
-    formData.returnedQty &&
-    formData.returnRate &&
-    formData.returnReason &&
-    formData.returnStatus &&
-    parseFloat(formData.returnedQty) <= originalQty;
 
-  const safeValue = (val: any, key: string = "") => {
-    if (!val || val === "-" || val === "") return "-";
-    if (key.includes("Image")) {
-      return (
-        <a href={String(val)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
-          <FileText className="w-3 h-3" /> View
-        </a>
-      );
-    }
-    if ((key.includes("plan") || key.includes("actual") || key.includes("Date")) && !isNaN(Date.parse(String(val))) && !String(val).match(/^\d+$/)) {
-      return new Date(String(val)).toLocaleDateString("en-IN");
-    }
-    return String(val);
-  };
+  const isFormValid = useMemo(() =>
+    !!formData.returnedQty &&
+    !!formData.returnRate &&
+    !!formData.returnReason &&
+    !!formData.returnStatus &&
+    parseFloat(formData.returnedQty) <= originalQty
+    , [formData, originalQty]);
 
   return (
     <div className="p-6">
@@ -394,7 +421,6 @@ export default function Stage12() {
             <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
           </TabsList>
 
-          {/* PENDING */}
           <TabsContent value="pending" className="mt-6">
             {pending.length === 0 ? (
               <div className="text-center py-12 text-gray-500">No pending returns</div>
@@ -404,7 +430,7 @@ export default function Stage12() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Actions</TableHead>
-                      {pendingColumns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
+                      {PENDING_COLUMNS.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -413,7 +439,7 @@ export default function Stage12() {
                         <TableCell>
                           <Button size="sm" onClick={() => handleOpenForm(rec.id)}>Process</Button>
                         </TableCell>
-                        {pendingColumns.map(col => (
+                        {PENDING_COLUMNS.map(col => (
                           <TableCell
                             key={col.key}
                             className={col.key === "rejectedQty" ? "text-center" : ""}
@@ -429,7 +455,6 @@ export default function Stage12() {
             )}
           </TabsContent>
 
-          {/* HISTORY */}
           <TabsContent value="history" className="mt-6">
             {completed.length === 0 ? (
               <div className="text-center py-12 text-gray-500">No return history</div>
@@ -438,13 +463,13 @@ export default function Stage12() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {historyColumns.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
+                      {HISTORY_COLUMNS.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {completed.map((rec) => (
                       <TableRow key={rec.id}>
-                        {historyColumns.map(col => (
+                        {HISTORY_COLUMNS.map(col => (
                           <TableCell
                             key={col.key}
                             className={col.key === "rejectedQty" ? "text-center" : ""}
@@ -462,7 +487,6 @@ export default function Stage12() {
         </Tabs>
       )}
 
-      {/* MODAL */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
@@ -479,7 +503,7 @@ export default function Stage12() {
                   value={formData.returnedQty}
                   onChange={e => {
                     const val = e.target.value;
-                    setFormData({ ...formData, returnedQty: val });
+                    setFormData(prev => ({ ...prev, returnedQty: val }));
                   }}
                   placeholder={`Max: ${originalQty}`}
                   className={parseFloat(formData.returnedQty) > originalQty ? "border-red-500" : ""}
@@ -493,25 +517,25 @@ export default function Stage12() {
                 <Input
                   type="number"
                   value={formData.returnRate}
-                  onChange={e => setFormData({ ...formData, returnRate: e.target.value })}
+                  onChange={e => setFormData(prev => ({ ...prev, returnRate: e.target.value }))}
                 />
               </div>
               <div>
                 <Label>Return Amount</Label>
                 <Input value={formData.returnAmount} readOnly className="bg-gray-50" />
               </div>
-              {/* 🔵 ADDED: Actual6 (Return Date) */}
+
               <div>
                 <Label>Return Date *</Label>
                 <Input
                   type="date"
-                  value={formData.actual6Date.toISOString().split("T")[0]}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      actual6Date: new Date(e.target.value),
-                    })
-                  }
+                  value={formData.actual6Date instanceof Date && !isNaN(formData.actual6Date.getTime()) ? formData.actual6Date.toISOString().split("T")[0] : ""}
+                  onChange={(e) => {
+                    const d = new Date(e.target.value);
+                    if (!isNaN(d.getTime())) {
+                      setFormData(prev => ({ ...prev, actual6Date: d }));
+                    }
+                  }}
                 />
               </div>
             </div>
@@ -521,12 +545,12 @@ export default function Stage12() {
                 <Label>Return Reason *</Label>
                 <Input
                   value={formData.returnReason}
-                  onChange={e => setFormData({ ...formData, returnReason: e.target.value })}
+                  onChange={e => setFormData(prev => ({ ...prev, returnReason: e.target.value }))}
                 />
               </div>
               <div>
                 <Label>Status *</Label>
-                <Select value={formData.returnStatus} onValueChange={v => setFormData({ ...formData, returnStatus: v })}>
+                <Select value={formData.returnStatus} onValueChange={v => setFormData(prev => ({ ...prev, returnStatus: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Debit Note">Debit Note</SelectItem>
@@ -537,6 +561,22 @@ export default function Stage12() {
             </div>
 
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Return Item Image</Label>
+                <Input type="file" accept="image/*" onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setFormData(prev => ({ ...prev, returnItemImage: file }));
+                }} />
+              </div>
+              <div>
+                <Label>Credit Note Image</Label>
+                <Input type="file" accept="image/*" onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setFormData(prev => ({ ...prev, creditNoteImage: file }));
+                }} />
+              </div>
+            </div>
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

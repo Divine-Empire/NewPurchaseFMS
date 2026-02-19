@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { StageTable } from "./stage-table";
 import {
     Dialog,
@@ -32,6 +32,38 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Upload, X, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
+// ─── Module-level helpers (stable references, no re-creation on render) ────
+const GST_RATES: Record<string, number> = {
+    "5%": 0.05,
+    "12%": 0.12,
+    "18%": 0.18,
+    "28%": 0.28,
+};
+
+const toBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (error) => reject(error);
+    });
+
+const uploadFileToDrive = async (
+    file: File,
+    apiUrl: string,
+    folderId: string
+): Promise<string> => {
+    const uploadParams = new URLSearchParams();
+    uploadParams.append("action", "uploadFile");
+    uploadParams.append("base64Data", await toBase64(file));
+    uploadParams.append("fileName", file.name);
+    uploadParams.append("mimeType", file.type);
+    uploadParams.append("folderId", folderId);
+    const res = await fetch(apiUrl, { method: "POST", body: uploadParams });
+    const json = await res.json();
+    return json.success ? json.fileUrl : "";
+};
+
 interface LiftingEntry {
     liftNumber: string;
     liftingQty: string;
@@ -57,7 +89,7 @@ const PENDING_COLUMNS = [
     { key: "nextFollowUpDate", label: "Next Follow-Up" },
     { key: "remarks", label: "Remarks" },
     { key: "itemName", label: "Item Name" },
-    { key: "liftingQty", label: "PO Qty" },
+    { key: "liftingQty", label: "Lifting Qty" },
     { key: "transporterName", label: "Transporter" },
     { key: "vehicleNo", label: "Vehicle No" },
     { key: "contactNo", label: "Contact No" },
@@ -129,15 +161,30 @@ export default function Stage7() {
         paymentAmountLabour: "",
         paymentAmountHamali: "",
         remarks: "",
+        pkgAmount: "",
+        pkgGST: "",
     });
     const [bulkError, setBulkError] = useState<string | null>(null);
 
-    const formatDate = (date?: Date | string) => {
+    // Stable helper: Packaging/Forwarding totals
+    const getPkgTotals = useCallback((
+        pkgAmount: string, pkgGST: string, count: number
+    ) => {
+        const base = parseFloat(pkgAmount) || 0;
+        const gstRate = GST_RATES[pkgGST] ?? 0;
+        const totalPkg = base + base * gstRate;
+        const perItemPkgTotal = count > 0 ? totalPkg / count : 0;
+        const perItemPkgBase = count > 0 ? base / count : 0;
+        return { totalPkg, perItemPkgTotal, perItemPkgBase };
+    }, []);
+
+    // Stable helper: format date for display
+    const formatDate = useCallback((date?: Date | string) => {
         if (!date) return "";
         const d = new Date(date);
         if (isNaN(d.getTime())) return "";
         return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-    };
+    }, []);
 
     const parseSheetDate = (dateStr: string) => {
         if (!dateStr || dateStr === "-" || dateStr === "Invalid Date") return new Date();
@@ -154,7 +201,7 @@ export default function Stage7() {
         return new Date();
     };
 
-    const fetchData = async () => {
+    const fetchData = useCallback(async () => {
         const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
         if (!SHEET_API_URL) return;
         setIsLoading(true);
@@ -199,13 +246,15 @@ export default function Stage7() {
                             status = "completed";
                         }
 
-                        // Look up Approved Qty from INDENT-LIFT sheet Column O (index 14)
                         const indentNum = String(row[1] || "").trim();
                         const fmsRow = fmsMap.get(indentNum);
-                        const approvedQty = fmsRow ? (fmsRow[14] || "") : "";
 
+                        // Use composite key (indentNumber + "_" + liftNo) for uniqueness
+                        const liftNoKey = String(row[2] || "").trim();
+                        const indentKey = String(row[1] || "").trim();
+                        const compositeId = indentKey && liftNoKey ? `${indentKey}_${liftNoKey}` : (indentKey || `row-${originalIndex}`);
                         return {
-                            id: row[1] || `row-${originalIndex}`,
+                            id: compositeId,
                             rowIndex: originalIndex,
                             stage: 7,
                             status: status,
@@ -218,7 +267,7 @@ export default function Stage7() {
                                 nextFollowUpDate: row[5] || "", // F: Next Follow-Up Date
                                 remarks: row[6] || "",           // G: Remarks
                                 itemName: row[7] || "",          // H: Item Name
-                                liftingQty: approvedQty,         // From INDENT-LIFT Column O (Approved Qty)
+                                liftingQty: row[8] || "",        // I: Lifting Qty
                                 transporterName: row[9] || "",  // J: Transporter Name
                                 vehicleNo: row[10] || "",        // K: Vehicle No
                                 contactNo: row[11] || "",        // L: Contact No
@@ -245,11 +294,9 @@ export default function Stage7() {
             console.error("Fetch error:", e);
         }
         setIsLoading(false);
-    };
-
-    useEffect(() => {
-        fetchData();
     }, []);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
 
     const [form, setForm] = useState({
         liftNumber: "",
@@ -263,29 +310,33 @@ export default function Stage7() {
         paymentAmountHamali: "",
         qcRequirement: "",
         remarks: "",
+        pkgAmount: "",
+        pkgGST: "",
     });
 
-    // Check Vendor/PO Match
-    const checkVendorPOMatch = (ids: string[]) => {
-        if (ids.length === 0) return { match: false, vendor: "", po: "" };
-        const first = sheetRecords.find(r => r.id === ids[0]);
-        if (!first) return { match: false, vendor: "", po: "" };
+    // Build a fast lookup map for records
+    const recordMap = useMemo(
+        () => new Map(sheetRecords.map((r) => [r.id, r])),
+        [sheetRecords]
+    );
 
+    // Check Vendor/PO Match
+    const checkVendorPOMatch = useCallback((ids: string[]) => {
+        if (ids.length === 0) return { match: false, vendor: "", po: "" };
+        const first = recordMap.get(ids[0]);
+        if (!first) return { match: false, vendor: "", po: "" };
         const v = first.data.vendorName;
         const p = first.data.poNumber;
-
         for (let i = 1; i < ids.length; i++) {
-            const rec = sheetRecords.find(r => r.id === ids[i]);
-            if (!rec || rec.data.vendorName !== v || rec.data.poNumber !== p) {
+            const rec = recordMap.get(ids[i]);
+            if (!rec || rec.data.vendorName !== v || rec.data.poNumber !== p)
                 return { match: false, vendor: "", po: "" };
-            }
         }
         return { match: true, vendor: v, po: p };
-    };
+    }, [recordMap]);
 
-    const handleBulkOpen = () => {
+    const handleBulkOpen = useCallback(() => {
         if (selectedRecordIds.length === 0) return;
-
         const { match } = checkVendorPOMatch(selectedRecordIds);
         if (selectedRecordIds.length > 1 && !match) {
             toast.error("All selected items must have the same Vendor and PO Number.", {
@@ -293,11 +344,8 @@ export default function Stage7() {
             });
             return;
         }
-
         setIsBulkMode(true);
-        setBulkError(match ? null : "Vendor/PO Mismatch"); // Should be matched if we got here or handled above
-
-        // Init Common Data
+        setBulkError(match ? null : "Vendor/PO Mismatch");
         setCommonData({
             invoiceNumber: "",
             invoiceDate: "",
@@ -306,11 +354,11 @@ export default function Stage7() {
             paymentAmountLabour: "",
             paymentAmountHamali: "",
             remarks: "",
+            pkgAmount: "",
+            pkgGST: "",
         });
-
-        // Init Bulk Items
         const items = selectedRecordIds.map(id => {
-            const rec = sheetRecords.find(r => r.id === id);
+            const rec = recordMap.get(id);
             return {
                 recordId: id,
                 indentNumber: rec?.data?.indentNumber || "",
@@ -324,69 +372,57 @@ export default function Stage7() {
         });
         setBulkItems(items);
         setOpen(true);
-    };
+    }, [selectedRecordIds, checkVendorPOMatch, recordMap]);
 
-    const handleBulkSubmit = async (e: React.FormEvent) => {
+    const handleBulkSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
         if (!SHEET_API_URL) return;
-
+        const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
         setIsSubmitting(true);
         try {
-            // Upload Bill Attachment (Common)
-            let billUrl = "";
-            const uploadFile = async (file: File) => {
-                const uploadParams = new URLSearchParams();
-                uploadParams.append("action", "uploadFile");
-                uploadParams.append("base64Data", await toBase64(file));
-                uploadParams.append("fileName", file.name);
-                uploadParams.append("mimeType", file.type);
-                const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
-                uploadParams.append("folderId", folderId);
+            // Upload bill attachment once (shared across all items)
+            const billUrl = commonData.billAttachment
+                ? await uploadFileToDrive(commonData.billAttachment, SHEET_API_URL, folderId)
+                : "";
 
-                const res = await fetch(SHEET_API_URL, { method: "POST", body: uploadParams });
-                const json = await res.json();
-                if (json.success) return json.fileUrl;
-                return "";
-            };
+            const dateStr = new Date().toISOString().split('T')[0];
 
-            if (commonData.billAttachment) {
-                billUrl = await uploadFile(commonData.billAttachment);
-            }
-
-            const now = new Date();
-            const dateStr = now.toISOString().split('T')[0];
+            // Pre-calculate packaging split once (same for every item)
+            const { perItemPkgBase } = getPkgTotals(
+                commonData.pkgAmount,
+                commonData.pkgGST,
+                bulkItems.length
+            );
+            const pkgBaseStr = perItemPkgBase > 0 ? perItemPkgBase.toFixed(2) : "";
 
             for (const item of bulkItems) {
-                // Upload Item Image (Individual)
-                let itemImgUrl = "";
-                if (item.receivedItemImage) {
-                    itemImgUrl = await uploadFile(item.receivedItemImage);
-                }
+                const itemImgUrl = item.receivedItemImage
+                    ? await uploadFileToDrive(item.receivedItemImage, SHEET_API_URL, folderId)
+                    : "";
 
-                const rowArray = new Array(50).fill("");
-                // Same mapping as single submit
-                rowArray[20] = dateStr; // Actual1
+                const rowArray = new Array(101).fill("");
+                rowArray[20] = dateStr;
                 rowArray[22] = "independent";
                 rowArray[23] = commonData.invoiceDate;
                 rowArray[24] = commonData.invoiceNumber;
                 rowArray[25] = item.receivedQty;
                 rowArray[26] = itemImgUrl;
-                rowArray[27] = ""; // SRN
+                rowArray[27] = "";
                 rowArray[28] = item.qcRequirement;
                 rowArray[29] = billUrl;
                 rowArray[30] = commonData.paymentAmountHydra;
                 rowArray[31] = commonData.paymentAmountLabour;
                 rowArray[32] = commonData.paymentAmountHamali;
                 rowArray[33] = commonData.remarks;
+                rowArray[99] = pkgBaseStr;
+                rowArray[100] = commonData.pkgGST || "";
 
                 const params = new URLSearchParams();
                 params.append("action", "update");
                 params.append("sheetName", "RECEIVING-ACCOUNTS");
                 params.append("rowData", JSON.stringify(rowArray));
                 params.append("rowIndex", item.index.toString());
-
-                // Sequential update to avoid rate limits/race conditions
                 await fetch(SHEET_API_URL, { method: "POST", body: params });
             }
 
@@ -395,30 +431,14 @@ export default function Stage7() {
             setSelectedRecordIds([]);
             setIsBulkMode(false);
             fetchData();
-
         } catch (error) {
             console.error(error);
             toast.error("Error submitting bulk form");
         } finally {
             setIsSubmitting(false);
         }
-    };
+    }, [commonData, bulkItems, getPkgTotals, fetchData]);
 
-    const pending = sheetRecords
-        .filter((r) => r && r.data && r.status === "pending")
-        .filter((r) => {
-            const searchLower = searchTerm.toLowerCase();
-            return (
-                r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-                r.data.itemName?.toLowerCase().includes(searchLower) ||
-                r.data.vendorName?.toLowerCase().includes(searchLower) ||
-                r.data.vendorName?.toLowerCase().includes(searchLower) ||
-                String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-                String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
-            );
-        });
-
-    const completed = sheetRecords.filter((r) => r && r.data && r.status === "completed");
 
     /* --------------------------------------------------------------- */
     /*  Get Vendor Data from Stage-6                                   */
@@ -447,24 +467,20 @@ export default function Stage7() {
     /* --------------------------------------------------------------- */
     /*  Open Modal                                                     */
     /* --------------------------------------------------------------- */
-    const openModal = (recordId: string) => {
-        const rec = sheetRecords?.find((r) => r.id === recordId);
+    const openModal = useCallback((recordId: string) => {
+        const rec = recordMap.get(recordId);
         if (!rec) {
             toast.error("Record not found locally. Please refresh.");
             return;
         }
-
         setSelectedRecordIds([]);
         setIsBulkMode(false);
         setSelectedRecordId(recordId);
-        setSelectedRecordId(recordId);
-
         setForm({
             liftNumber: rec.data.liftNo || "",
             receivedQty: "",
             invoiceNumber: "",
             invoiceDate: "",
-
             billAttachment: null,
             receivedItemImage: null,
             paymentAmountHydra: "",
@@ -472,161 +488,57 @@ export default function Stage7() {
             paymentAmountHamali: "",
             qcRequirement: "",
             remarks: "",
+            pkgAmount: "",
+            pkgGST: "",
         });
         setOpen(true);
-    };
+    }, [recordMap]);
 
     /* --------------------------------------------------------------- */
     /*  Submit                                                         */
     /* --------------------------------------------------------------- */
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
         if (!selectedRecordId || !SHEET_API_URL) return;
-
-        const rec = sheetRecords?.find((r) => r.id === selectedRecordId);
+        const rec = recordMap.get(selectedRecordId);
         if (!rec) return;
-
+        const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
         setIsSubmitting(true);
         try {
-            // 1. Upload Files
-            let billUrl = "";
-            let imageUrl = "";
+            const billUrl = form.billAttachment instanceof File
+                ? await uploadFileToDrive(form.billAttachment, SHEET_API_URL, folderId)
+                : typeof form.billAttachment === "string" ? form.billAttachment : "";
 
-            // Helper for file upload
-            const uploadFile = async (file: File) => {
-                const uploadParams = new URLSearchParams();
-                uploadParams.append("action", "uploadFile");
-                uploadParams.append("base64Data", await toBase64(file));
-                uploadParams.append("fileName", file.name);
-                uploadParams.append("mimeType", file.type);
-                const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
-                uploadParams.append("folderId", folderId);
+            const imageUrl = form.receivedItemImage instanceof File
+                ? await uploadFileToDrive(form.receivedItemImage, SHEET_API_URL, folderId)
+                : typeof form.receivedItemImage === "string" ? form.receivedItemImage : "";
 
-                const res = await fetch(SHEET_API_URL, {
-                    method: "POST",
-                    body: uploadParams
-                });
-                const json = await res.json();
-                if (json.success) return json.fileUrl;
-                else throw new Error("Upload failed: " + (json.error || "Unknown error"));
-            };
-
-            if (form.billAttachment instanceof File) {
-                billUrl = await uploadFile(form.billAttachment);
-            } else if (typeof form.billAttachment === 'string') {
-                billUrl = form.billAttachment;
-            }
-
-            if (form.receivedItemImage instanceof File) {
-                imageUrl = await uploadFile(form.receivedItemImage);
-            } else if (typeof form.receivedItemImage === 'string') {
-                imageUrl = form.receivedItemImage;
-            }
-
-            // 2. Prepare Update Data
-            const now = new Date();
-            const formatISO = (date: Date) => date.toISOString().split('T')[0];
-            const dateStr = formatISO(now);
-
-            // Update lift-accounts indices 25-39
-            // lift-accounts existing data is 0-24. We append/update 25-39.
-            // We need a sparse array of size 50.
-            // const rowArray = new Array(50).fill("");
-
-            // Indices based on User Request Schema for Stage 7
-            // 25: Plan 6 (Keeping empty/unchanged for this update)
-            // 26: Actual 6
-            //     rowArray[20] = dateStr;
-            //     // 27: Invoice Type
-            //     rowArray[22] = invoiceType;
-            //     // 28: Lift # (User: 'lift')
-            //     rowArray[23] = form.invoiceDate;
-            //     rowArray[24] = form.invoiceNumber;
-            //     rowArray[25] = form.receivedQty;
-            //     rowArray[26] = form.liftNumber;
-            //     // 29: Received Qty (User: 'received qty')
-            //     // 30: Invoice Date (User: 'invoice data')
-            //     // 31: Invoice Number (User: 'Invoice')
-            //     // 32: SRN Number (User: 'srn')
-            //     rowArray[28] = form.srnNumber;
-            //     rowArray[27] = imageUrl || "";
-            //     // 33: QC Required (User: 'Qc reqired')
-
-            //     // 34: Received Item Image (User: 'recive item imag')
-            //     // 35: Bill Attachment (User: 'bill attachment')
-            //     rowArray[29] = billUrl || "";
-            //     // 36: Hydra Amount (User: 'hydra Amot')
-            //     rowArray[30] = form.paymentAmountHydra;
-            //     // 37: Labour Amount (User: 'babour')
-            //     rowArray[31] = form.paymentAmountLabour;
-            //     // 38: Hamali Amount (User: 'Hemali')
-            //     rowArray[32] = form.paymentAmountHamali;
-            //     // 39: Remarks (User: 'remarks')
-            //     // rowArray[33] = form.remarks;
-            //     // 40: Plan 7 (QC Plan) - Trigger for Stage 8
-            //  // create sparse row (size enough for your sheet)
-            const rowArray = new Array(50).fill("");
-
-            // ============================================================
-            // RECEIVING-ACCOUNTS Sheet: Material Receipt Section (Row 7+)
-            // Columns T to AH (Indices 19 to 33)
-            // ============================================================
-
-            // Column T (19): Planned1 → Already set, don't modify
-            // Column U (20): Actual1 → Set current date when receipt is recorded
-            rowArray[20] = dateStr;
-
-            // Column V (21): Delay1 → Formula field, skip
-
-            // Column W (22): Invoice Type
-            rowArray[22] = "independent";
-
-            // Column X (23): Invoice Date
-            rowArray[23] = form.invoiceDate;
-
-            // Column Y (24): Invoice No
-            rowArray[24] = form.invoiceNumber;
-
-            // Column Z (25): Received Qty
-            rowArray[25] = form.receivedQty;
-
-            // Column AA (26): Received Item Image
-            rowArray[26] = imageUrl || "";
-
-            // Column AB (27): SRN
-            rowArray[27] = "";
-
-            // Column AC (28): QC Required
-            rowArray[28] = form.qcRequirement;
-
-            // Column AD (29): Bill Attachment
-            rowArray[29] = billUrl || "";
-
-            // Column AE (30): Hydra Amount
-            rowArray[30] = form.paymentAmountHydra;
-
-            // Column AF (31): Labour Amount
-            rowArray[31] = form.paymentAmountLabour;
-
-            // Column AG (32): Auto Charge (replaces Hamali)
-            rowArray[32] = form.paymentAmountHamali;
-
-            // Column AH (33): Remarks
-            rowArray[33] = form.remarks;
-
+            const dateStr = new Date().toISOString().split('T')[0];
+            const rowArray = new Array(101).fill("");
+            rowArray[20] = dateStr;               // U: Actual1
+            rowArray[22] = "independent";         // W: Invoice Type
+            rowArray[23] = form.invoiceDate;      // X
+            rowArray[24] = form.invoiceNumber;    // Y
+            rowArray[25] = form.receivedQty;      // Z
+            rowArray[26] = imageUrl;              // AA
+            rowArray[27] = "";                    // AB: SRN
+            rowArray[28] = form.qcRequirement;   // AC
+            rowArray[29] = billUrl;               // AD
+            rowArray[30] = form.paymentAmountHydra;  // AE
+            rowArray[31] = form.paymentAmountLabour; // AF
+            rowArray[32] = form.paymentAmountHamali; // AG
+            rowArray[33] = form.remarks;          // AH
+            rowArray[99] = form.pkgAmount || "";  // CV
+            rowArray[100] = form.pkgGST || "";     // CW
 
             const params = new URLSearchParams();
             params.append("action", "update");
             params.append("sheetName", "RECEIVING-ACCOUNTS");
             params.append("rowData", JSON.stringify(rowArray));
-            params.append("rowIndex", rec.rowIndex.toString()); // Use rowIndex from fetched data
+            params.append("rowIndex", rec.rowIndex.toString());
 
-            const updateRes = await fetch(SHEET_API_URL, {
-                method: "POST",
-                body: params,
-            });
-
+            const updateRes = await fetch(SHEET_API_URL, { method: "POST", body: params });
             const updateJson = await updateRes.json();
             if (updateJson.success) {
                 toast.success("Receipt recorded successfully!");
@@ -641,22 +553,16 @@ export default function Stage7() {
         } finally {
             setIsSubmitting(false);
         }
-    };
+    }, [selectedRecordId, recordMap, form, fetchData]);
 
-    const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = error => reject(error);
-    });
+    // Remove the duplicate in-component toBase64 (now at module scope)
 
-    const resetForm = () => {
+    const resetForm = useCallback(() => {
         setForm({
             liftNumber: "",
             receivedQty: "",
             invoiceNumber: "",
             invoiceDate: "",
-
             billAttachment: null,
             receivedItemImage: null,
             paymentAmountHydra: "",
@@ -664,19 +570,53 @@ export default function Stage7() {
             paymentAmountHamali: "",
             qcRequirement: "",
             remarks: "",
+            pkgAmount: "",
+            pkgGST: "",
         });
-    };
+    }, []);
 
-    const removeFile = (key: "billAttachment" | "receivedItemImage") => {
+    const removeFile = useCallback((key: "billAttachment" | "receivedItemImage") => {
         setForm((f) => ({ ...f, [key]: null }));
-    };
+    }, []);
 
-    const formValid =
+    const formValid = useMemo(() =>
         form.receivedQty &&
         form.invoiceNumber &&
         form.invoiceDate &&
         form.qcRequirement &&
-        form.billAttachment;
+        form.billAttachment,
+        [form.receivedQty, form.invoiceNumber, form.invoiceDate, form.qcRequirement, form.billAttachment]);
+
+    // Memoized filtered lists – only recompute when records or search change
+    const pending = useMemo(() => {
+        const lower = searchTerm.toLowerCase();
+        return sheetRecords.filter((r) => {
+            if (!r?.data || r.status !== "pending") return false;
+            if (!lower) return true;
+            return (
+                r.data.indentNumber?.toLowerCase().includes(lower) ||
+                r.data.itemName?.toLowerCase().includes(lower) ||
+                r.data.vendorName?.toLowerCase().includes(lower) ||
+                String(r.data.poNumber || "").toLowerCase().includes(lower) ||
+                String(r.data.invoiceNumber || "").toLowerCase().includes(lower)
+            );
+        });
+    }, [sheetRecords, searchTerm]);
+
+    const completed = useMemo(() => {
+        const lower = searchTerm.toLowerCase();
+        return sheetRecords.filter((r) => {
+            if (!r?.data || r.status !== "completed") return false;
+            if (!lower) return true;
+            return (
+                r.data.indentNumber?.toLowerCase().includes(lower) ||
+                r.data.itemName?.toLowerCase().includes(lower) ||
+                r.data.vendorName?.toLowerCase().includes(lower) ||
+                String(r.data.poNumber || "").toLowerCase().includes(lower) ||
+                String(r.data.invoiceNumber || "").toLowerCase().includes(lower)
+            );
+        });
+    }, [sheetRecords, searchTerm]);
 
     return (
         <div className="p-6">
@@ -1265,6 +1205,50 @@ export default function Stage7() {
                                     </div>
                                 </div>
 
+                                {/* Packaging/Forwarding - Bulk */}
+                                <div className="border rounded-lg p-4 bg-amber-50 space-y-3">
+                                    <h4 className="font-semibold text-sm">Packaging / Forwarding
+                                        <span className="text-xs font-normal text-gray-500 ml-2">(shared, divided equally among selected indents)</span>
+                                    </h4>
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div className="space-y-2">
+                                            <Label>Amount</Label>
+                                            <Input
+                                                type="number"
+                                                step="0.01"
+                                                value={commonData.pkgAmount}
+                                                onChange={(e) => setCommonData({ ...commonData, pkgAmount: e.target.value })}
+                                                placeholder="0.00"
+                                                className="bg-white"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>GST on Packaging</Label>
+                                            <Select value={commonData.pkgGST} onValueChange={(v) => setCommonData({ ...commonData, pkgGST: v })}>
+                                                <SelectTrigger className="bg-white"><SelectValue placeholder="Select GST" /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="0%">0%</SelectItem>
+                                                    <SelectItem value="5%">5%</SelectItem>
+                                                    <SelectItem value="12%">12%</SelectItem>
+                                                    <SelectItem value="18%">18%</SelectItem>
+                                                    <SelectItem value="28%">28%</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Total Packaging</Label>
+                                            <Input
+                                                type="number"
+                                                step="0.01"
+                                                value={getPkgTotals(commonData.pkgAmount, commonData.pkgGST, bulkItems.length).totalPkg.toFixed(2)}
+                                                readOnly
+                                                className="bg-gray-100 cursor-not-allowed font-semibold"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-amber-700">Per item share: ₹{getPkgTotals(commonData.pkgAmount, commonData.pkgGST, bulkItems.length).perItemPkgTotal.toFixed(2)}</p>
+                                </div>
+
                                 <div className="grid grid-cols-3 gap-4">
                                     <div className="space-y-2">
                                         <Label>Hydra Amt</Label>
@@ -1503,6 +1487,47 @@ export default function Stage7() {
                                                     paymentAmountHamali: e.target.value,
                                                 })
                                             }
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Packaging/Forwarding - Single Form */}
+                            <div className="border rounded-lg p-4 bg-amber-50 space-y-3">
+                                <h3 className="font-medium text-sm">Packaging / Forwarding</h3>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Amount</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={form.pkgAmount}
+                                            onChange={(e) => setForm({ ...form, pkgAmount: e.target.value })}
+                                            placeholder="0.00"
+                                            className="bg-white"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>GST on Packaging</Label>
+                                        <Select value={form.pkgGST} onValueChange={(v) => setForm({ ...form, pkgGST: v })}>
+                                            <SelectTrigger className="bg-white"><SelectValue placeholder="Select GST" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="0%">0%</SelectItem>
+                                                <SelectItem value="5%">5%</SelectItem>
+                                                <SelectItem value="12%">12%</SelectItem>
+                                                <SelectItem value="18%">18%</SelectItem>
+                                                <SelectItem value="28%">28%</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Total Packaging</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={getPkgTotals(form.pkgAmount, form.pkgGST, 1).totalPkg.toFixed(2)}
+                                            readOnly
+                                            className="bg-gray-100 cursor-not-allowed font-semibold"
                                         />
                                     </div>
                                 </div>

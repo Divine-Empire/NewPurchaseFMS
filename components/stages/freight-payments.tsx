@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText, RefreshCw, Upload, CalendarIcon, AlertTriangle, Search } from "lucide-react";
+import { Loader2, FileText, RefreshCw, Upload, CalendarIcon, Search } from "lucide-react";
 import {
     Table,
     TableBody,
@@ -36,40 +36,71 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+// ─── Module-level constants (never re-created on render) ──────────────────────
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
 const IMAGE_FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID;
 
+// Column definitions are stable — defined outside component to avoid recreation
+const COLUMNS = [
+    { key: "lrNo", label: "LR No." },
+    { key: "biltyImage", label: "Bilty" },
+    { key: "freightAmount", label: "Freight Amt" },
+    { key: "transporter", label: "Transporter" },
+    { key: "vehicleNo", label: "Vehicle No." },
+    { key: "contact", label: "Contact" },
+    { key: "advanceAmount", label: "Advance Amt" },
+    { key: "totalPaid", label: "Total Paid" },
+    { key: "pendingAmount", label: "Pending Amt" },
+    { key: "plan1", label: "Planned Date" },
+    { key: "actual1", label: "Payment Date" },
+] as const;
+
+const ALL_COLUMN_KEYS = COLUMNS.map(c => c.key);
+
+// Stable date formatter — defined outside component, not re-created each row
+const formatDate = (d: any): string => {
+    if (!d) return "";
+    const str = String(d);
+    if (str.includes("T")) return str.split("T")[0];
+    return str;
+};
+
+// Stable float parser
+const parseNum = (val: any): number =>
+    parseFloat(String(val || 0).replace(/,/g, "")) || 0;
+
+// Google Sheets compatible timestamp  (M/D/YYYY H:MM:SS)
+const gsNow = (): string => {
+    const n = new Date();
+    return `${n.getMonth() + 1}/${n.getDate()}/${n.getFullYear()} ${n.getHours()}:${String(n.getMinutes()).padStart(2, "0")}:${String(n.getSeconds()).padStart(2, "0")}`;
+};
+
+// Default form state factory — avoids sharing mutable reference
+const defaultForm = () => ({
+    amount: "",
+    paymentDetails: "",
+    paymentDate: new Date(),
+    paymentStatus: "pending",
+    totalPaid: "",
+    pendingAmount: "",
+    paymentProof: null as File | null,
+});
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function Stage14() {
     const [records, setRecords] = useState<any[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    // Modal State
     const [open, setOpen] = useState(false);
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+    const [formData, setFormData] = useState(defaultForm);
+    const [calcData, setCalcData] = useState({ freightAmount: 0, advanceAmount: 0 });
+    const [selectedColumns, setSelectedColumns] = useState<string[]>(ALL_COLUMN_KEYS);
 
-    // Form State
-    const [formData, setFormData] = useState({
-        amount: "",
-        paymentDetails: "",
-        paymentDate: new Date(),
-        paymentStatus: "pending",
-        totalPaid: "",
-        pendingAmount: "",
-        paymentProof: null as File | null,
-    });
-
-    const [calcData, setCalcData] = useState({
-        freightAmount: 0,
-        advanceAmount: 0
-    });
-
-    // -----------------------------------------------------------------
-    // FETCH DATA
-    // -----------------------------------------------------------------
-    const fetchData = async () => {
+    // ── Fetch ─────────────────────────────────────────────────────────────────
+    const fetchData = useCallback(async () => {
         if (!SHEET_API_URL) return;
         setIsLoading(true);
         try {
@@ -77,69 +108,57 @@ export default function Stage14() {
             const json = await res.json();
 
             if (json.success && Array.isArray(json.data)) {
-                // Slice(6) to skip headers (Data starts Row 7)
-                const rows = json.data.slice(6)
+                // New sheet structure — data starts row 7 (slice 6, index base 7)
+                // A(0)=Timestamp, B(1)=LR No, C(2)=Bilty Image, D(3)=Freight Amount
+                // E(4)=Transporter Name, F(5)=Vehicle No, G(6)=Contact, H(7)=Advance Amount
+                // I(8)=Payment Date, J(9)=Planned1, K(10)=Actual1, L(11)=Delay1
+                // M(12)=Total Paid, N(13)=Pending Amount
+                const rows = json.data
+                    .slice(6)
                     .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
-                    .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "") // Filter by LR No (Col B)
+                    .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
                     .map(({ row, originalIndex }: any) => {
-
-                        // Status Logic (Col N=13, O=14)
-                        const plan1 = row[13];
-                        const actual1 = row[14];
-
+                        const plan1 = row[9];
+                        const actual1 = row[10];
                         const hasPlan = !!plan1 && String(plan1).trim() !== "" && String(plan1).trim() !== "-";
                         const hasActual = !!actual1 && String(actual1).trim() !== "" && String(actual1).trim() !== "-";
 
+                        const freightAmt = parseNum(row[3]);
+                        const pendingRaw = row[13];
+                        const currentPending = (pendingRaw !== undefined && pendingRaw !== "" && pendingRaw !== "-")
+                            ? parseNum(pendingRaw)
+                            : freightAmt;
+                        const totalPaid = parseNum(row[12]);
+
                         let status = "not_ready";
-                        if (hasPlan && !hasActual) {
-                            status = "pending";
-                        } else if (hasPlan && hasActual) {
-                            status = "history";
+                        if (hasPlan) {
+                            status = (!hasActual || currentPending > 1) ? "pending" : "history";
                         }
 
-                        // Parse totals
-                        const freightAmt = parseFloat(String(row[3]).replace(/,/g, '')) || 0; // Col D (Index 3)
-                        const advanceAmt = parseFloat(String(row[4]).replace(/,/g, '')) || 0; // Col E (Index 4)
-
-                        // Format Dates (Remove timestamp)
-                        const formatDate = (d: any) => {
-                            if (!d) return "";
-                            const str = String(d);
-                            // If it contains 'T' (ISO format), split it
-                            if (str.includes("T")) return str.split("T")[0];
-                            return str;
-                        };
-
                         return {
-                            id: row[1], // LR No as ID
+                            id: `${String(row[1]).trim()}_${originalIndex}`,
                             rowIndex: originalIndex,
                             status,
-                            rawRow: row,
                             data: {
-                                id: row[1],
-                                lrNo: row[1],           // B
-                                biltyImage: row[2],     // C
-                                freightAmount: row[3],  // D
-                                advanceAmount: row[4],  // E
-                                paymentDate: formatDate(row[5]),    // F
-                                vendorName: row[6],     // G
-                                subItem: row[7],        // H
-                                qty: row[8],            // I
-                                srn: row[9],            // J
-                                transporter: row[10],   // K
-                                vehicleNo: row[11],     // L
-                                contact: row[12],       // M
-
-                                // Status Drivers
-                                plan1: formatDate(row[13]),         // N
-                                actual1: formatDate(row[14]),       // O
-
+                                lrNo: row[1] || "",          // B
+                                biltyImage: row[2] || "",          // C
+                                freightAmount: row[3] || "",          // D
+                                transporter: row[4] || "",          // E
+                                vehicleNo: row[5] || "",          // F
+                                contact: row[6] || "",          // G
+                                advanceAmount: row[7] || "",          // H
+                                paymentDate: formatDate(row[8]),     // I
+                                plan1: formatDate(plan1),      // J
+                                actual1: formatDate(actual1),    // K
+                                totalPaid,                             // M
+                                pendingAmount: currentPending,         // N
                                 // Calculated for modal
                                 freightVal: freightAmt,
-                                advanceVal: advanceAmt
-                            }
+                                advanceVal: parseNum(row[7]),
+                            },
                         };
                     });
+
                 setRecords(rows);
             }
         } catch (e) {
@@ -147,85 +166,78 @@ export default function Stage14() {
             toast.error("Failed to load data");
         }
         setIsLoading(false);
-    };
+    }, []); // SHEET_API_URL is module-level constant — safe as dep
 
-    useEffect(() => {
-        fetchData();
-    }, []);
+    useEffect(() => { fetchData(); }, [fetchData]);
 
-    // -----------------------------------------------------------------
-    // COLUMNS
-    // -----------------------------------------------------------------
-    // -----------------------------------------------------------------
-    // COLUMNS
-    // -----------------------------------------------------------------
-    const pending = records
-        .filter(r => r.status === "pending")
-        .filter(r => {
-            const searchLower = searchTerm.toLowerCase();
+    // ── Derived state (memoized) ──────────────────────────────────────────────
+    const searchLower = useMemo(() => searchTerm.toLowerCase(), [searchTerm]);
+
+    const pending = useMemo(() =>
+        records.filter(r => {
+            if (r.status !== "pending") return false;
+            if (!searchLower) return true;
             return (
                 String(r.data.lrNo || "").toLowerCase().includes(searchLower) ||
                 String(r.data.transporter || "").toLowerCase().includes(searchLower) ||
-                String(r.data.vendorName || "").toLowerCase().includes(searchLower) ||
-                String(r.data.subItem || "").toLowerCase().includes(searchLower)
+                String(r.data.vehicleNo || "").toLowerCase().includes(searchLower) ||
+                String(r.data.contact || "").toLowerCase().includes(searchLower)
             );
-        });
-    const completed = records.filter(r => r.status === "history");
+        }),
+        [records, searchLower]);
 
-    const columns = [
-        { key: "lrNo", label: "LR No." },
-        { key: "transporter", label: "Transporter" },
-        { key: "vehicleNo", label: "Vehicle No." },
-        { key: "contact", label: "Contact" },
-        { key: "vendorName", label: "Vendor" },
-        { key: "subItem", label: "Item" },
-        { key: "qty", label: "Qty" },
-        { key: "srn", label: "SRN" },
-        { key: "freightAmount", label: "Freight Amt" },
-        { key: "advanceAmount", label: "Advance Amt" },
-        { key: "plan1", label: "Planned Date" }, // N
-        { key: "actual1", label: "Payment Date" }, // O (History)
-        { key: "biltyImage", label: "Bilty" }, // C
-    ];
+    const completed = useMemo(() =>
+        records.filter(r => {
+            if (r.status !== "history") return false;
+            if (!searchLower) return true;
+            return (
+                String(r.data.lrNo || "").toLowerCase().includes(searchLower) ||
+                String(r.data.transporter || "").toLowerCase().includes(searchLower) ||
+                String(r.data.vehicleNo || "").toLowerCase().includes(searchLower) ||
+                String(r.data.contact || "").toLowerCase().includes(searchLower)
+            );
+        }),
+        [records, searchLower]);
 
-    const [selectedColumns, setSelectedColumns] = useState<string[]>(columns.map(c => c.key));
+    // Only the visible columns (memoized to avoid re-filtering on every render)
+    const visibleColumns = useMemo(() =>
+        COLUMNS.filter(c => selectedColumns.includes(c.key)),
+        [selectedColumns]);
 
+    // ── Column toggle ─────────────────────────────────────────────────────────
+    const handleColumnToggle = useCallback((key: string, checked: boolean) => {
+        setSelectedColumns(prev =>
+            checked ? [...prev, key] : prev.filter(k => k !== key)
+        );
+    }, []);
 
-    // -----------------------------------------------------------------
-    // MODAL
-    // -----------------------------------------------------------------
-    const handleOpenForm = (recordId: string) => {
+    // ── Modal open ────────────────────────────────────────────────────────────
+    const handleOpenForm = useCallback((recordId: string) => {
         const rec = records.find(r => r.id === recordId);
         if (!rec) return;
 
-        setSelectedRecordId(recordId);
-
         const freight = rec.data.freightVal;
         const advance = rec.data.advanceVal;
-        const pending = freight - advance;
+        const pendingAmt = rec.data.pendingAmount > 0
+            ? rec.data.pendingAmount
+            : (freight - advance);
 
+        setSelectedRecordId(recordId);
         setFormData({
-            amount: (pending > 0 ? pending : 0).toFixed(2), // Payment Amount
+            amount: (pendingAmt > 0 ? pendingAmt : 0).toFixed(2),
             paymentDetails: "",
             paymentDate: new Date(),
-            paymentStatus: pending <= 1 ? "paid" : "pending",
-            totalPaid: advance.toFixed(2), // Advance is "already paid"
-            pendingAmount: (pending > 0 ? pending : 0).toFixed(2),
-            paymentProof: null
+            paymentStatus: pendingAmt <= 1 ? "paid" : "pending",
+            totalPaid: rec.data.totalPaid.toString(),
+            pendingAmount: (pendingAmt > 0 ? pendingAmt : 0).toFixed(2),
+            paymentProof: null,
         });
-
-        setCalcData({
-            freightAmount: freight,
-            advanceAmount: advance
-        });
-
+        setCalcData({ freightAmount: freight, advanceAmount: advance });
         setOpen(true);
-    };
+    }, [records]);
 
-    // -----------------------------------------------------------------
-    // SUBMIT (Updates FREIGHT-PAYMENTS + Appends to PAID-DATA)
-    // -----------------------------------------------------------------
-    const handleSubmit = async (e: React.FormEvent) => {
+    // ── Submit ────────────────────────────────────────────────────────────────
+    const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedRecordId) return;
 
@@ -238,77 +250,52 @@ export default function Stage14() {
         try {
             const dateStr = format(formData.paymentDate, "yyyy-MM-dd");
 
-            // 1. Upload Proof
+            // 1. Upload proof (if any)
             let proofUrl = "";
             if (formData.paymentProof) {
-                const reader = new FileReader();
-                const base64Promise = new Promise((resolve) => {
-                    reader.onload = (e) => resolve(e.target?.result);
+                const base64Data = await new Promise<string>(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = e => resolve(e.target?.result as string);
                     reader.readAsDataURL(formData.paymentProof!);
                 });
-                const base64Data = await base64Promise;
 
-                const upParams = new URLSearchParams();
-                upParams.append("action", "uploadFile");
-                upParams.append("fileName", `FRT_${rec.data.lrNo}_${Date.now()}`); // Unique name
-                upParams.append("mimeType", formData.paymentProof.type);
-                upParams.append("base64Data", String(base64Data));
-                if (IMAGE_FOLDER_ID) {
-                    upParams.append("folderId", IMAGE_FOLDER_ID);
-                }
-
+                const upParams = new URLSearchParams({
+                    action: "uploadFile",
+                    fileName: `FRT_${rec.data.lrNo}_${Date.now()}`,
+                    mimeType: formData.paymentProof.type,
+                    base64Data,
+                    ...(IMAGE_FOLDER_ID ? { folderId: IMAGE_FOLDER_ID } : {}),
+                });
                 const upRes = await fetch(`${SHEET_API_URL}`, { method: "POST", body: upParams });
                 const upJson = await upRes.json();
                 if (upJson.success) proofUrl = upJson.fileUrl;
             }
 
-            // =========================================================
-            // ACTION A: Update FREIGHT-PAYMENTS (Column O with Date)
-            // =========================================================
-            if (rec.rowIndex) {
-                // Initialize rowArray from rawRow or create new if missing
-                const rowArray = rec.rawRow ? [...rec.rawRow] : new Array(15).fill("");
+            // 2. Write ONLY to PAID-DATA (no writes to FREIGHT-PAYMENTS)
+            // PAID-DATA schema: A=Timestamp, B=Status, C=LR No, D=Transporter,
+            //                   E=Amount, F=Payment Status, G=Payment Due Date, H=Payment Type, I=Proof
+            const payAmount = parseNum(formData.amount);
+            const newTotalPaid = (rec.data.totalPaid || 0) + payAmount;
+            const newPending = rec.data.freightVal - newTotalPaid;
+            const paymentStatus = newPending <= 1 ? "Paid" : "Partial";
 
-                // Ensure array has enough columns (up to Index 14/Col O)
-                while (rowArray.length <= 14) rowArray.push("");
+            const paidRow = [
+                gsNow(),                       // A: Timestamp (M/D/YYYY H:MM:SS)
+                "Freight Payment",             // B: Status tag
+                rec.data.lrNo || "",    // C: LR No
+                rec.data.transporter || "",    // D: Transporter
+                payAmount.toString(),          // E: Amount
+                paymentStatus,                 // F: Payment Status
+                dateStr,                       // G: Payment Due Date
+                formData.paymentDetails || "", // H: Payment Type/Details
+                proofUrl,                      // I: Payment Proof
+            ];
 
-                // Update Column O (Index 14) with Payment Date
-                rowArray[14] = dateStr;
-
-                const updateParams = new URLSearchParams();
-                updateParams.append("action", "update");
-                updateParams.append("sheetName", "FREIGHT-PAYMENTS");
-                updateParams.append("rowIndex", rec.rowIndex.toString());
-                updateParams.append("rowData", JSON.stringify(rowArray));
-
-                const res = await fetch(`${SHEET_API_URL}`, { method: "POST", body: updateParams });
-                const json = await res.json();
-                if (!json.success) {
-                    console.error("Failed to update status in FREIGHT-PAYMENTS:", json.error);
-                    toast.error("Failed to update Freight sheet status");
-                }
-            }
-
-
-            // =========================================================
-            // ACTION B: Append to PAID-DATA (Transaction Log)
-            // =========================================================
-            // Using same structure as Stage 13 but tailored for Freight
-            const paidRow = new Array(8).fill("");
-            paidRow[0] = "Freight Payment"; // A
-            paidRow[1] = rec.data.lrNo || ""; // B (Transporter/Ref - Using LR No)
-            paidRow[2] = rec.data.transporter || ""; // C (Vendor/Transporter Name)
-            paidRow[3] = formData.amount || "";      // D
-            paidRow[4] = formData.paymentStatus || ""; // E
-            paidRow[5] = dateStr || "";                // F
-            paidRow[6] = formData.paymentDetails || ""; // G
-            paidRow[7] = proofUrl || "";               // H
-
-            const paidParams = new URLSearchParams();
-            paidParams.append("action", "insert");
-            paidParams.append("sheetName", "PAID-DATA");
-            paidParams.append("rowData", JSON.stringify(paidRow));
-
+            const paidParams = new URLSearchParams({
+                action: "insert",
+                sheetName: "PAID-DATA",
+                rowData: JSON.stringify(paidRow),
+            });
             const paidRes = await fetch(`${SHEET_API_URL}`, { method: "POST", body: paidParams });
             const paidJson = await paidRes.json();
 
@@ -319,29 +306,54 @@ export default function Stage14() {
             } else {
                 toast.warning("Logged, but update failed: " + (paidJson.error || "Unknown"), { id: toastId });
             }
-
         } catch (err: any) {
             console.error(err);
             toast.error(err.message || "Failed", { id: toastId });
         } finally {
             setIsSubmitting(false);
         }
-    };
+    }, [selectedRecordId, records, formData, fetchData]);
 
-    const safeValue = (val: any) => {
+    // ── Stable form field updaters ────────────────────────────────────────────
+    const handleAmountChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) =>
+        setFormData(prev => ({ ...prev, amount: e.target.value })), []);
+    const handleDetailsChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) =>
+        setFormData(prev => ({ ...prev, paymentDetails: e.target.value })), []);
+    const handleDateChange = useCallback((date: Date | undefined) =>
+        date && setFormData(prev => ({ ...prev, paymentDate: date })), []);
+    const handleStatusChange = useCallback((v: string) =>
+        setFormData(prev => ({ ...prev, paymentStatus: v })), []);
+    const handleProofChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) =>
+        setFormData(prev => ({ ...prev, paymentProof: e.target.files?.[0] || null })), []);
+    const handleTabChange = useCallback((v: string) =>
+        setActiveTab(v as "pending" | "history"), []);
+    const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) =>
+        setSearchTerm(e.target.value), []);
+    const handleCloseDialog = useCallback(() => setOpen(false), []);
+
+    // ── safeValue renderer (stable reference) ────────────────────────────────
+    const safeValue = useCallback((val: any) => {
         if (!val || val === "-" || val === "") return "-";
-        if (typeof val === 'string' && (val.startsWith("http") || val.includes("drive.google"))) {
+        if (typeof val === "string" && (val.startsWith("http") || val.includes("drive.google"))) {
             return (
-                <a href={val} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                <a href={val} target="_blank" rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline flex items-center gap-1">
                     <FileText className="w-3 h-3" /> View
                 </a>
             );
         }
         return String(val);
-    };
+    }, []);
 
+    // Memoize the selected record's LR No for the dialog description
+    const selectedLrNo = useMemo(() =>
+        records.find(r => r.id === selectedRecordId)?.data.lrNo ?? "",
+        [records, selectedRecordId]);
+
+    // ── Render ────────────────────────────────────────────────────────────────
     return (
         <div className="p-6">
+            {/* Header */}
             <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold">Stage 14: Freight Payments</h2>
@@ -352,23 +364,21 @@ export default function Stage14() {
                     <div className="relative flex-1 max-w-sm">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
                         <Input
-                            placeholder="Search by LR, Transporter, Vendor, Item..."
+                            placeholder="Search by LR, Transporter, Vehicle, Contact..."
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={handleSearchChange}
                             className="pl-9 bg-white w-[300px]"
                         />
                     </div>
+
                     <Select value="" onValueChange={() => { }}>
                         <SelectTrigger className="w-40"><SelectValue placeholder="Columns" /></SelectTrigger>
                         <SelectContent className="max-h-64">
-                            {columns.map(c => (
+                            {COLUMNS.map(c => (
                                 <div key={c.key} className="flex items-center p-2 gap-2">
                                     <Checkbox
                                         checked={selectedColumns.includes(c.key)}
-                                        onCheckedChange={(chk) => {
-                                            if (chk) setSelectedColumns([...selectedColumns, c.key]);
-                                            else setSelectedColumns(selectedColumns.filter(k => k !== c.key));
-                                        }}
+                                        onCheckedChange={(chk) => handleColumnToggle(c.key, !!chk)}
                                     />
                                     <span className="text-sm">{c.label}</span>
                                 </div>
@@ -382,13 +392,14 @@ export default function Stage14() {
                 </div>
             </div>
 
+            {/* Tables */}
             {isLoading ? (
                 <div className="flex justify-center items-center h-64">
                     <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
                     <span className="ml-2 text-gray-500">Loading freight records...</span>
                 </div>
             ) : (
-                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+                <Tabs value={activeTab} onValueChange={handleTabChange}>
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
                         <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
@@ -403,7 +414,7 @@ export default function Stage14() {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead className="w-[100px] sticky left-0 z-20 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Action</TableHead>
-                                            {columns.filter(c => selectedColumns.includes(c.key)).map(c => <TableHead key={c.key}>{c.label}</TableHead>)}
+                                            {visibleColumns.map(c => <TableHead key={c.key}>{c.label}</TableHead>)}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -414,7 +425,7 @@ export default function Stage14() {
                                                         Pay
                                                     </Button>
                                                 </TableCell>
-                                                {columns.filter(c => selectedColumns.includes(c.key)).map(c => (
+                                                {visibleColumns.map(c => (
                                                     <TableCell key={c.key}>{safeValue(rec.data[c.key])}</TableCell>
                                                 ))}
                                             </TableRow>
@@ -433,13 +444,13 @@ export default function Stage14() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            {columns.filter(c => selectedColumns.includes(c.key)).map(c => <TableHead key={c.key}>{c.label}</TableHead>)}
+                                            {visibleColumns.map(c => <TableHead key={c.key}>{c.label}</TableHead>)}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {completed.map(rec => (
                                             <TableRow key={rec.id}>
-                                                {columns.filter(c => selectedColumns.includes(c.key)).map(c => (
+                                                {visibleColumns.map(c => (
                                                     <TableCell key={c.key}>{safeValue(rec.data[c.key])}</TableCell>
                                                 ))}
                                             </TableRow>
@@ -452,12 +463,13 @@ export default function Stage14() {
                 </Tabs>
             )}
 
+            {/* Payment Dialog */}
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>Freight Payment</DialogTitle>
                         <DialogDescription>
-                            Enter payment details for LR #{records.find(r => r.id === selectedRecordId)?.data.lrNo}
+                            Enter payment details for LR #{selectedLrNo}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -478,7 +490,7 @@ export default function Stage14() {
                             <Input
                                 type="number"
                                 value={formData.amount}
-                                onChange={e => setFormData({ ...formData, amount: e.target.value })}
+                                onChange={handleAmountChange}
                             />
                         </div>
 
@@ -487,7 +499,7 @@ export default function Stage14() {
                             <Input
                                 placeholder="e.g. Bank Transfer, Cash, Cheque"
                                 value={formData.paymentDetails}
-                                onChange={e => setFormData({ ...formData, paymentDetails: e.target.value })}
+                                onChange={handleDetailsChange}
                             />
                         </div>
 
@@ -496,7 +508,7 @@ export default function Stage14() {
                             <Popover>
                                 <PopoverTrigger asChild>
                                     <Button
-                                        variant={"outline"}
+                                        variant="outline"
                                         className={cn(
                                             "w-full justify-start text-left font-normal",
                                             !formData.paymentDate && "text-muted-foreground"
@@ -510,7 +522,7 @@ export default function Stage14() {
                                     <Calendar
                                         mode="single"
                                         selected={formData.paymentDate}
-                                        onSelect={(date) => date && setFormData({ ...formData, paymentDate: date })}
+                                        onSelect={handleDateChange}
                                         initialFocus
                                     />
                                 </PopoverContent>
@@ -519,7 +531,7 @@ export default function Stage14() {
 
                         <div>
                             <Label>Payment Status *</Label>
-                            <Select value={formData.paymentStatus} onValueChange={(v) => setFormData({ ...formData, paymentStatus: v })}>
+                            <Select value={formData.paymentStatus} onValueChange={handleStatusChange}>
                                 <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="paid">Paid</SelectItem>
@@ -535,7 +547,7 @@ export default function Stage14() {
                                 <input
                                     type="file"
                                     className="absolute inset-0 opacity-0 cursor-pointer"
-                                    onChange={(e) => setFormData({ ...formData, paymentProof: e.target.files?.[0] || null })}
+                                    onChange={handleProofChange}
                                     accept="image/*,application/pdf"
                                 />
                                 <Upload className="w-6 h-6 text-gray-400 mb-2" />
@@ -547,8 +559,10 @@ export default function Stage14() {
                     </div>
 
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                        <Button onClick={handleSubmit} disabled={isSubmitting} className="bg-gray-600 hover:bg-gray-700">Process Payment</Button>
+                        <Button variant="outline" onClick={handleCloseDialog}>Cancel</Button>
+                        <Button onClick={handleSubmit} disabled={isSubmitting} className="bg-gray-600 hover:bg-gray-700">
+                            Process Payment
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

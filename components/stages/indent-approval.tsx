@@ -250,7 +250,18 @@ export default function Stage2() {
       );
     });
 
-  const history = sheetRecords.filter((r) => r.status === "completed");
+  const history = sheetRecords
+    .filter((r) => r.status === "completed")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      if (!searchLower) return true;
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.quantity?.toString().toLowerCase().includes(searchLower) ||
+        r.data.vendorType?.toLowerCase().includes(searchLower)
+      );
+    });
 
   const columns = [
     { key: "indentNumber", label: "Indent", icon: Hash },

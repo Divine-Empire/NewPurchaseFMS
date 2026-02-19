@@ -464,7 +464,19 @@ export default function Stage6() {
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Search
       );
     });
-  const completed = sheetRecords.filter((r) => r.status === "completed");
+  const completed = sheetRecords
+    .filter((r) => r.status === "completed")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      if (!searchLower) return true;
+      const vName = r.data.finalVendorName;
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        (vName && vName.toLowerCase().includes(searchLower)) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
 
   const getLiftCounter = () => {
     const liftedCount = sheetRecords.reduce((acc, r) => {

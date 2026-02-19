@@ -211,7 +211,19 @@ export default function Stage11() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  const completed = sheetRecords.filter((r) => r.status === "completed");
+  const completed = sheetRecords
+    .filter((r) => r.status === "completed")
+    .filter((r) => {
+      const searchLower = searchTerm.toLowerCase();
+      if (!searchLower) return true;
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendorName?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
 
   const pendingColumns = [
     { key: "indentNumber", label: "Indent #" },

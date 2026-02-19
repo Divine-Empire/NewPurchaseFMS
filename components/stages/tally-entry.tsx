@@ -340,7 +340,19 @@ export default function Stage9() {
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
     });
-  const completed = sheetRecords.filter((r: any) => r.status === "completed");
+  const completed = sheetRecords
+    .filter((r: any) => r.status === "completed")
+    .filter((r: any) => {
+      const searchLower = searchTerm.toLowerCase();
+      if (!searchLower) return true;
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendorName?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
 
   // Pending columns
   const pendingColumns = [

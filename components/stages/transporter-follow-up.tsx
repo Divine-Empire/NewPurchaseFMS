@@ -212,7 +212,19 @@ export default function TransporterFollowUp() {
         });
     }, [records, sortConfig, searchTerm]);
 
-    const completed = records.filter(r => r.status === "history");
+    const completed = records.filter(r => {
+        if (r.status !== "history") return false;
+        if (!searchTerm) return true;
+        const searchLower = searchTerm.toLowerCase();
+        return (
+            r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+            r.data.itemName?.toLowerCase().includes(searchLower) ||
+            r.data.vendorName?.toLowerCase().includes(searchLower) ||
+            String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+            String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower) ||
+            r.data.lrCopy?.toLowerCase().includes(searchLower)
+        );
+    });
     const pending = sortedPending; // Use sorted list for display
 
     const columns = [

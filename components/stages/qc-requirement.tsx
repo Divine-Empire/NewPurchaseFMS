@@ -27,13 +27,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Loader2, Upload, Search } from "lucide-react";
+import { FileText, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
 const IMAGE_FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
-
-// --- Helper Functions (Moved outside) ---
 
 const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -49,7 +47,31 @@ const formatDisplayDate = (d: any) => {
   return date.toLocaleDateString("en-IN");
 };
 
-// --- Component ---
+const PENDING_COLUMNS = [
+  { key: "indentNumber", label: "Indent #" },
+  { key: "vendorName", label: "Vendor" },
+  { key: "invoiceNumber", label: "Invoice #" },
+  { key: "itemName", label: "Item" },
+  { key: "receivedQty", label: "Received Qty" },
+  { key: "totalApproved", label: "Approved" },
+  { key: "totalRejected", label: "Rejected" },
+  { key: "pendingQty", label: "Pending Qty" },
+];
+
+const HISTORY_COLUMNS = [
+  { key: "indentNumber", label: "Indent #" },
+  { key: "vendorName", label: "Vendor" },
+  { key: "itemName", label: "Item" },
+  { key: "qcDate", label: "QC Date" },
+  { key: "qcBy", label: "QC By" },
+  { key: "qcStatus", label: "Status" },
+  { key: "approvedQty", label: "Approved Qty" },
+  { key: "rejectedQty", label: "Rejected Qty" },
+  { key: "remarks", label: "Remarks" },
+];
+
+const FILE_FIELDS = new Set(["poCopy", "receivedItemImage", "billAttachment", "rejectPhoto"]);
+const AMOUNT_FIELDS = new Set(["freightAmount", "advanceAmount", "basicValue", "totalWithTax", "ratePerQty", "paymentAmountHydra", "paymentAmountLabour", "paymentAmountHamali"]);
 
 export default function Stage8() {
   const [open, setOpen] = useState(false);
@@ -58,8 +80,6 @@ export default function Stage8() {
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [srnDetailsOpen, setSrnDetailsOpen] = useState(false);
-  const [srnDetailsData, setSrnDetailsData] = useState<{ serialNo: number; srn: string; image: string }[]>([]);
   const [qcEngineerList, setQcEngineerList] = useState<string[]>([]);
   const [partialQCRecords, setPartialQCRecords] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -77,48 +97,45 @@ export default function Stage8() {
     srnEntries: [] as { serialNo: number; srn: string; image: File | null }[],
   });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!SHEET_API_URL) return;
     setIsLoading(true);
     try {
-      // Parallel Fetch for faster load
       const [dropRes, partialRes, receiveRes] = await Promise.all([
         fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`),
         fetch(`${SHEET_API_URL}?sheet=${encodeURIComponent("Partial QC")}&action=getAll`),
-        fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`)
+        fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`),
       ]);
 
       const [dropJson, partialJson, json] = await Promise.all([
         dropRes.json(),
         partialRes.json(),
-        receiveRes.json()
+        receiveRes.json(),
       ]);
 
-      // 1. Process Dropdown
       if (dropJson.success && Array.isArray(dropJson.data)) {
-        const qcList = dropJson.data.slice(1)
-          .map((row: any) => String(row[11] || "").trim())
-          .filter((q: string) => q !== "");
-        setQcEngineerList(qcList);
+        setQcEngineerList(
+          dropJson.data.slice(1)
+            .map((row: any) => String(row[11] || "").trim())
+            .filter((q: string) => q !== "")
+        );
       }
 
-      // 2. Process Partial QC
-      let partialMap = new Map<string, number>();
-      let pRows = [];
+      const approvedMap = new Map<string, number>();
+      const rejectedMap = new Map<string, number>();
+      let pRows: any[] = [];
+
       if (partialJson.success && Array.isArray(partialJson.data)) {
         pRows = partialJson.data.slice(1);
         pRows.forEach((r: any) => {
-          const indentNo = String(r[0] || "").trim();
-          const approvedQty = parseFloat(r[9] || "0");
-          if (indentNo) {
-            const current = partialMap.get(indentNo) || 0;
-            partialMap.set(indentNo, current + approvedQty);
-          }
+          const indentNo = String(r[1] || "").trim();
+          if (!indentNo) return;
+          approvedMap.set(indentNo, (approvedMap.get(indentNo) || 0) + (parseFloat(r[10] || "0") || 0));
+          rejectedMap.set(indentNo, (rejectedMap.get(indentNo) || 0) + (parseFloat(r[7] || "0") || 0));
         });
         setPartialQCRecords(pRows);
       }
 
-      // 3. Process Receiving Accounts
       if (json.success && Array.isArray(json.data)) {
         const rows = json.data.slice(6)
           .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
@@ -126,24 +143,24 @@ export default function Stage8() {
           .map(({ row, originalIndex }: any) => {
             const indentNo = String(row[1] || "").trim();
             const receivedQty = parseFloat(row[25] || "0");
-            const totalApproved = partialMap.get(indentNo) || 0;
-            const pendingQty = Math.max(0, receivedQty - totalApproved);
+            const totalApproved = approvedMap.get(indentNo) || 0;
+            const totalRejected = rejectedMap.get(indentNo) || 0;
+            const pendingQty = Math.max(0, receivedQty - (totalApproved + totalRejected));
 
-            const hasPlan7 = !!row[61] && String(row[61]).trim() !== "" && String(row[61]).trim() !== "-"; // Planned 6 (BJ)
-            const completionDate = row[62]; // Actual 6 (BK)
-            const hasCompletionDate = !!completionDate && String(completionDate).trim() !== "" && String(completionDate).trim() !== "-";
+            const plan7Str = String(row[61] || "").trim();
+            const completionDate = row[62];
+            const completionStr = String(completionDate || "").trim();
 
             let status = "not_ready";
-            if (hasCompletionDate || pendingQty <= 0) {
+            if ((completionStr && completionStr !== "-") || pendingQty <= 0) {
               status = "completed";
-            } else if (hasPlan7) {
+            } else if (plan7Str && plan7Str !== "-") {
               status = "pending";
             }
 
             return {
               id: row[1] || `row-${originalIndex}`,
               rowIndex: originalIndex,
-              stage: 8,
               status,
               data: {
                 indentNumber: row[1] || "",
@@ -176,63 +193,65 @@ export default function Stage8() {
                 paymentAmountLabour: row[31] || "",
                 paymentAmountHamali: row[32] || "",
                 remarksStage7: row[33] || "",
-                plan7: row[61], // Planned 6 (BJ)
-                actual7: row[62], // Actual 6 (BK)
-                delay7: row[63], // Delay 6 (BL)
-                qcBy: row[64], // QC Done By (BM)
-                qcDate: row[65], // QC Date (BN)
-                qcStatus: row[66], // QC Status (BO)
-                qcRemarks: row[67], // QC Remarks (BP)
-                rejectQty: row[68], // Reject Qty (BQ)
-                rejectPhoto: row[69], // Reject Photo (BR)
-                rejectRemarks: row[70], // Reject Remarks (BS)
-
-                returnStatus: row[73], // Keeping as is, user didn't specify this range in BJ-BS but likely nearby
-                srnJson: row[74] || "", // Keeping as is
-                totalApproved: totalApproved,
-                pendingQty: pendingQty,
-                completionDate: completionDate
-              }
+                plan7: row[61],
+                actual7: row[62],
+                delay7: row[63],
+                qcBy: row[64],
+                qcDate: row[65],
+                qcStatus: row[66],
+                qcRemarks: row[67],
+                rejectQty: row[68],
+                rejectPhoto: row[69],
+                rejectRemarks: row[70],
+                returnStatus: row[73],
+                srnJson: row[74] || "",
+                totalApproved,
+                totalRejected,
+                pendingQty,
+                completionDate,
+              },
             };
           });
         setSheetRecords(rows);
       }
-
-    } catch (e) {
-      console.error(e);
+    } catch {
       toast.error("Failed to load data");
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
-  // Filtered Data with Memoization
+  const selectedRecord = useMemo(
+    () => sheetRecords.find((r) => r.id === selectedRecordId) ?? null,
+    [sheetRecords, selectedRecordId]
+  );
+
   const pending = useMemo(() => {
-    return sheetRecords
-      .filter((r) => r.status === "pending")
-      .filter((r) => {
-        const searchLower = searchTerm.toLowerCase();
-        return (
-          r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-          r.data.itemName?.toLowerCase().includes(searchLower) ||
-          r.data.vendorName?.toLowerCase().includes(searchLower) ||
-          String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-          String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
-        );
-      });
+    const searchLower = searchTerm.toLowerCase();
+    return sheetRecords.filter((r) => {
+      if (r.status !== "pending") return false;
+      if (!searchLower) return true;
+      return (
+        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+        r.data.itemName?.toLowerCase().includes(searchLower) ||
+        r.data.vendorName?.toLowerCase().includes(searchLower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+        String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
+      );
+    });
   }, [sheetRecords, searchTerm]);
 
   const history = useMemo(() => {
+    const searchLower = searchTerm.toLowerCase();
     return partialQCRecords
-      .filter(pRow => pRow[0] && String(pRow[0]).trim() !== "")
+      .filter(pRow => pRow[1] && String(pRow[1]).trim() !== "")
       .map((pRow, idx) => {
-        const indentNo = String(pRow[0] || "").trim();
-        const parent = sheetRecords.find(r => r.data.indentNumber === indentNo);
-        const parentData = parent ? parent.data : {};
-
+        const indentNo = String(pRow[1] || "").trim();
+        const parentData = sheetRecords.find(r => r.data.indentNumber === indentNo)?.data ?? {};
         return {
           id: `partial-${indentNo}-${idx}`,
           data: {
@@ -240,44 +259,31 @@ export default function Stage8() {
             vendorName: parentData.vendorName || "-",
             invoiceNumber: parentData.invoiceNumber || "-",
             itemName: parentData.itemName || "-",
-            qcDate: pRow[3] || "-",
-            qcBy: pRow[2] || "-",
-            approvedQty: pRow[9] || "0",
-            qcStatus: pRow[4] || "-",
-            remarks: pRow[5] || "-",
-          }
+            qcDate: pRow[4] || "-",
+            qcBy: pRow[3] || "-",
+            approvedQty: pRow[10] || "0",
+            rejectedQty: pRow[7] || "0",
+            qcStatus: pRow[5] || "-",
+            remarks: pRow[6] || "-",
+          },
         };
-      }).reverse();
-  }, [partialQCRecords, sheetRecords]);
+      })
+      .filter(rec => {
+        if (!searchLower) return true;
+        return (
+          rec.data.indentNumber?.toLowerCase().includes(searchLower) ||
+          rec.data.vendorName?.toLowerCase().includes(searchLower) ||
+          rec.data.itemName?.toLowerCase().includes(searchLower)
+        );
+      })
+      .reverse();
+  }, [partialQCRecords, sheetRecords, searchTerm]);
 
-
-  const PENDING_COLUMNS = [
-    { key: "indentNumber", label: "Indent #" },
-    { key: "vendorName", label: "Vendor" },
-    { key: "invoiceNumber", label: "Invoice #" },
-    { key: "itemName", label: "Item" },
-    { key: "receivedQty", label: "Received Qty" },
-    { key: "totalApproved", label: "Total Approved" },
-    { key: "pendingQty", label: "Pending Qty" },
-  ];
-
-  const HISTORY_COLUMNS = [
-    { key: "indentNumber", label: "Indent #" },
-    { key: "vendorName", label: "Vendor" },
-    { key: "itemName", label: "Item" },
-    { key: "qcDate", label: "QC Date" },
-    { key: "qcBy", label: "QC By" },
-    { key: "qcStatus", label: "Status" },
-    { key: "approvedQty", label: "Approved Qty" },
-    { key: "remarks", label: "Remarks" },
-  ];
-
-  const handleOpenForm = (recordId: string) => {
-    const today = new Date().toISOString().split("T")[0];
+  const handleOpenForm = useCallback((recordId: string) => {
     setSelectedRecordId(recordId);
     setFormData({
       qcBy: "",
-      qcDate: today,
+      qcDate: new Date().toISOString().split("T")[0],
       qcStatus: "",
       rejectRemarks: "",
       rejectQty: "",
@@ -288,19 +294,37 @@ export default function Stage8() {
       srnEntries: [],
     });
     setOpen(true);
-  };
+  }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const isFormValid = useMemo(() =>
+    !!(formData.qcBy &&
+      formData.qcDate &&
+      formData.qcStatus &&
+      formData.returnStatus &&
+      (formData.qcStatus === "approved"
+        ? formData.approvedQty &&
+        parseInt(formData.approvedQty) > 0 &&
+        formData.srnEntries.length > 0 &&
+        formData.srnEntries.every((e) => e.srn.trim() !== "")
+        : formData.qcStatus === "rejected" &&
+        formData.rejectQty &&
+        formData.rejectRemarks)),
+    [formData]
+  );
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRecordId || !SHEET_API_URL) return;
-
-    const rec = sheetRecords.find((r) => r.id === selectedRecordId);
-    if (!rec) return;
+    if (!selectedRecordId || !SHEET_API_URL || !selectedRecord) return;
 
     setIsSubmitting(true);
     try {
+      const now = new Date();
+      const mDYYYY = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+      const qcDateFormatted = formData.qcDate
+        ? (() => { const d = new Date(formData.qcDate); return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`; })()
+        : "";
+
       let photoUrl = "";
-      // Upload Reject Photo
       if (formData.rejectPhoto instanceof File) {
         const uploadParams = new URLSearchParams();
         uploadParams.append("action", "uploadFile");
@@ -314,110 +338,105 @@ export default function Stage8() {
         else throw new Error("Photo upload failed");
       }
 
-      // Upload SRN Images
       let approvedQtyJson = "";
       if (formData.qcStatus === "approved" && formData.srnEntries.length > 0) {
-        const srnData = [];
-        // Sequential upload to avoid rate limits or use Promise.all if supported well
-        const uploadPromises = formData.srnEntries.map(async (entry) => {
-          let imageUrl = "";
-          if (entry.image instanceof File) {
-            const uploadParams = new URLSearchParams();
-            uploadParams.append("action", "uploadFile");
-            uploadParams.append("base64Data", await toBase64(entry.image));
-            uploadParams.append("fileName", `SRN_${entry.serialNo}_${entry.image.name}`);
-            uploadParams.append("mimeType", entry.image.type);
-            uploadParams.append("folderId", IMAGE_FOLDER_ID);
-            const res = await fetch(SHEET_API_URL!, { method: "POST", body: uploadParams });
-            const json = await res.json();
-            if (json.success) imageUrl = json.fileUrl || "";
-          }
-          return {
-            serialNo: entry.serialNo,
-            srn: entry.srn,
-            image: imageUrl,
-          };
-        });
-
-        srnData.push(...await Promise.all(uploadPromises));
+        const srnData = await Promise.all(
+          formData.srnEntries.map(async (entry) => {
+            let imageUrl = "";
+            if (entry.image instanceof File) {
+              const uploadParams = new URLSearchParams();
+              uploadParams.append("action", "uploadFile");
+              uploadParams.append("base64Data", await toBase64(entry.image));
+              uploadParams.append("fileName", `SRN_${entry.serialNo}_${entry.image.name}`);
+              uploadParams.append("mimeType", entry.image.type);
+              uploadParams.append("folderId", IMAGE_FOLDER_ID);
+              const res = await fetch(SHEET_API_URL!, { method: "POST", body: uploadParams });
+              const json = await res.json();
+              if (json.success) imageUrl = json.fileUrl || "";
+            }
+            return { serialNo: entry.serialNo, srn: entry.srn, image: imageUrl };
+          })
+        );
         approvedQtyJson = JSON.stringify(srnData);
       }
 
-      const now = new Date();
-      const mDYYYY = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-      let qcDateFormatted = "";
-      if (formData.qcDate) {
-        const d = new Date(formData.qcDate);
-        qcDateFormatted = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-      }
-
-      if (formData.qcStatus === "rejected") {
-        const raRowArray = new Array(80).fill(""); // Increase size to cover pending columns
-        // QC Stage: BJ - BS (61 - 70)
-        // 61: Planned 6 (Already set)
-        // 62: Actual 6
-        raRowArray[62] = mDYYYY;
-        // 63: Delay (Formula)
-        // 64: QC Done By
-        raRowArray[64] = formData.qcBy;
-        // 65: QC Date
-        raRowArray[65] = qcDateFormatted;
-        // 66: QC Status
-        raRowArray[66] = "rejected";
-        // 67: QC Remarks
-        raRowArray[67] = formData.qcRemarks;
-        // 68: Reject Qty
-        raRowArray[68] = formData.rejectQty;
-        // 69: Reject Photo
-        raRowArray[69] = photoUrl;
-        // 70: Reject Remarks
-        raRowArray[70] = formData.rejectRemarks;
-
-        const p = new URLSearchParams();
-        p.append("action", "update");
-        p.append("sheetName", "RECEIVING-ACCOUNTS");
-        p.append("rowIndex", rec.rowIndex.toString());
-        p.append("rowData", JSON.stringify(raRowArray));
-        await fetch(SHEET_API_URL, { method: "POST", body: p });
-        toast.success("QC Rejection Recorded!");
-
-      } else if (formData.qcStatus === "approved") {
-        const partialQCRow = [
-          rec.data.indentNumber, mDYYYY, formData.qcBy, formData.qcDate,
-          "approved", formData.qcRemarks, "", "", "",
-          formData.approvedQty, approvedQtyJson
-        ];
-
+      const postToPartialQC = async (row: any[]) => {
         const p = new URLSearchParams();
         p.append("action", "batchInsert");
         p.append("sheetName", "Partial QC");
-        p.append("rowsData", JSON.stringify([partialQCRow]));
+        p.append("rowsData", JSON.stringify([row]));
         p.append("startRow", "2");
+        const res = await fetch(SHEET_API_URL!, { method: "POST", body: p });
+        const json = await res.json();
+        if (!json.success) throw new Error("Failed to write to Partial QC sheet");
+      };
 
-        const appendRes = await fetch(SHEET_API_URL, { method: "POST", body: p });
-        const appendJson = await appendRes.json();
-        if (!appendJson.success) throw new Error("Failed to append to Partial QC sheet");
+      const writeActualDateToRA = async () => {
+        const raRowArray = new Array(80).fill("");
+        raRowArray[62] = mDYYYY;
+        const p = new URLSearchParams();
+        p.append("action", "update");
+        p.append("sheetName", "RECEIVING-ACCOUNTS");
+        p.append("rowIndex", selectedRecord.rowIndex.toString());
+        p.append("rowData", JSON.stringify(raRowArray));
+        await fetch(SHEET_API_URL!, { method: "POST", body: p });
+      };
 
-        const currentApproved = parseFloat(formData.approvedQty || "0");
-        const totalApprovedSoFar = (rec.data.totalApproved || 0) + currentApproved;
-        const receivedQty = parseFloat(rec.data.receivedQty || "0");
+      const receivedQty = parseFloat(selectedRecord.data.receivedQty || "0");
 
-        if (totalApprovedSoFar >= receivedQty) {
-          const raRowArray = new Array(80).fill("");
-          // QC Stage: BJ - BS (61 - 70)
-          raRowArray[62] = mDYYYY; // Actual 6
-          raRowArray[64] = formData.qcBy; // QC Done By
-          raRowArray[65] = qcDateFormatted; // QC Date
-          raRowArray[66] = "approved"; // QC Status
-          raRowArray[67] = formData.qcRemarks; // QC Remarks
+      if (formData.qcStatus === "rejected") {
+        await postToPartialQC([
+          mDYYYY,
+          selectedRecord.data.indentNumber,
+          selectedRecord.data.liftNo || "",
+          formData.qcBy,
+          qcDateFormatted,
+          "rejected",
+          formData.qcRemarks,
+          formData.rejectQty,
+          photoUrl,
+          formData.rejectRemarks,
+          "",
+          "",
+          formData.returnStatus,
+        ]);
 
+        const totalResolved =
+          (selectedRecord.data.totalApproved || 0) +
+          (selectedRecord.data.totalRejected || 0) +
+          (parseFloat(formData.rejectQty || "0"));
 
-          const p2 = new URLSearchParams();
-          p2.append("action", "update");
-          p2.append("sheetName", "RECEIVING-ACCOUNTS");
-          p2.append("rowIndex", rec.rowIndex.toString());
-          p2.append("rowData", JSON.stringify(raRowArray));
-          await fetch(SHEET_API_URL, { method: "POST", body: p2 });
+        if (totalResolved >= receivedQty) {
+          await writeActualDateToRA();
+          toast.success("QC Rejection Complete — all quantity resolved!");
+        } else {
+          toast.success("Partial Rejection recorded.");
+        }
+
+      } else if (formData.qcStatus === "approved") {
+        await postToPartialQC([
+          mDYYYY,
+          selectedRecord.data.indentNumber,
+          selectedRecord.data.liftNo || "",
+          formData.qcBy,
+          qcDateFormatted,
+          "approved",
+          formData.qcRemarks,
+          "",
+          "",
+          "",
+          formData.approvedQty,
+          approvedQtyJson,
+          formData.returnStatus,
+        ]);
+
+        const totalResolved =
+          (selectedRecord.data.totalApproved || 0) +
+          (selectedRecord.data.totalRejected || 0) +
+          (parseFloat(formData.approvedQty || "0"));
+
+        if (totalResolved >= receivedQty) {
+          await writeActualDateToRA();
           toast.success("QC Full Approval Recorded!");
         } else {
           toast.success("Partial QC Recorded.");
@@ -426,35 +445,19 @@ export default function Stage8() {
 
       setOpen(false);
       fetchData();
-
     } catch (error: any) {
       toast.error(error.message || "Submission failed");
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const isFormValid =
-    formData.qcBy &&
-    formData.qcDate &&
-    formData.qcStatus &&
-    formData.returnStatus &&
-    (formData.qcStatus === "approved"
-      ? formData.approvedQty &&
-      parseInt(formData.approvedQty) > 0 &&
-      formData.srnEntries.length > 0 &&
-      formData.srnEntries.every((e) => e.srn.trim() !== "")
-      : formData.qcStatus === "rejected" &&
-      formData.rejectQty &&
-      formData.rejectRemarks);
+  }, [selectedRecordId, selectedRecord, formData, fetchData]);
 
   const safeValue = useCallback((record: any, key: string, isHistory = false) => {
     try {
       const data = record?.data;
       if (!data) return "-";
 
-      const fileFields = ["poCopy", "receivedItemImage", "billAttachment", "rejectPhoto"];
-      if (fileFields.includes(key)) {
+      if (FILE_FIELDS.has(key)) {
         const url = data[key];
         if (!url || String(url).trim() === "" || url === "-") return "-";
         return (
@@ -471,7 +474,7 @@ export default function Stage8() {
         return status.charAt(0).toUpperCase() + status.slice(1);
       }
 
-      if (["freightAmount", "advanceAmount", "basicValue", "totalWithTax", "ratePerQty", "paymentAmountHydra", "paymentAmountLabour", "paymentAmountHamali"].includes(key)) {
+      if (AMOUNT_FIELDS.has(key)) {
         const amount = data[key];
         return amount && amount !== "-" && amount !== "" ? `₹${amount}` : "-";
       }
@@ -591,7 +594,6 @@ export default function Stage8() {
         </Tabs>
       )}
 
-      {/* QC Form Modal */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
           <DialogHeader><DialogTitle>Quality Control Inspection</DialogTitle></DialogHeader>
@@ -600,7 +602,7 @@ export default function Stage8() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Planned QC Date</Label>
-                  <Input value={formatDisplayDate(sheetRecords.find(r => r.id === selectedRecordId)?.data?.plan7)} readOnly className="bg-gray-50" />
+                  <Input value={formatDisplayDate(selectedRecord?.data?.plan7)} readOnly className="bg-gray-50" />
                 </div>
                 <div>
                   <Label>QC Done By *</Label>
@@ -642,13 +644,13 @@ export default function Stage8() {
                     <input
                       type="number"
                       min="1"
-                      max={sheetRecords.find(r => r.id === selectedRecordId)?.data?.receivedQty || 999}
+                      max={selectedRecord?.data?.receivedQty || 999}
                       className="w-full px-3 py-2 border rounded"
-                      placeholder={`Max: ${sheetRecords.find(r => r.id === selectedRecordId)?.data?.pendingQty || "-"}`}
+                      placeholder={`Max: ${selectedRecord?.data?.pendingQty || "-"}`}
                       value={formData.approvedQty}
                       onChange={(e) => {
                         const qty = parseInt(e.target.value) || 0;
-                        const maxQty = parseInt(sheetRecords.find(r => r.id === selectedRecordId)?.data?.pendingQty) || 999;
+                        const maxQty = parseInt(selectedRecord?.data?.pendingQty) || 999;
                         const validQty = Math.min(Math.max(0, qty), maxQty);
                         const newEntries = Array.from({ length: validQty }, (_, i) => ({
                           serialNo: i + 1,
