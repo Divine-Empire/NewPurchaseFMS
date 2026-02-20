@@ -51,6 +51,8 @@ const COLUMNS = [
     { key: "advanceAmount", label: "Advance Amt" },
     { key: "totalPaid", label: "Total Paid" },
     { key: "pendingAmount", label: "Pending Amt" },
+    { key: "invoiceNo", label: "Invoice No." },
+    { key: "invoiceCopy", label: "Invoice" },
     { key: "plan1", label: "Planned Date" },
     { key: "actual1", label: "Payment Date" },
 ] as const;
@@ -152,6 +154,8 @@ export default function Stage14() {
                                 actual1: formatDate(actual1),    // K
                                 totalPaid,                             // M
                                 pendingAmount: currentPending,         // N
+                                invoiceNo: row[14] || "", // O
+                                invoiceCopy: row[15] || "", // P
                                 // Calculated for modal
                                 freightVal: freightAmt,
                                 advanceVal: parseNum(row[7]),

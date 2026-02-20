@@ -387,7 +387,7 @@ const purchaseStages = [
   { id: 7, name: "QC Requirement", pending: 7, color: "bg-lime-500" },
   { id: 8, name: "Receipt in Tally", pending: 4, color: "bg-amber-500" },
   { id: 9, name: "Submit Invoice", pending: 9, color: "bg-orange-500" },
-  { id: 11, name: "Verification", pending: 11, color: "bg-red-500" },
+  { id: 11, name: "Verification by Accounts", pending: 11, color: "bg-red-500" },
   { id: 12, name: "Purchase Return", pending: 2, color: "bg-rose-500" },
   { id: 13, name: "Vendor Payments", pending: 3, color: "bg-pink-500" },
   { id: 14, name: "Freight Payments", pending: 5, color: "bg-fuchsia-500" },
@@ -763,7 +763,7 @@ export default function PurchaseDashboard() {
             "QC Requirement": 0,
             "Receipt in Tally": 0,
             "Submit Invoice": 0,
-            "Verification": 0,
+            "Verification by Accounts": 0,
             "Purchase Return": 0,
           };
 
@@ -785,7 +785,7 @@ export default function PurchaseDashboard() {
             if (has(50) && missing(51)) recCounts["Submit Invoice"]++;
 
             // Verification: BE (56) yes, BF (57) no
-            if (has(56) && missing(57)) recCounts["Verification"]++;
+            if (has(56) && missing(57)) recCounts["Verification by Accounts"]++;
 
             // Purchase Return: BL (63) yes, BM (64) no
             if (has(63) && missing(64)) recCounts["Purchase Return"]++;

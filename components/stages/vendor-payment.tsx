@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText, RefreshCw, Upload, CheckCircle, CalendarIcon, Banknote, Search } from "lucide-react";
+import { Loader2, FileText, RefreshCw, Upload, CheckCircle, CalendarIcon, Banknote, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import {
     Table,
     TableBody,
@@ -121,6 +121,8 @@ export default function Stage13() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedPendingColumns, setSelectedPendingColumns] = useState<string[]>(ALL_PENDING_KEYS);
 
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+
     // Bulk payment modal state
     const [bulkOpen, setBulkOpen] = useState(false);
     const [bulkStep, setBulkStep] = useState<"vendor" | "invoices">("vendor");
@@ -237,8 +239,8 @@ export default function Stage13() {
     // ── Derived state (memoized) ──────────────────────────────────────────────
     const searchLower = useMemo(() => searchTerm.toLowerCase(), [searchTerm]);
 
-    const filteredRecords = useMemo(() =>
-        records.filter(r => {
+    const filteredRecords = useMemo(() => {
+        let result = records.filter(r => {
             if (!searchLower) return true;
             return (
                 r.data.invoiceNo?.toLowerCase().includes(searchLower) ||
@@ -246,8 +248,24 @@ export default function Stage13() {
                 r.data.receivedItems?.toLowerCase().includes(searchLower) ||
                 String(r.data.poNumber || "").toLowerCase().includes(searchLower)
             );
-        }),
-        [records, searchLower]);
+        });
+
+        if (sortConfig !== null) {
+            result.sort((a, b) => {
+                if (sortConfig.key === 'plan1') {
+                    // Due Date sorting
+                    const dateA = a.data.plan1 && a.data.plan1 !== "-" ? new Date(a.data.plan1.split('-').reverse().join('-')).getTime() : 0;
+                    const dateB = b.data.plan1 && b.data.plan1 !== "-" ? new Date(b.data.plan1.split('-').reverse().join('-')).getTime() : 0;
+
+                    if (dateA < dateB) return sortConfig.direction === 'asc' ? -1 : 1;
+                    if (dateA > dateB) return sortConfig.direction === 'asc' ? 1 : -1;
+                    return 0;
+                }
+                return 0;
+            });
+        }
+        return result;
+    }, [records, searchLower, sortConfig]);
 
     const filteredHistoryRecords = useMemo(() => {
         if (!searchLower) return historyRecords;
@@ -285,6 +303,14 @@ export default function Stage13() {
             checked ? [...prev, key] : prev.filter(k => k !== key)
         );
     }, []);
+
+    const handleSort = useCallback((key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    }, [sortConfig]);
 
     // ── Bulk modal handlers ───────────────────────────────────────────────────
     const handleBulkOpen = useCallback(() => {
@@ -444,6 +470,20 @@ export default function Stage13() {
                             className="pl-9 bg-white w-[300px]"
                         />
                     </div>
+
+                    <Button
+                        variant="outline"
+                        onClick={() => handleSort('plan1')}
+                        className="bg-white"
+                        title="Sort by Due Date"
+                    >
+                        Due Date
+                        {sortConfig?.key === 'plan1' ? (
+                            sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 ml-2" /> : <ArrowDown className="w-4 h-4 ml-2" />
+                        ) : (
+                            <ArrowUpDown className="w-4 h-4 ml-2 text-gray-400" />
+                        )}
+                    </Button>
 
                     <Select value="" onValueChange={() => { }}>
                         <SelectTrigger className="w-40"><SelectValue placeholder="Columns" /></SelectTrigger>

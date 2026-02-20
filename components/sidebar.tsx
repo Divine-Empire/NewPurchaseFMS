@@ -22,10 +22,8 @@ export default function Sidebar() {
 
   // Helper to check if a page is allowed
   const isPageAllowed = (pageName: string) => {
-    if (pageName === "Return Approval") return true; // Always show new stage
-    if (pageName === "Transporter Follow-Up") return true; // Always show new stage
-    if (pageName === "Submit Invoice (HO)") return true; // Always show new stage
     if (!pageAccess || pageAccess.length === 0) return true; // Show all if no restrictions
+    if (pageName === "Verification by Accounts") return pageAccess.includes("Verification") || pageAccess.includes("Verification by Accounts");
     return pageAccess.includes(pageName);
   };
 
