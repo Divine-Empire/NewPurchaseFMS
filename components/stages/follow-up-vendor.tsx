@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useWorkflow } from "@/lib/workflow-context";
 import {
   Dialog,
@@ -167,6 +167,45 @@ const TransporterCombobox = ({
   );
 };
 
+const formatDate = (date?: Date | string) => {
+  if (!date) return "";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+};
+
+const parseSheetDate = (dateStr: string) => {
+  if (!dateStr || dateStr === "-" || dateStr === "Invalid Date") return new Date();
+
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d;
+
+  const dateTimeParts = dateStr.split(", ");
+  const dateParts = dateTimeParts[0].split("/");
+  if (dateParts.length === 3) {
+    const day = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1;
+    const year = parseInt(dateParts[2], 10);
+
+    let hours = 0, mins = 0, secs = 0;
+    if (dateTimeParts[1]) {
+      const timeParts = dateTimeParts[1].split(":");
+      if (timeParts.length >= 2) {
+        hours = parseInt(timeParts[0], 10);
+        mins = parseInt(timeParts[1], 10);
+        if (timeParts[2]) secs = parseInt(timeParts[2], 10);
+
+        if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
+        if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
+      }
+    }
+
+    const parsed = new Date(year, month, day, hours, mins, secs);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date();
+};
+
 export default function Stage6() {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
@@ -188,6 +227,7 @@ export default function Stage6() {
     remarks: string;
     liftingData: LiftingEntry;
   } | null>(null);
+  const [unifiedLiftingQtys, setUnifiedLiftingQtys] = useState<Record<string, string>>({});
 
   const baseColumns = [
     { key: "indentNumber", label: "Indent #", icon: null },
@@ -203,61 +243,23 @@ export default function Stage6() {
 
   const [transporterList, setTransporterList] = useState<string[]>([]);
 
-
-  const formatDate = (date?: Date | string) => {
-    if (!date) return "";
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return "";
-    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-  };
-
-  const parseSheetDate = (dateStr: string) => {
-    if (!dateStr || dateStr === "-" || dateStr === "Invalid Date") return new Date();
-    // Try standard parsing
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) return d;
-
-    // Try parsing DD/MM/YYYY or DD/MM/YYYY, HH:mm:ss
-    const dateTimeParts = dateStr.split(", ");
-    const dateParts = dateTimeParts[0].split("/");
-    if (dateParts.length === 3) {
-      const day = parseInt(dateParts[0], 10);
-      const month = parseInt(dateParts[1], 10) - 1;
-      const year = parseInt(dateParts[2], 10);
-
-      // Extract time if exists
-      let hours = 0, mins = 0, secs = 0;
-      if (dateTimeParts[1]) {
-        const timeParts = dateTimeParts[1].split(":");
-        if (timeParts.length >= 2) {
-          hours = parseInt(timeParts[0], 10);
-          mins = parseInt(timeParts[1], 10);
-          if (timeParts[2]) secs = parseInt(timeParts[2], 10);
-
-          // Handle AM/PM if present
-          if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
-          if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
-        }
-      }
-
-      const parsed = new Date(year, month, day, hours, mins, secs);
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
-    return new Date();
-  };
-
   const fetchData = async () => {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
     if (!SHEET_API_URL) return;
     setIsLoading(true);
     try {
-      // Fetch FMS (Main Data)
-      const resFMS = await fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`);
-      const jsonFMS = await resFMS.json();
+      // Parallelize fetches for FMS, RECEIVING-ACCOUNTS, and Dropdown
+      const [resFMS, resReceiving, dropRes] = await Promise.all([
+        fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`),
+        fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`),
+        fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`),
+      ]);
 
-      // Fetch RECEIVING-ACCOUNTS for History section
-      const resReceiving = await fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`);
-      const jsonReceiving = await resReceiving.json();
+      const [jsonFMS, jsonReceiving, dropJson] = await Promise.all([
+        resFMS.json(),
+        resReceiving.json(),
+        dropRes.json(),
+      ]);
 
       // Process RECEIVING-ACCOUNTS data for history (starting from row 7, index 6)
       if (jsonReceiving.success && Array.isArray(jsonReceiving.data)) {
@@ -288,17 +290,12 @@ export default function Stage6() {
       }
 
       // Fetch Dropdown sheet for Transporters (Column K / Index 10)
-      const dropRes = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
-      const dropJson = await dropRes.json();
       if (dropJson.success && Array.isArray(dropJson.data)) {
         const tList = dropJson.data.slice(1)
           .map((row: any) => String(row[10] || "").trim())
           .filter((t: string) => t !== "");
         setTransporterList(tList);
-      }
-
-
-      const completedIndentIds = new Set<string>();
+      } const completedIndentIds = new Set<string>();
 
       if (jsonFMS.success && Array.isArray(jsonFMS.data)) {
         // Skip header and first 6 data rows (indices 0-6) -> Data starts at Row 8
@@ -449,42 +446,46 @@ export default function Stage6() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
-  const pending = sheetRecords
-    .filter((r) => r.status === "pending")
-    .filter((r) => {
-      const searchLower = searchTerm.toLowerCase();
-      // Safe checks for data
-      const vName = r.data.finalVendorName;
+  const pending = useMemo(() => {
+    return sheetRecords
+      .filter((r) => r.status === "pending")
+      .filter((r) => {
+        const searchLower = searchTerm.toLowerCase();
+        // Safe checks for data
+        const vName = r.data.finalVendorName;
 
-      return (
-        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-        r.data.itemName?.toLowerCase().includes(searchLower) ||
-        (vName && vName.toLowerCase().includes(searchLower)) ||
-        (vName && vName.toLowerCase().includes(searchLower)) ||
-        String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Search
-      );
-    });
-  const completed = sheetRecords
-    .filter((r) => r.status === "completed")
-    .filter((r) => {
-      const searchLower = searchTerm.toLowerCase();
-      if (!searchLower) return true;
-      const vName = r.data.finalVendorName;
-      return (
-        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-        r.data.itemName?.toLowerCase().includes(searchLower) ||
-        (vName && vName.toLowerCase().includes(searchLower)) ||
-        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
-      );
-    });
+        return (
+          r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+          r.data.itemName?.toLowerCase().includes(searchLower) ||
+          (vName && vName.toLowerCase().includes(searchLower)) ||
+          String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Search
+        );
+      });
+  }, [sheetRecords, searchTerm]);
 
-  const getLiftCounter = () => {
+  const completed = useMemo(() => {
+    return sheetRecords
+      .filter((r) => r.status === "completed")
+      .filter((r) => {
+        const searchLower = searchTerm.toLowerCase();
+        if (!searchLower) return true;
+        const vName = r.data.finalVendorName;
+        return (
+          r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+          r.data.itemName?.toLowerCase().includes(searchLower) ||
+          (vName && vName.toLowerCase().includes(searchLower)) ||
+          String(r.data.poNumber || "").toLowerCase().includes(searchLower)
+        );
+      });
+  }, [sheetRecords, searchTerm]);
+
+  const getLiftCounter = useCallback(() => {
     const liftedCount = sheetRecords.reduce((acc, r) => {
       const lifts = r.data?.liftingData || [];
       return acc + lifts.length;
     }, 0);
     return liftedCount + 1;
-  };
+  }, [sheetRecords]);
 
   const getVendorData = (record: any) => {
     const selectedId = record.data.selectedVendor || "vendor1";
@@ -572,6 +573,15 @@ export default function Stage6() {
       }
     });
 
+    // Initialize per-indent lifting quantities for the unified form
+    const qtys: Record<string, string> = {};
+    selectedRecordIds.forEach(id => {
+      const record = sheetRecords.find(r => r.id === id);
+      const existLift = record?.data.liftingData || {};
+      qtys[id] = existLift.liftQty || String(record?.data.quantity || 0);
+    });
+    setUnifiedLiftingQtys(qtys);
+
     // Also maintain bulkFormData for reference (with selected record IDs)
     const initialData = selectedRecordIds.map((id) => {
       const record = sheetRecords.find((r) => r.id === id)!;
@@ -604,6 +614,10 @@ export default function Stage6() {
     });
     setBulkFormData(initialData);
     setOpen(true);
+  };
+
+  const handleUnifiedQtyChange = (id: string, value: string) => {
+    setUnifiedLiftingQtys(prev => ({ ...prev, [id]: value }));
   };
 
   // Removed add/remove lifting entry functions since only one entry is allowed now.
@@ -645,6 +659,47 @@ export default function Stage6() {
       const rowsToInsert: any[] = []; // Rows to insert into RECEIVING-ACCOUNTS via insertLift
       const updatesToFMS: { rowIndex: number, rowData: any[] }[] = [];
 
+      // 1. Pre-upload file to avoid duplicate uploads in unified mode
+      let commonFileUrl = "";
+      let fileToUpload: File | null = null;
+
+      if (isUnifiedMode && unifiedFormData?.status === "lift-material" && unifiedFormData.liftingData.biltyCopy instanceof File) {
+        fileToUpload = unifiedFormData.liftingData.biltyCopy;
+      } else if (!isUnifiedMode && bulkFormData.length === 1 && bulkFormData[0].status === "lift-material" && bulkFormData[0].liftingData.biltyCopy instanceof File) {
+        fileToUpload = bulkFormData[0].liftingData.biltyCopy;
+      }
+
+      if (fileToUpload) {
+        try {
+          const fileBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve((reader.result as string).split(",")[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(fileToUpload!);
+          });
+
+          const uploadParams = new URLSearchParams();
+          uploadParams.append("action", "uploadFile");
+          uploadParams.append("base64Data", fileBase64);
+          uploadParams.append("fileName", fileToUpload!.name);
+          uploadParams.append("mimeType", fileToUpload!.type);
+          const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
+          uploadParams.append("folderId", folderId);
+
+          const uploadRes = await fetch(API_URL, {
+            method: "POST",
+            body: uploadParams,
+          });
+          const uploadResult = await uploadRes.json();
+          if (uploadResult.success) {
+            commonFileUrl = uploadResult.fileUrl;
+          } else {
+            toast.warning(`File upload failed, proceeding without it.`);
+          }
+        } catch (e) {
+          console.error("Upload error", e);
+        }
+      }
 
       for (let i = 0; i < bulkFormData.length; i++) {
         // Use either the individual record (bulkFormData[i]) or overlay matching data from unifiedFormData if in unified mode
@@ -658,16 +713,10 @@ export default function Stage6() {
             followUpDate: unifiedFormData.followUpDate,
             remarks: unifiedFormData.remarks,
             liftingData: {
-              ...record.liftingData, // Keep unique ID
-              ...unifiedFormData.liftingData, // Apply common values 
-              // BUT: Keep the unique liftNumber if needed, or use common? 
-              // Requirement: "unified form is opened and the details entered in the form will be common to all"
-              // implying common lifting details too.
-              // However, liftNumber might need to be unique per row if it's a primary key.
-              // Logic check: If all lifted together, maybe one Lift #? Or sequential?
-              // Implementation: Let's assume unique Lift # per record is safer, but other details are common.
-              // We'll regenerate a unique lift number if needed or keep existing one from record.
-              liftNumber: record.liftingData.liftNumber || "", // Will be assigned by GAS
+              ...record.liftingData,
+              ...unifiedFormData.liftingData,
+              liftingQty: unifiedLiftingQtys[record.recordId] || "",
+              liftNumber: record.liftingData.liftNumber || "",
               biltyCopy: unifiedFormData.liftingData.biltyCopy
             }
           };
@@ -676,52 +725,17 @@ export default function Stage6() {
         const sheetRecord = sheetRecords.find((r) => r.id === record.recordId)!;
         const v = getVendorData(sheetRecord);
 
-        let finalFileUrl = "";
-
-        // 1. Handle File Upload if exists
-        // Use the file from the record (which now contains the unified file if in unified mode)
-        if (record.status === "lift-material" && record.liftingData.biltyCopy instanceof File) {
-          const file = record.liftingData.biltyCopy as File;
-          const fileBase64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve((reader.result as string).split(",")[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-
-          const uploadParams = new URLSearchParams();
-          uploadParams.append("action", "uploadFile");
-          uploadParams.append("base64Data", fileBase64);
-          uploadParams.append("fileName", file.name);
-          uploadParams.append("mimeType", file.type);
-          const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
-          uploadParams.append("folderId", folderId);
-
-          try {
-            const uploadRes = await fetch(API_URL, {
-              method: "POST",
-              body: uploadParams,
-            });
-            const uploadResult = await uploadRes.json();
-            if (uploadResult.success) {
-              finalFileUrl = uploadResult.fileUrl;
-            } else {
-              toast.warning(`File upload failed for ${record.indentNumber}, proceeding.`);
-            }
-          } catch (e) {
-            console.error("Upload error", e);
-          }
-        }
-
-
         const lift = record.liftingData;
-        const biltyLink = finalFileUrl || (typeof lift.biltyCopy === 'string' ? lift.biltyCopy : "");
+        let biltyLink = typeof lift.biltyCopy === 'string' ? lift.biltyCopy : "";
+        if (record.status === "lift-material" && lift.biltyCopy instanceof File) {
+          biltyLink = commonFileUrl;
+        }
 
         // Helper to format date as YYYY-MM-DD
         const toYMD = (dateStr: string) => {
           if (!dateStr) return "";
           const d = new Date(dateStr);
-          if (isNaN(d.getTime())) return ""; // Return empty if invalid, do not return raw string
+          if (isNaN(d.getTime())) return "";
           const yyyy = d.getFullYear();
           const mm = String(d.getMonth() + 1).padStart(2, "0");
           const dd = String(d.getDate()).padStart(2, "0");
@@ -856,32 +870,18 @@ export default function Stage6() {
         }
       }
 
-      // 4. Perform Updates to INDENT-LIFT
+      // 4. Perform Updates to INDENT-LIFT concurrently
       if (updatesToFMS.length > 0) {
         console.log(`Updating ${updatesToFMS.length} rows in INDENT-LIFT...`);
-        for (const update of updatesToFMS) {
+        const updatePromises = updatesToFMS.map(update => {
           const fmsParams = new URLSearchParams();
           fmsParams.append("action", "update");
           fmsParams.append("sheetName", "INDENT-LIFT");
           fmsParams.append("rowIndex", update.rowIndex.toString());
-          // IMPORTANT: If we send empty strings for other columns, 'update' action might overwrite them with empty?
-          // If the backend 'update' action merges or overwrites depends on implementation.
-          // Usually 'update' overwrites the row.
-          // IF IT OVERWRITES, WE MUST SEND ORIGINAL DATA for other columns!
-          // BUT: The original code: const fmsRow = new Array(62).fill(""); ... fmsRow[61] = ...
-          // checks if backend handles sparse updates? 
-          // Re-reading logic: "fmsRow[61] = ..." suggests sparse array? No, `fill("")`.
-          // If backend overwrites, this wipes data.
-          // Let's assume standard behavior: we should probably map the ORIGINAL row and just change specific indices to be safe.
-          // However, the previous code used `fill("")`. If that worked, then backend likely skips empty strings or specific logic?
-          // Wait, previous code: `const fmsRow = new Array(62).fill(""); fmsRow[61] = ...`
-          // This implies the backend might be designed to ONLY update non-empty values OR it was wiping data before?
-          // User said "without disturbing unrelated code sections". 
-          // I should stick to the pattern but extend array size to 69 (BQ is 68).
-
           fmsParams.append("rowData", JSON.stringify(update.rowData));
-          await fetch(API_URL, { method: "POST", body: fmsParams });
-        }
+          return fetch(API_URL, { method: "POST", body: fmsParams });
+        });
+        await Promise.all(updatePromises);
       }
 
       setOpen(false);
@@ -904,6 +904,7 @@ export default function Stage6() {
     setCommonVendorPO(null);
     setVendorPOMismatchError(null);
     setUnifiedFormData(null);
+    setUnifiedLiftingQtys({});
   };
 
 
@@ -932,6 +933,13 @@ export default function Stage6() {
       if (!unifiedFormData.status) return false;
       if (unifiedFormData.status === "lift-material") {
         const e = unifiedFormData.liftingData;
+
+        // Ensure every selected indent has a lifting qty
+        const allQtysFilled = selectedRecordIds.every(id => {
+          const val = unifiedLiftingQtys[id];
+          return val && val.trim() !== "";
+        });
+
         return !!(
           e.transporterName &&
           e.vehicleNumber &&
@@ -940,7 +948,7 @@ export default function Stage6() {
           e.biltyCopy &&
           e.dispatchDate &&
           e.freightAmount &&
-          e.liftingQty
+          allQtysFilled
         );
       }
       return false;
@@ -1400,21 +1408,6 @@ export default function Stage6() {
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-green-50/50 rounded-lg border border-green-100">
                         <div>
-                          <Label className="text-xs font-semibold uppercase tracking-wider text-green-800">Lifting Qty *</Label>
-                          <Input
-                            type="number"
-                            className="bg-white border-green-200 focus:ring-green-500"
-                            value={unifiedFormData.liftingData.liftingQty}
-                            onChange={(e) =>
-                              setUnifiedFormData((prev) => prev ? {
-                                ...prev,
-                                liftingData: { ...prev.liftingData, liftingQty: e.target.value }
-                              } : null)
-                            }
-                            required
-                          />
-                        </div>
-                        <div>
                           <Label className="text-xs font-semibold uppercase tracking-wider text-green-800">Transporter *</Label>
                           <TransporterCombobox
                             value={unifiedFormData.liftingData.transporterName}
@@ -1592,6 +1585,38 @@ export default function Stage6() {
                             </div>
                           )}
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-4 mt-4 border-t border-gray-200">
+                      <h5 className="font-semibold text-green-900">Per-Indent Quantities</h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {bulkFormData.map((item) => {
+                          const record = sheetRecords.find(r => r.id === item.recordId);
+                          return (
+                            <div key={item.recordId} className="flex flex-col gap-2 p-3 bg-white border border-gray-200 rounded-md">
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="font-medium">{record?.data.indentNumber}</span>
+                                <span className="text-gray-500 truncate max-w-[120px]" title={record?.data.itemName}>
+                                  {record?.data.itemName}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs text-gray-500 whitespace-nowrap">Lifting Qty *</Label>
+                                <Input
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  className="h-8 text-sm"
+                                  value={unifiedLiftingQtys[item.recordId] || ""}
+                                  onChange={(e) => handleUnifiedQtyChange(item.recordId, e.target.value)}
+                                  required
+                                  placeholder={`Max: ${record?.data.quantity}`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
