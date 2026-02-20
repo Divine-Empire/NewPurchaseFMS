@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useWorkflow } from "@/lib/workflow-context";
 import {
   Dialog,
@@ -31,20 +31,12 @@ import {
 } from "@/components/ui/select";
 import {
   Building2,
-  Calendar,
   FileText,
-  Package,
-  Warehouse,
-  User,
-  Hash,
   Upload,
   X,
   Shield,
   ShieldCheck,
-  DollarSign,
-  Clock,
   Loader2,
-  Tag,
   ClipboardList,
   History,
   Search,
@@ -56,6 +48,56 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { toast } from "sonner";
+
+// ─── Pure utilities (defined outside component to avoid re-creation) ─────────
+
+const parseSheetDate = (dateStr: string | Date): Date | null => {
+  if (!dateStr || dateStr === "-" || dateStr === "—" || dateStr === "Invalid Date") return null;
+  if (dateStr instanceof Date) return dateStr;
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d;
+  const dateTimeParts = dateStr.includes(", ") ? dateStr.split(", ") : dateStr.split(" ");
+  const dateParts = dateTimeParts[0].split("/");
+  if (dateParts.length === 3) {
+    const day = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1;
+    const year = parseInt(dateParts[2], 10);
+    let hours = 0, mins = 0, secs = 0;
+    if (dateTimeParts[1]) {
+      const timeParts = dateTimeParts[1].split(":");
+      if (timeParts.length >= 2) {
+        hours = parseInt(timeParts[0], 10);
+        mins = parseInt(timeParts[1], 10);
+        if (timeParts[2]) secs = parseInt(timeParts[2], 10);
+        if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
+        if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
+      }
+    }
+    const parsed = new Date(year, month, day, hours, mins, secs);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
+};
+
+const formatDate = (date?: Date | string | null): string => {
+  if (!date || date === "-" || date === "—") return "";
+  const d = date instanceof Date ? date : parseSheetDate(date);
+  if (!d || isNaN(d.getTime())) return String(date || "");
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+const formatDateTime = (date?: Date | string | null): string => formatDate(date);
+
+const fuzzyFilter = (list: string[], search: string): string[] => {
+  if (!search.trim()) return list.slice(0, 50);
+  const normalizedSearch = search.toLowerCase().replace(/\s+/g, "");
+  return list
+    .filter((item) => item.toLowerCase().replace(/\s+/g, "").includes(normalizedSearch))
+    .slice(0, 50);
+};
 
 export default function Stage3() {
   const {
@@ -72,7 +114,7 @@ export default function Stage3() {
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [currentRecord, setCurrentRecord] = useState<any>(null);
-  const [vendorCount, setVendorCount] = useState(0);
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // New state for bulk selection
 
   // Vendor list fetched from Dropdown sheet
@@ -105,89 +147,58 @@ export default function Stage3() {
     vendor3Attachment: null as File | null,
   });
 
+  const [bulkVendorData, setBulkVendorData] = useState<
+    Record<number, Record<string, { rate: string; terms: string; deliveryDate: string }>>
+  >({ 1: {}, 2: {}, 3: {} });
+
+  const handleBulkVendorChange = (vendorNum: number, recordId: string, field: "rate" | "terms" | "deliveryDate", value: string) => {
+    setBulkVendorData((prev) => ({
+      ...prev,
+      [vendorNum]: {
+        ...prev[vendorNum],
+        [recordId]: {
+          ...(prev[vendorNum]?.[recordId] || { rate: "", terms: "", deliveryDate: "" }),
+          [field]: value,
+        },
+      },
+    }));
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
 
-  const pending = sheetRecords
-    .filter((r) => r.status === "pending")
-    .filter((r) => {
-      const searchLower = searchTerm.toLowerCase();
+  const pending = useMemo(() => {
+    const lower = searchTerm.toLowerCase();
+    return sheetRecords.filter((r) => {
+      if (r.status !== "pending") return false;
+      if (!lower) return true;
       return (
-        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-        r.data.itemName?.toLowerCase().includes(searchLower) ||
-        r.data.vendor1Name?.toLowerCase().includes(searchLower) ||
-        r.data.vendor2Name?.toLowerCase().includes(searchLower) ||
-        r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
-        r.data.vendorType?.toLowerCase().includes(searchLower) ||
-        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
+        r.data.indentNumber?.toLowerCase().includes(lower) ||
+        r.data.itemName?.toLowerCase().includes(lower) ||
+        r.data.vendor1Name?.toLowerCase().includes(lower) ||
+        r.data.vendor2Name?.toLowerCase().includes(lower) ||
+        r.data.vendor3Name?.toLowerCase().includes(lower) ||
+        r.data.vendorType?.toLowerCase().includes(lower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(lower)
       );
     });
-  const completed = sheetRecords
-    .filter((r) => r.status === "completed")
-    .filter((r) => {
-      const searchLower = searchTerm.toLowerCase();
-      if (!searchLower) return true;
+  }, [sheetRecords, searchTerm]);
+
+  const completed = useMemo(() => {
+    const lower = searchTerm.toLowerCase();
+    return sheetRecords.filter((r) => {
+      if (r.status !== "completed") return false;
+      if (!lower) return true;
       return (
-        r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-        r.data.itemName?.toLowerCase().includes(searchLower) ||
-        r.data.vendor1Name?.toLowerCase().includes(searchLower) ||
-        r.data.vendor2Name?.toLowerCase().includes(searchLower) ||
-        r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
-        r.data.vendorType?.toLowerCase().includes(searchLower) ||
-        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
+        r.data.indentNumber?.toLowerCase().includes(lower) ||
+        r.data.itemName?.toLowerCase().includes(lower) ||
+        r.data.vendor1Name?.toLowerCase().includes(lower) ||
+        r.data.vendor2Name?.toLowerCase().includes(lower) ||
+        r.data.vendor3Name?.toLowerCase().includes(lower) ||
+        r.data.vendorType?.toLowerCase().includes(lower) ||
+        String(r.data.poNumber || "").toLowerCase().includes(lower)
       );
     });
-
-  const formatDate = (date?: Date | string | null) => {
-    if (!date || date === "-" || date === "—") return "";
-    const d = (date instanceof Date) ? date : parseSheetDate(date);
-    if (!d || isNaN(d.getTime())) return String(date || "");
-
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${dd}/${mm}/${yyyy}`; // DD/MM/YYYY format
-  };
-
-  const formatDateTime = (date?: Date | string | null) => {
-    return formatDate(date); // User requested standard DD/MM/YYYY
-  };
-
-  const parseSheetDate = (dateStr: string | Date): Date | null => {
-    if (!dateStr || dateStr === "-" || dateStr === "—" || dateStr === "Invalid Date") return null;
-    if (dateStr instanceof Date) return dateStr;
-
-    // Try standard parsing
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) return d;
-
-    // Try parsing DD/MM/YYYY or DD/MM/YYYY, HH:mm:ss (handle both comma and space separators)
-    const dateTimeParts = dateStr.includes(", ") ? dateStr.split(", ") : dateStr.split(" ");
-    const dateParts = dateTimeParts[0].split("/");
-    if (dateParts.length === 3) {
-      const day = parseInt(dateParts[0], 10);
-      const month = parseInt(dateParts[1], 10) - 1;
-      const year = parseInt(dateParts[2], 10);
-
-      // Extract time if exists
-      let hours = 0, mins = 0, secs = 0;
-      if (dateTimeParts[1]) {
-        const timeParts = dateTimeParts[1].split(":");
-        if (timeParts.length >= 2) {
-          hours = parseInt(timeParts[0], 10);
-          mins = parseInt(timeParts[1], 10);
-          if (timeParts[2]) secs = parseInt(timeParts[2], 10);
-
-          // Handle AM/PM if present
-          if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
-          if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
-        }
-      }
-
-      const parsed = new Date(year, month, day, hours, mins, secs);
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
-    return null;
-  };
+  }, [sheetRecords, searchTerm]);
 
   const fetchData = async () => {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -347,27 +358,15 @@ export default function Stage3() {
     baseColumns.map((c) => c.accessorKey)
   );
 
-  // Fuzzy filter function for vendor search (case-insensitive and space-insensitive)
-  const fuzzyFilter = (list: string[], search: string) => {
-    if (!search.trim()) return list.slice(0, 50); // Show first 50 when no search
-    const normalizedSearch = search.toLowerCase().replace(/\s+/g, "");
-    return list.filter((item) => {
-      const normalizedItem = item.toLowerCase().replace(/\s+/g, "");
-      return normalizedItem.includes(normalizedSearch);
-    }).slice(0, 50); // Limit to 50 results
-  };
-
   // Get search state and setter for each vendor
-  const getVendorSearchState = (num: number) => {
+  const getVendorSearchState = useCallback((num: number) => {
     if (num === 1) return { search: vendorSearch1, setSearch: setVendorSearch1, show: showVendorDropdown1, setShow: setShowVendorDropdown1 };
     if (num === 2) return { search: vendorSearch2, setSearch: setVendorSearch2, show: showVendorDropdown2, setShow: setShowVendorDropdown2 };
     return { search: vendorSearch3, setSearch: setVendorSearch3, show: showVendorDropdown3, setShow: setShowVendorDropdown3 };
-  };
-
-  // Hardcoded payment terms removed
+  }, [vendorSearch1, vendorSearch2, vendorSearch3, showVendorDropdown1, showVendorDropdown2, showVendorDropdown3]);
 
   // Check and save new vendors to Dropdown sheet (Column G / Index 6)
-  const checkAndSaveNewVendors = async (names: string[]) => {
+  const checkAndSaveNewVendors = useCallback(async (names: string[]) => {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
     if (!SHEET_API_URL || names.length === 0) return;
 
@@ -416,10 +415,9 @@ export default function Stage3() {
         console.error("Failed to save new vendors:", e);
       }
     }
-  };
+  }, [vendorList]);
 
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if ((!selectedRecord && selectedIds.size === 0) || !currentRecord) return;
 
@@ -515,11 +513,15 @@ export default function Stage3() {
         // Update T (19) and Vendor blocks
         rowArray[19] = formatDate(now); // T (ACTUAL2) - Strictly DD/MM/YYYY
 
+        const v1Bulk = bulkVendorData[1]?.[id] || {};
+        const v2Bulk = bulkVendorData[2]?.[id] || {};
+        const v3Bulk = bulkVendorData[3]?.[id] || {};
+
         // Vendor 1
         rowArray[21] = submissionData.vendor1Name || "";
-        rowArray[22] = submissionData.vendor1Rate || "";
-        rowArray[23] = submissionData.vendor1Terms || "";
-        rowArray[24] = formatDate(submissionData.vendor1DeliveryDate);
+        rowArray[22] = v1Bulk.rate || submissionData.vendor1Rate || "";
+        rowArray[23] = v1Bulk.terms || submissionData.vendor1Terms || "";
+        rowArray[24] = formatDate(v1Bulk.deliveryDate || submissionData.vendor1DeliveryDate);
         rowArray[25] = ""; // Warranty Type
         rowArray[26] = ""; // Warranty From
         rowArray[27] = ""; // Warranty To
@@ -527,9 +529,9 @@ export default function Stage3() {
 
         // Vendor 2
         rowArray[29] = submissionData.vendor2Name || "";
-        rowArray[30] = submissionData.vendor2Rate || "";
-        rowArray[31] = submissionData.vendor2Terms || "";
-        rowArray[32] = formatDate(submissionData.vendor2DeliveryDate);
+        rowArray[30] = v2Bulk.rate || submissionData.vendor2Rate || "";
+        rowArray[31] = v2Bulk.terms || submissionData.vendor2Terms || "";
+        rowArray[32] = formatDate(v2Bulk.deliveryDate || submissionData.vendor2DeliveryDate);
         rowArray[33] = ""; // Warranty Type
         rowArray[34] = ""; // Warranty From
         rowArray[35] = ""; // Warranty To
@@ -537,9 +539,9 @@ export default function Stage3() {
 
         // Vendor 3
         rowArray[37] = submissionData.vendor3Name || "";
-        rowArray[38] = submissionData.vendor3Rate || "";
-        rowArray[39] = submissionData.vendor3Terms || "";
-        rowArray[40] = formatDate(submissionData.vendor3DeliveryDate);
+        rowArray[38] = v3Bulk.rate || submissionData.vendor3Rate || "";
+        rowArray[39] = v3Bulk.terms || submissionData.vendor3Terms || "";
+        rowArray[40] = formatDate(v3Bulk.deliveryDate || submissionData.vendor3DeliveryDate);
         rowArray[41] = ""; // Warranty Type
         rowArray[42] = ""; // Warranty From
         rowArray[43] = ""; // Warranty To
@@ -576,80 +578,70 @@ export default function Stage3() {
       success: "Vendor details saved successfully!",
       error: (err) => `Failed to save: ${err.message}`,
     });
-  };
+  }, [selectedIds, selectedRecord, currentRecord, formData, bulkVendorData, sheetRecords, moveToNextStage, updateRecord, checkAndSaveNewVendors]);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setOpen(false);
     setSelectedRecord(null);
     setCurrentRecord(null);
-    setVendorCount(0);
-    setSubmitError(null); // Clear error on close
+    setSubmitError(null);
     setFormData({
       vendor1Name: "", vendor1Rate: "", vendor1Terms: "", vendor1DeliveryDate: "", vendor1Attachment: null,
       vendor2Name: "", vendor2Rate: "", vendor2Terms: "", vendor2DeliveryDate: "", vendor2Attachment: null,
       vendor3Name: "", vendor3Rate: "", vendor3Terms: "", vendor3DeliveryDate: "", vendor3Attachment: null,
     });
-  };
+    setBulkVendorData({ 1: {}, 2: {}, 3: {} });
+  }, []);
 
 
 
-  const toggleSelection = (id: string) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  };
+  const toggleSelection = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
-  const toggleSelectAll = () => {
-    // Check if we should select all or deselect all based on current visibility/filtering
-    const allSelected = pending.length > 0 && pending.every(r => selectedIds.has(r.id));
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const allSelected = pending.length > 0 && pending.every((r) => prev.has(r.id));
+      if (allSelected) return new Set();
+      const next = new Set(prev);
+      pending.forEach((r) => next.add(r.id));
+      return next;
+    });
+  }, [pending]);
 
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      const newSelected = new Set(selectedIds);
-      pending.forEach(r => newSelected.add(r.id));
-      setSelectedIds(newSelected);
-    }
-  };
-
-  const handleBulkUpdate = () => {
+  const handleBulkUpdate = useCallback(() => {
     if (selectedIds.size === 0) return;
-    // Just use the first selected record to populate defaults if needed, or clear defaults
-    // The requirement says "fill a unified form", so we start with empty form
     setOpen(true);
-    // You could set `currentRecord` to one of them for display purposes in the modal header/summary,
-    // but the summary shows single item details. We should probably hide specific item details in bulk mode.
-    // For now, let's just pick the first one so the modal doesn't crash if it tries to access currentRecord fields
     const firstId = Array.from(selectedIds)[0];
-    const rec = sheetRecords.find(r => r.id === firstId);
+    const rec = sheetRecords.find((r) => r.id === firstId);
     if (rec) setCurrentRecord(rec);
-  };
+  }, [selectedIds, sheetRecords]);
 
-  const handleOpenForm = (recordId: string) => {
+  const handleOpenForm = useCallback((recordId: string) => {
     const rec = sheetRecords.find((r) => r.id === recordId);
     if (rec) {
       setSelectedRecord(recordId);
       setCurrentRecord(rec);
       setOpen(true);
-      setVendorCount(0);
     }
-  };
+  }, [sheetRecords]);
 
-  useEffect(() => {
+  // Derived: count of filled vendor names (useMemo replaces useEffect + setState)
+  const vendorCount = useMemo(() => {
     let filled = 0;
     for (let i = 1; i <= numVendors; i++) {
       if (formData[`vendor${i}Name` as keyof typeof formData]) filled++;
     }
-    setVendorCount(filled);
+    return filled;
   }, [formData, numVendors]);
 
-  const handleFileRemove = (n: number) => {
-    setFormData({ ...formData, [`vendor${n}Attachment`]: null });
-  };
+  const handleFileRemove = useCallback((n: number) => {
+    setFormData((prev) => ({ ...prev, [`vendor${n}Attachment`]: null }));
+  }, []);
 
   const ColumnSelector = () => (
     <Popover>
@@ -974,41 +966,52 @@ export default function Stage3() {
 
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
             {/* Item Summary */}
-            <div className="border rounded-lg p-4 bg-gray-50">
+            <div className="border rounded-lg p-4 bg-gray-50 max-h-60 overflow-y-auto">
               <h3 className="font-medium mb-3">Item Details</h3>
-              <div className="grid grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="font-medium">Indent #:</span>
-                  <p>{currentRecord?.data?.indentNumber || "—"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Item:</span>
-                  <p>{currentRecord?.data?.itemName || "—"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Quantity:</span>
-                  <p>{currentRecord?.data?.quantity || "—"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Warehouse:</span>
-                  <p>{currentRecord?.data?.warehouseLocation || "—"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Created By:</span>
-                  <p>{currentRecord?.data?.createdBy || "—"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Category:</span>
-                  <p>{currentRecord?.data?.category || "—"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Lead Time:</span>
-                  <p>{currentRecord?.data?.leadTime ? `${currentRecord.data.leadTime} days` : "—"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Item Code:</span>
-                  <p>{currentRecord?.data?.itemCode || "—"}</p>
-                </div>
+              <div className="space-y-4">
+                {(selectedIds.size > 0
+                  ? Array.from(selectedIds)
+                    .map((id) => sheetRecords.find((r) => r.id === id))
+                    .filter(Boolean)
+                  : currentRecord
+                    ? [currentRecord]
+                    : []
+                ).map((record: any, idx) => (
+                  <div key={record.id || idx} className="grid grid-cols-4 gap-4 text-sm pb-4 border-b border-gray-200 last:border-0 last:pb-0">
+                    <div>
+                      <span className="font-medium text-gray-500">Indent #:</span>
+                      <p className="font-medium">{record?.data?.indentNumber || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-500">Item:</span>
+                      <p className="font-medium">{record?.data?.itemName || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-500">Quantity:</span>
+                      <p className="font-medium">{record?.data?.quantity || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-500">Warehouse:</span>
+                      <p className="font-medium">{record?.data?.warehouseLocation || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-500">Created By:</span>
+                      <p className="font-medium">{record?.data?.createdBy || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-500">Category:</span>
+                      <p className="font-medium">{record?.data?.category || "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-500">Lead Time:</span>
+                      <p className="font-medium">{record?.data?.leadTime ? `${record.data.leadTime} days` : "—"}</p>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-500">Item Code:</span>
+                      <p className="font-medium">{record?.data?.itemCode || "—"}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1089,62 +1092,130 @@ export default function Stage3() {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor={`vendor${num}Rate`}>
-                        Rate per Qty
-                      </Label>
-                      <Input
-                        id={`vendor${num}Rate`}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={(formData[`vendor${num}Rate` as keyof typeof formData] as string) || ""}
-                        onChange={(e) =>
-                          setFormData({ ...formData, [`vendor${num}Rate`]: e.target.value })
-                        }
-                      />
-                    </div>
+                    {selectedIds.size <= 1 && (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor={`vendor${num}Rate`}>
+                            Rate per Qty
+                          </Label>
+                          <Input
+                            id={`vendor${num}Rate`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={(formData[`vendor${num}Rate` as keyof typeof formData] as string) || ""}
+                            onChange={(e) =>
+                              setFormData({ ...formData, [`vendor${num}Rate`]: e.target.value })
+                            }
+                          />
+                        </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor={`vendor${num}Terms`}>
-                        Payment Terms
-                      </Label>
-                      <Select
-                        value={(formData[`vendor${num}Terms` as keyof typeof formData] as string) || ""}
-                        onValueChange={(v) =>
-                          setFormData({ ...formData, [`vendor${num}Terms`]: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select terms" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {paymentTermsList.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`vendor${num}Terms`}>
+                            Payment Terms
+                          </Label>
+                          <Select
+                            value={(formData[`vendor${num}Terms` as keyof typeof formData] as string) || ""}
+                            onValueChange={(v) =>
+                              setFormData({ ...formData, [`vendor${num}Terms`]: v })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select terms" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {paymentTermsList.map((t) => (
+                                <SelectItem key={t} value={t}>
+                                  {t}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor={`vendor${num}DeliveryDate`}>
-                        Expected Delivery
-                      </Label>
-                      <Input
-                        id={`vendor${num}DeliveryDate`}
-                        type="date"
-                        value={(formData[`vendor${num}DeliveryDate` as keyof typeof formData] as string) || ""}
-                        onChange={(e) =>
-                          setFormData({ ...formData, [`vendor${num}DeliveryDate`]: e.target.value })
-                        }
-                      />
-                    </div>
-
+                        <div className="space-y-2">
+                          <Label htmlFor={`vendor${num}DeliveryDate`}>
+                            Expected Delivery
+                          </Label>
+                          <Input
+                            id={`vendor${num}DeliveryDate`}
+                            type="date"
+                            value={(formData[`vendor${num}DeliveryDate` as keyof typeof formData] as string) || ""}
+                            onChange={(e) =>
+                              setFormData({ ...formData, [`vendor${num}DeliveryDate`]: e.target.value })
+                            }
+                          />
+                        </div>
+                      </>
+                    )}
                     {/* Warranty/Guarantee section removed from UI */}
                   </div>
+
+                  {selectedIds.size > 1 && (
+                    <div className="mt-4 border rounded-lg overflow-x-auto">
+                      <Table className="text-sm">
+                        <TableHeader className="bg-slate-50 border-b">
+                          <TableRow>
+                            <TableHead className="min-w-[100px] h-10 py-2">Indent</TableHead>
+                            <TableHead className="min-w-[150px] h-10 py-2">Item</TableHead>
+                            <TableHead className="min-w-[120px] h-10 py-2">Rate per Qty</TableHead>
+                            <TableHead className="min-w-[150px] h-10 py-2">Payment Terms</TableHead>
+                            <TableHead className="min-w-[140px] h-10 py-2">Exp. Delivery</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {Array.from(selectedIds).map(id => {
+                            const rec = sheetRecords.find(r => r.id === id);
+                            const bData = bulkVendorData[num]?.[id] || { rate: "", terms: "", deliveryDate: "" };
+
+                            return (
+                              <TableRow key={id}>
+                                <TableCell className="font-medium whitespace-nowrap py-2">{rec?.data?.indentNumber || "—"}</TableCell>
+                                <TableCell className="max-w-[150px] truncate py-2" title={rec?.data?.itemName}>{rec?.data?.itemName || "—"}</TableCell>
+                                <TableCell className="py-2">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={bData.rate}
+                                    onChange={(e) => handleBulkVendorChange(num, id, "rate", e.target.value)}
+                                    className="h-8 shadow-none"
+                                  />
+                                </TableCell>
+                                <TableCell className="py-2">
+                                  <Select
+                                    value={bData.terms}
+                                    onValueChange={(v) => handleBulkVendorChange(num, id, "terms", v)}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs shadow-none">
+                                      <SelectValue placeholder="Select terms" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {paymentTermsList.map((t) => (
+                                        <SelectItem key={t} value={t} className="text-xs">
+                                          {t}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="py-2">
+                                  <Input
+                                    type="date"
+                                    value={bData.deliveryDate}
+                                    onChange={(e) => handleBulkVendorChange(num, id, "deliveryDate", e.target.value)}
+                                    className="h-8 text-xs px-2 shadow-none"
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
 
                   <div className="mt-4 space-y-2">
                     <Label>Attachment</Label>
