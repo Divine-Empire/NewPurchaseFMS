@@ -52,6 +52,8 @@ const PENDING_COLUMNS = [
     { key: "invoiceDate", label: "Inv. Date" },
     { key: "vendor", label: "Vendor" },
     { key: "poNumber", label: "PO Number" },
+    { key: "invoiceCopy", label: "Invoice Copy" },
+    { key: "totalRcvd", label: "Total Rcvd." },
     { key: "qty", label: "Rec. Qty" },
     { key: "receivedItems", label: "Rec. Items" },
 ] as const;
@@ -169,6 +171,11 @@ export default function Stage13() {
                         const invNo = String(row[1] || "").trim();
                         const vendorName = String(row[4] || "").trim();
 
+                        const qtyStr = String(row[10] || "");
+                        const totalRcvd = qtyStr.split(',')
+                            .map(v => parseFloat(v.trim()) || 0)
+                            .reduce((sum, val) => sum + val, 0);
+
                         return {
                             id: `${invNo}_${originalIndex}`,
                             rowIndex: originalIndex,
@@ -180,6 +187,7 @@ export default function Stage13() {
                                 invoiceDate: toDate(row[3]),       // D
                                 vendor: vendorName,           // E
                                 poNumber: row[5] || "",        // F
+                                totalRcvd,
                                 poCopy: row[6] || "",        // G
                                 qty: row[10] || "",        // K
                                 receivedItems: row[12] || "",        // M
