@@ -60,7 +60,7 @@ export default function Stage9() {
     if (selectedRows.size === 0) return;
     setBulkError(null);
 
-    const selectedIds = Array.from(selectedRows);
+
     const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
 
     if (selectedRecords.length === 0) return;
@@ -226,7 +226,7 @@ export default function Stage9() {
             }
 
             return {
-              id: row[1] || `row-${originalIndex}`,
+              id: `${row[1] || "row"}-${originalIndex}`,
               rowIndex: originalIndex,
               stage: 9,
               status,
@@ -335,7 +335,6 @@ export default function Stage9() {
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
         r.data.itemName?.toLowerCase().includes(searchLower) ||
         r.data.vendorName?.toLowerCase().includes(searchLower) ||
-        r.data.vendorName?.toLowerCase().includes(searchLower) ||
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
@@ -375,16 +374,6 @@ export default function Stage9() {
     { key: "qcRequirement", label: "QC Required" },
     { key: "receivedItemImage", label: "Rec. Item Img" },
     { key: "billAttachment", label: "Bill Attach" },
-    { key: "plan7", label: "Plan 7" },
-    { key: "actual7", label: "Actual 7" },
-    { key: "qcBy", label: "QC Done By" },
-    { key: "qcDate", label: "QC Date" },
-    { key: "qcStatus", label: "QC Status" },
-    { key: "rejectQty", label: "Reject Qty" },
-    { key: "rejectRemarks", label: "Reject Remarks" },
-    { key: "returnStatus", label: "Return Status" },
-    { key: "qcRemarks", label: "QC Remarks" },
-    { key: "rejectPhoto", label: "Reject Photo" },
   ];
 
   // History columns
@@ -480,7 +469,7 @@ export default function Stage9() {
       if (key === "paymentTerms") return vendor.terms;
 
       // Handle lifting data
-      if (key === "receiptLiftNumber") return data.liftingData?.[0]?.liftNumber || "-";
+      if (key === "receiptLiftNumber") return data.liftNumber || "-";
 
       // Handle payment amounts
       if (key === "paymentAmountHydra" || key === "paymentAmountLabour" || key === "paymentAmountHamali") {
@@ -811,10 +800,6 @@ export default function Stage9() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {/* Removed sticky ID column here too for consistency if needed, but keeping simple */}
-                    <TableHead className="sticky left-0 bg-white z-10">
-                      ID
-                    </TableHead>
                     {historyColumns
                       .filter((c) => selectedHistoryColumns.includes(c.key))
                       .map((col) => (
@@ -825,9 +810,6 @@ export default function Stage9() {
                 <TableBody>
                   {completed.map((record: any) => (
                     <TableRow key={record.id}>
-                      <TableCell className="font-mono text-xs sticky left-0 bg-white z-10">
-                        {record.id}
-                      </TableCell>
                       {historyColumns
                         .filter((c) => selectedHistoryColumns.includes(c.key))
                         .map((col) => (
