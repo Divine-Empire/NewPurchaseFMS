@@ -331,9 +331,18 @@ export default function SubmitInvoiceHO() {
             if (key === "billAttachment") {
                 const url = data.billAttachment;
                 if (!url || url === "-" || url === "") return "-";
+
+                let displayUrl = String(url);
+                if (displayUrl.includes("drive.google.com/uc")) {
+                    const idMatch = displayUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                    if (idMatch && idMatch[1]) {
+                        displayUrl = `https://drive.google.com/file/d/${idMatch[1]}/view`;
+                    }
+                }
+
                 return (
                     <a
-                        href={String(url)}
+                        href={displayUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 text-xs text-blue-600 hover:underline"

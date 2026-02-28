@@ -94,8 +94,15 @@ const gsNow = (): string => {
 const safeValue = (val: any) => {
     if (!val || val === "-" || val === "") return "-";
     if (typeof val === "string" && (val.startsWith("http") || val.includes("drive.google"))) {
+        let displayUrl = val;
+        if (displayUrl.includes("drive.google.com/uc")) {
+            const idMatch = displayUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+            if (idMatch && idMatch[1]) {
+                displayUrl = `https://drive.google.com/file/d/${idMatch[1]}/view`;
+            }
+        }
         return (
-            <a href={val} target="_blank" rel="noopener noreferrer"
+            <a href={displayUrl} target="_blank" rel="noopener noreferrer"
                 className="text-blue-600 hover:underline flex items-center gap-1">
                 <FileText className="w-3 h-3" /> View
             </a>

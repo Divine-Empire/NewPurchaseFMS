@@ -814,11 +814,17 @@ export default function Stage7() {
                                                 ).map((col) => {
                                                     // Handle Bilty Copy as a link
                                                     if (col.key === "biltyCopy") {
+                                                        const biltyRaw = rec.data.biltyCopy;
+                                                        let biltyUrl = biltyRaw;
+                                                        if (biltyUrl && biltyUrl.includes("drive.google.com/uc")) {
+                                                            const m = biltyUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                                                            if (m?.[1]) biltyUrl = `https://drive.google.com/file/d/${m[1]}/view`;
+                                                        }
                                                         return (
                                                             <TableCell key={col.key}>
-                                                                {rec.data.biltyCopy ? (
+                                                                {biltyUrl ? (
                                                                     <a
-                                                                        href={rec.data.biltyCopy}
+                                                                        href={biltyUrl}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className="flex items-center gap-1 text-xs text-green-600 hover:underline"
@@ -833,11 +839,17 @@ export default function Stage7() {
 
                                                     // Handle PO Copy as a link
                                                     if (col.key === "poCopy") {
+                                                        const poRaw = rec.data.poCopy;
+                                                        let poUrl = poRaw;
+                                                        if (poUrl && poUrl.includes("drive.google.com/uc")) {
+                                                            const m = poUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                                                            if (m?.[1]) poUrl = `https://drive.google.com/file/d/${m[1]}/view`;
+                                                        }
                                                         return (
                                                             <TableCell key={col.key}>
-                                                                {rec.data.poCopy ? (
+                                                                {poUrl ? (
                                                                     <a
-                                                                        href={rec.data.poCopy}
+                                                                        href={poUrl}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
@@ -934,20 +946,35 @@ export default function Stage7() {
                                                             col.key === "actual6"
                                                         ) {
                                                             const dateVal = historyData[col.key];
+                                                            let formattedDate = "-";
+                                                            if (dateVal) {
+                                                                const d = new Date(dateVal);
+                                                                if (!isNaN(d.getTime())) {
+                                                                    formattedDate = `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}/${d.getFullYear()}`;
+                                                                } else {
+                                                                    formattedDate = String(dateVal);
+                                                                }
+                                                            }
                                                             return (
                                                                 <TableCell key={col.key}>
-                                                                    {dateVal || "-"}
+                                                                    {formattedDate}
                                                                 </TableCell>
                                                             );
                                                         }
 
                                                         // Handle file fields
                                                         if (col.key === "biltyCopy") {
+                                                            const biltyRaw = historyData.biltyCopy;
+                                                            let biltyUrl = biltyRaw;
+                                                            if (biltyUrl && biltyUrl.includes("drive.google.com/uc")) {
+                                                                const m = biltyUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                                                                if (m?.[1]) biltyUrl = `https://drive.google.com/file/d/${m[1]}/view`;
+                                                            }
                                                             return (
                                                                 <TableCell key={col.key}>
-                                                                    {historyData.biltyCopy ? (
+                                                                    {biltyUrl ? (
                                                                         <a
-                                                                            href={historyData.biltyCopy}
+                                                                            href={biltyUrl}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                             className="flex items-center gap-1 text-xs text-green-600 hover:underline"
@@ -962,11 +989,17 @@ export default function Stage7() {
 
                                                         // Handle PO Copy as a link
                                                         if (col.key === "poCopy") {
+                                                            const poRaw = historyData.poCopy;
+                                                            let poUrl = poRaw;
+                                                            if (poUrl && poUrl.includes("drive.google.com/uc")) {
+                                                                const m = poUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                                                                if (m?.[1]) poUrl = `https://drive.google.com/file/d/${m[1]}/view`;
+                                                            }
                                                             return (
                                                                 <TableCell key={col.key}>
-                                                                    {historyData.poCopy ? (
+                                                                    {poUrl ? (
                                                                         <a
-                                                                            href={historyData.poCopy}
+                                                                            href={poUrl}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                             className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
@@ -984,18 +1017,23 @@ export default function Stage7() {
                                                             col.key === "billAttachment"
                                                         ) {
                                                             const file = historyData[col.key];
+                                                            let fileUrl = typeof file === "string" ? file : undefined;
+                                                            if (fileUrl && fileUrl.includes("drive.google.com/uc")) {
+                                                                const m = fileUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                                                                if (m?.[1]) fileUrl = `https://drive.google.com/file/d/${m[1]}/view`;
+                                                            }
                                                             return (
                                                                 <TableCell key={col.key}>
-                                                                    {file ? (
+                                                                    {fileUrl ? (
                                                                         <a
-                                                                            href={typeof file === 'string' ? file : undefined}
+                                                                            href={fileUrl}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
                                                                             className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
                                                                         >
                                                                             <FileText className="w-3.5 h-3.5" />
                                                                             <span className="truncate max-w-20">
-                                                                                {typeof file === 'string' ? `View ${col.label}` : (file as File).name || col.label}
+                                                                                View {col.label}
                                                                             </span>
                                                                         </a>
                                                                     ) : (
