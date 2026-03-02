@@ -42,6 +42,7 @@ export default function Stage9() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [searchTerm, setSearchTerm] = useState("");
+  const [warehouseFilter, setWarehouseFilter] = useState("All");
   const [accountantList, setAccountantList] = useState<string[]>([]);
   const [bulkError, setBulkError] = useState<string | null>(null);
 
@@ -330,6 +331,9 @@ export default function Stage9() {
   const pending = sheetRecords
     .filter((r: any) => r.status === "pending")
     .filter((r) => {
+      if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+      if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
       const searchLower = searchTerm.toLowerCase();
       return (
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
@@ -342,6 +346,9 @@ export default function Stage9() {
   const completed = sheetRecords
     .filter((r: any) => r.status === "completed")
     .filter((r: any) => {
+      if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+      if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
       const searchLower = searchTerm.toLowerCase();
       if (!searchLower) return true;
       return (
@@ -427,7 +434,7 @@ export default function Stage9() {
   };
 
   // Safe value getter with lifting data support
-  const safeValue = (record: any, key: string, isHistory = false) => {
+  const safeValue = (record: any, key: string) => {
     try {
       const data = record?.data;
       if (!data) return "-";
@@ -515,7 +522,6 @@ export default function Stage9() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">Stage 9: Tally Entry</h2>
-            <p className="text-gray-600 mt-1">Record material receipt in Tally</p>
           </div>
           <div className="flex items-center gap-4">
             <Label className="text-sm font-medium">Show Columns:</Label>
@@ -608,7 +614,7 @@ export default function Stage9() {
       </div>
 
       {/* Search Filter */}
-      <div className="mb-6 flex items-center gap-4">
+      <div className="mb-6 flex flex-wrap items-center gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
           <Input
@@ -618,6 +624,19 @@ export default function Stage9() {
             className="pl-9 bg-white"
           />
         </div>
+
+        {/* Warehouse Filter */}
+        <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+          <SelectTrigger className="w-[200px] bg-white">
+            <SelectValue placeholder="Select warehouse" />
+          </SelectTrigger>
+          <SelectContent className="bg-white">
+            <SelectItem value="All">All Warehouses</SelectItem>
+            <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+            <SelectItem value="Others">Others</SelectItem>
+          </SelectContent>
+        </Select>
+
         <Button variant="outline" onClick={fetchData} disabled={isLoading}>
           {isLoading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -814,7 +833,7 @@ export default function Stage9() {
                         .filter((c) => selectedHistoryColumns.includes(c.key))
                         .map((col) => (
                           <TableCell key={col.key}>
-                            {safeValue(record, col.key, true)}
+                            {safeValue(record, col.key)}
                           </TableCell>
                         ))}
                     </TableRow>

@@ -34,23 +34,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 
-const HANDOVER_PERSONNEL = [
-  "Vikram Singh",
-  "Priya Sharma",
-  "Rajesh Kumar",
-  "Anita Patel",
-  "Sneha Gupta",
-];
-
-const ACCOUNTS_PERSONNEL = [
-  "Amit Shah",
-  "Neha Jain",
-  "Suresh Patel",
-  "Kavita Rao",
-  "Rohit Verma",
-];
-
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+
 
 export default function Stage10() {
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
@@ -60,6 +45,7 @@ export default function Stage10() {
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [searchTerm, setSearchTerm] = useState("");
+  const [warehouseFilter, setWarehouseFilter] = useState("All");
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [bulkError, setBulkError] = useState<string | null>(null);
 
@@ -193,6 +179,9 @@ export default function Stage10() {
   const pending = sheetRecords
     .filter((r) => r.status === "pending")
     .filter((r) => {
+      if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+      if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
       const searchLower = searchTerm.toLowerCase();
       return (
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
@@ -205,6 +194,9 @@ export default function Stage10() {
   const completed = sheetRecords
     .filter((r) => r.status === "completed")
     .filter((r) => {
+      if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+      if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
       const searchLower = searchTerm.toLowerCase();
       if (!searchLower) return true;
       return (
@@ -221,6 +213,7 @@ export default function Stage10() {
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
     { key: "quantity", label: "Qty" },
+    { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor" },
     { key: "poNumber", label: "PO #" },
     { key: "invoiceNumber", label: "Invoice #" },
@@ -427,15 +420,6 @@ export default function Stage10() {
             <p className="text-gray-600 mt-1">Hand over original invoice for payment</p>
           </div>
           <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-              <Input
-                placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 bg-white w-[300px]"
-              />
-            </div>
             <Label className="text-sm font-medium">Show Columns:</Label>
             <Select value="" onValueChange={() => { }}>
               <SelectTrigger className="w-64">
@@ -473,17 +457,46 @@ export default function Stage10() {
             </Select>
           </div>
         </div>
+
         {/* Header Actions */}
-        <div className="flex items-center gap-4 mb-4">
-          {selectedRows.size > 0 && (
+        {selectedRows.size > 0 && (
+          <div className="mt-4 flex items-center gap-4">
             <Button
               onClick={() => handleOpenForm()}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               Submit Invoice ({selectedRows.size})
             </Button>
-          )}
+            <span className="text-sm text-gray-500">
+              {selectedRows.size} item(s) selected
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Search and Filters */}
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
         </div>
+
+        {/* Warehouse Filter */}
+        <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+          <SelectTrigger className="w-[200px] bg-white">
+            <SelectValue placeholder="Select warehouse" />
+          </SelectTrigger>
+          <SelectContent className="bg-white">
+            <SelectItem value="All">All Warehouses</SelectItem>
+            <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+            <SelectItem value="Others">Others</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>

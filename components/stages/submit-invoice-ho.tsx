@@ -44,6 +44,7 @@ export default function SubmitInvoiceHO() {
     const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
     const [searchTerm, setSearchTerm] = useState("");
+    const [warehouseFilter, setWarehouseFilter] = useState("All");
     const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
     const [bulkError, setBulkError] = useState<string | null>(null);
 
@@ -80,7 +81,7 @@ export default function SubmitInvoiceHO() {
                 const rows = liftJson.data.slice(6)
                     .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
                     .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
-                    .map(({ row, originalIndex }: any, idx: number) => {
+                    .map(({ row, originalIndex }: any) => {
                         const indentNo = String(row[1]).trim();
                         const fmsRow = fmsMap.get(indentNo) || [];
 
@@ -137,6 +138,7 @@ export default function SubmitInvoiceHO() {
                                 submissionDate: row[47],    // Submission Date (AV)
 
                                 // FMS Data
+                                warehouse: fmsRow[6] || "-",
                                 basicValue: fmsRow[55], // BD: Basic Value (Indent Lift)
                                 totalWithTax: fmsRow[56], // BE: Total Value (Indent Lift)
                                 ...vendorDetails,
@@ -159,6 +161,9 @@ export default function SubmitInvoiceHO() {
     const pending = sheetRecords
         .filter((r) => r.status === "pending")
         .filter((r) => {
+            if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+            if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
             const searchLower = searchTerm.toLowerCase();
             return (
                 r.data.indentNumber?.toLowerCase().includes(searchLower) ||
@@ -171,6 +176,9 @@ export default function SubmitInvoiceHO() {
     const completed = sheetRecords
         .filter((r) => r.status === "completed")
         .filter((r) => {
+            if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+            if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
             const searchLower = searchTerm.toLowerCase();
             if (!searchLower) return true;
             return (
@@ -187,6 +195,7 @@ export default function SubmitInvoiceHO() {
         { key: "category", label: "Category" },
         { key: "itemName", label: "Item" },
         { key: "quantity", label: "Qty" },
+        { key: "warehouse", label: "Warehouse" },
         { key: "vendorName", label: "Vendor" },
         { key: "poNumber", label: "PO #" },
         { key: "invoiceNumber", label: "Invoice #" },
@@ -385,67 +394,84 @@ export default function SubmitInvoiceHO() {
                         <h2 className="text-2xl font-bold">Submit Invoice (HO)</h2>
                         <p className="text-gray-600 mt-1">Submit hardcopy invoices to Head Office</p>
                     </div>
+                    {/* Header Actions */}
                     <div className="flex items-center gap-4">
-                        <div className="relative flex-1 max-w-sm">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                            <Input
-                                placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9 bg-white w-[300px]"
-                            />
-                        </div>
-                        {/* Header Actions */}
-                        <div className="flex items-center gap-4">
-                            {selectedRows.size > 0 && (
-                                <Button
-                                    onClick={() => handleOpenForm()}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                                >
-                                    Submit Invoice to HO ({selectedRows.size})
-                                </Button>
-                            )}
-
-                            <div className="flex items-center gap-2">
-                                <Label className="text-sm font-medium">Show Columns:</Label>
-                                <Select value="" onValueChange={() => { }}>
-                                    <SelectTrigger className="w-64">
-                                        <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
-                                    </SelectTrigger>
-                                    <SelectContent className="w-64 max-h-96 overflow-y-auto">
-                                        <div className="p-2">
-                                            <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
-                                                <Checkbox
-                                                    checked={activeTab === "pending" ? selectedPendingColumns.length === pendingColumns.length : selectedHistoryColumns.length === historyColumns.length}
-                                                    onCheckedChange={(c) => {
-                                                        if (activeTab === "pending") setSelectedPendingColumns(c ? pendingColumns.map(x => x.key) : []);
-                                                        else setSelectedHistoryColumns(c ? historyColumns.map(x => x.key) : []);
-                                                    }}
-                                                />
-                                                <Label>All</Label>
-                                            </div>
-                                            {(activeTab === "pending" ? pendingColumns : historyColumns).map(col => (
-                                                <div key={col.key} className="flex items-center space-x-2 py-1">
-                                                    <Checkbox
-                                                        checked={activeTab === "pending" ? selectedPendingColumns.includes(col.key) : selectedHistoryColumns.includes(col.key)}
-                                                        onCheckedChange={(c) => {
-                                                            if (activeTab === "pending") {
-                                                                setSelectedPendingColumns(c ? [...selectedPendingColumns, col.key] : selectedPendingColumns.filter(x => x !== col.key));
-                                                            } else {
-                                                                setSelectedHistoryColumns(c ? [...selectedHistoryColumns, col.key] : selectedHistoryColumns.filter(x => x !== col.key));
-                                                            }
-                                                        }}
-                                                    />
-                                                    <Label>{col.label}</Label>
-                                                </div>
-                                            ))}
+                        <Label className="text-sm font-medium">Show Columns:</Label>
+                        <Select value="" onValueChange={() => { }}>
+                            <SelectTrigger className="w-64">
+                                <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
+                            </SelectTrigger>
+                            <SelectContent className="w-64 max-h-96 overflow-y-auto">
+                                <div className="p-2">
+                                    <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
+                                        <Checkbox
+                                            checked={activeTab === "pending" ? selectedPendingColumns.length === pendingColumns.length : selectedHistoryColumns.length === historyColumns.length}
+                                            onCheckedChange={(c) => {
+                                                if (activeTab === "pending") setSelectedPendingColumns(c ? pendingColumns.map(x => x.key) : []);
+                                                else setSelectedHistoryColumns(c ? historyColumns.map(x => x.key) : []);
+                                            }}
+                                        />
+                                        <Label>All</Label>
+                                    </div>
+                                    {(activeTab === "pending" ? pendingColumns : historyColumns).map(col => (
+                                        <div key={col.key} className="flex items-center space-x-2 py-1">
+                                            <Checkbox
+                                                checked={activeTab === "pending" ? selectedPendingColumns.includes(col.key) : selectedHistoryColumns.includes(col.key)}
+                                                onCheckedChange={(c) => {
+                                                    if (activeTab === "pending") {
+                                                        setSelectedPendingColumns(c ? [...selectedPendingColumns, col.key] : selectedPendingColumns.filter(x => x !== col.key));
+                                                    } else {
+                                                        setSelectedHistoryColumns(c ? [...selectedHistoryColumns, col.key] : selectedHistoryColumns.filter(x => x !== col.key));
+                                                    }
+                                                }}
+                                            />
+                                            <Label>{col.label}</Label>
                                         </div>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
+                                    ))}
+                                </div>
+                            </SelectContent>
+                        </Select>
                     </div>
                 </div>
+
+                {selectedRows.size > 0 && (
+                    <div className="mt-4 flex items-center gap-4">
+                        <Button
+                            onClick={() => handleOpenForm()}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                            Submit Invoice to HO ({selectedRows.size})
+                        </Button>
+                        <span className="text-sm text-gray-500">
+                            {selectedRows.size} item(s) selected
+                        </span>
+                    </div>
+                )}
+            </div>
+
+            {/* Search and Filters */}
+            <div className="mb-6 flex flex-wrap items-center gap-4">
+                <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                    <Input
+                        placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9 bg-white"
+                    />
+                </div>
+
+                {/* Warehouse Filter */}
+                <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                    <SelectTrigger className="w-[200px] bg-white">
+                        <SelectValue placeholder="Select warehouse" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white">
+                        <SelectItem value="All">All Warehouses</SelectItem>
+                        <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+                        <SelectItem value="Others">Others</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
@@ -594,6 +620,6 @@ export default function SubmitInvoiceHO() {
                     </form>
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }

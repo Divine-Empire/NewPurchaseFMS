@@ -64,26 +64,13 @@ const uploadFileToDrive = async (
     return json.success ? json.fileUrl : "";
 };
 
-interface LiftingEntry {
-    liftNumber: string;
-    liftingQty: string;
-    transporterName: string;
-    vehicleNumber: string;
-    contactNumber: string;
-    lrNumber: string;
-    biltyCopy: File | null;
-    dispatchDate: string;
-    freightAmount: string;
-    advanceAmount: string;
-    paymentDate: string;
-}
-
 /* --------------------------------------------------------------- */
 /*  COLUMNS FOR PENDING TAB (Same as Follow-Up Vendor History)     */
 /* --------------------------------------------------------------- */
 const PENDING_COLUMNS = [
     { key: "indentNumber", label: "Indent #" },
     { key: "liftNo", label: "Lift No." },
+    { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor Name" },
     { key: "poNumber", label: "PO Number" },
     { key: "nextFollowUpDate", label: "Next Follow-Up" },
@@ -139,6 +126,7 @@ export default function Stage7() {
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
+    const [warehouseFilter, setWarehouseFilter] = useState("All");
 
     // Bulk State
     const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
@@ -164,7 +152,6 @@ export default function Stage7() {
         pkgAmount: "",
         pkgGST: "",
     });
-    const [bulkError, setBulkError] = useState<string | null>(null);
 
     // Stable helper: Packaging/Forwarding totals
     const getPkgTotals = useCallback((
@@ -185,21 +172,6 @@ export default function Stage7() {
         if (isNaN(d.getTime())) return "";
         return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
     }, []);
-
-    const parseSheetDate = (dateStr: string) => {
-        if (!dateStr || dateStr === "-" || dateStr === "Invalid Date") return new Date();
-        const d = new Date(dateStr);
-        if (!isNaN(d.getTime())) return d;
-        const dateTimeParts = dateStr.split(", ");
-        const dateParts = dateTimeParts[0].split("/");
-        if (dateParts.length === 3) {
-            const day = parseInt(dateParts[0], 10);
-            const month = parseInt(dateParts[1], 10) - 1;
-            const year = parseInt(dateParts[2], 10);
-            return new Date(year, month, day);
-        }
-        return new Date();
-    };
 
     const fetchData = useCallback(async () => {
         const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -279,6 +251,7 @@ export default function Stage7() {
                                 paymentStatus: row[17] || "",    // R: Payment Status
                                 biltyCopy: row[18] || "",        // S: Bilty Copy
                                 poCopy: fmsRow ? (fmsRow[58] || "") : "", // From INDENT-LIFT Column BG (index 58)
+                                warehouse: fmsRow ? (fmsRow[6] || "") : "", // From INDENT-LIFT Column G (index 6)
                                 invoiceNumber: row[24] || "",    // Y: Invoice Number
                                 qcRequirement: row[28] || "",    // AC: QC Required
 
@@ -345,7 +318,6 @@ export default function Stage7() {
             return;
         }
         setIsBulkMode(true);
-        setBulkError(match ? null : "Vendor/PO Mismatch");
         setCommonData({
             invoiceNumber: "",
             invoiceDate: "",
@@ -555,26 +527,6 @@ export default function Stage7() {
         }
     }, [selectedRecordId, recordMap, form, fetchData]);
 
-    // Remove the duplicate in-component toBase64 (now at module scope)
-
-    const resetForm = useCallback(() => {
-        setForm({
-            liftNumber: "",
-            receivedQty: "",
-            invoiceNumber: "",
-            invoiceDate: "",
-            billAttachment: null,
-            receivedItemImage: null,
-            paymentAmountHydra: "",
-            paymentAmountLabour: "",
-            paymentAmountHamali: "",
-            qcRequirement: "",
-            remarks: "",
-            pkgAmount: "",
-            pkgGST: "",
-        });
-    }, []);
-
     const removeFile = useCallback((key: "billAttachment" | "receivedItemImage") => {
         setForm((f) => ({ ...f, [key]: null }));
     }, []);
@@ -592,6 +544,10 @@ export default function Stage7() {
         const lower = searchTerm.toLowerCase();
         return sheetRecords.filter((r) => {
             if (!r?.data || r.status !== "pending") return false;
+
+            if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+            if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
             if (!lower) return true;
             return (
                 r.data.indentNumber?.toLowerCase().includes(lower) ||
@@ -601,12 +557,16 @@ export default function Stage7() {
                 String(r.data.invoiceNumber || "").toLowerCase().includes(lower)
             );
         });
-    }, [sheetRecords, searchTerm]);
+    }, [sheetRecords, searchTerm, warehouseFilter]);
 
     const completed = useMemo(() => {
         const lower = searchTerm.toLowerCase();
         return sheetRecords.filter((r) => {
             if (!r?.data || r.status !== "completed") return false;
+
+            if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
+            if (warehouseFilter === "Others" && r.data.warehouse === "NE Warehouse") return false;
+
             if (!lower) return true;
             return (
                 r.data.indentNumber?.toLowerCase().includes(lower) ||
@@ -616,7 +576,7 @@ export default function Stage7() {
                 String(r.data.invoiceNumber || "").toLowerCase().includes(lower)
             );
         });
-    }, [sheetRecords, searchTerm]);
+    }, [sheetRecords, searchTerm, warehouseFilter]);
 
     return (
         <div className="p-6">
@@ -625,9 +585,6 @@ export default function Stage7() {
                 <div className="flex items-center justify-between">
                     <div>
                         <h2 className="text-2xl font-bold">Stage 7: Material Receipt</h2>
-                        <p className="text-gray-600 mt-1">
-                            Record received goods, invoice, QC & payment details
-                        </p>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -714,7 +671,7 @@ export default function Stage7() {
                 </div>
 
                 {/* Search Filter */}
-                <div className="mt-4 flex items-center gap-4">
+                <div className="mt-4 flex flex-wrap items-center gap-4">
                     <div className="relative flex-1 max-w-sm">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
                         <Input
@@ -724,6 +681,18 @@ export default function Stage7() {
                             className="pl-9 bg-white"
                         />
                     </div>
+
+                    {/* Warehouse Filter */}
+                    <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                        <SelectTrigger className="w-[200px] bg-white">
+                            <SelectValue placeholder="Select warehouse" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white">
+                            <SelectItem value="All">All Warehouses</SelectItem>
+                            <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+                            <SelectItem value="Others">Others</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
             </div>
 
@@ -1061,9 +1030,12 @@ export default function Stage7() {
                                                         }
 
                                                         // Default: show from historyData
+                                                        const val = (historyData[col.key] !== undefined && historyData[col.key] !== "")
+                                                            ? historyData[col.key]
+                                                            : record.data[col.key];
                                                         return (
                                                             <TableCell key={col.key}>
-                                                                {String(historyData[col.key] ?? "-")}
+                                                                {val ? String(val) : "-"}
                                                             </TableCell>
                                                         );
                                                     })}
