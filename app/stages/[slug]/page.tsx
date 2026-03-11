@@ -17,8 +17,11 @@ import PurchaseReturn from "@/components/stages/purchase-return";
 import VendorPayment from "@/components/stages/vendor-payment";
 import FreightPayments from "@/components/stages/freight-payments";
 import ReturnApproval from "@/components/stages/return-approval";
+import VerificationByAccounts from "@/components/stages/verification";
 
 import SubmitInvoiceHO from "@/components/stages/submit-invoice-ho";
+import WarrantyInfo from "@/components/stages/warranty-info";
+import WarrantyClaim from "@/components/stages/warranty-claim";
 
 const stageComponents: Record<string, React.ComponentType> = {
     "create-indent": CreateIndent,
@@ -34,6 +37,9 @@ const stageComponents: Record<string, React.ComponentType> = {
     "submit-invoice-ho": SubmitInvoiceHO,
     "submit-invoice": SubmitInvoice,
     "verification": Verification,
+    "verification-by-accounts": VerificationByAccounts,
+    "warranty-info": WarrantyInfo,
+    "warranty-claim": WarrantyClaim,
     "purchase-return": PurchaseReturn,
     "vendor-payment": VendorPayment,
     "freight-payments": FreightPayments,

@@ -138,6 +138,7 @@ export default function Stage7() {
         itemName: string;
         receivedQty: string;
         qcRequirement: string;
+        warrantyClaim: string;
         receivedItemImage: File | null;
         index: number;
     }[]>([]);
@@ -151,6 +152,7 @@ export default function Stage7() {
         remarks: "",
         pkgAmount: "",
         pkgGST: "",
+        warrantyClaim: "",
     });
 
     // Stable helper: Packaging/Forwarding totals
@@ -282,6 +284,7 @@ export default function Stage7() {
         paymentAmountLabour: "",
         paymentAmountHamali: "",
         qcRequirement: "",
+        warrantyClaim: "",
         remarks: "",
         pkgAmount: "",
         pkgGST: "",
@@ -328,6 +331,7 @@ export default function Stage7() {
             remarks: "",
             pkgAmount: "",
             pkgGST: "",
+            warrantyClaim: "",
         });
         const items = selectedRecordIds.map(id => {
             const rec = recordMap.get(id);
@@ -338,6 +342,7 @@ export default function Stage7() {
                 itemName: rec?.data?.itemName || "",
                 receivedQty: "",
                 qcRequirement: "no",
+                warrantyClaim: "",
                 receivedItemImage: null,
                 index: rec?.rowIndex || 0
             };
@@ -373,7 +378,7 @@ export default function Stage7() {
                     ? await uploadFileToDrive(item.receivedItemImage, SHEET_API_URL, folderId)
                     : "";
 
-                const rowArray = new Array(101).fill("");
+                const rowArray = new Array(105).fill("");
                 rowArray[20] = dateStr;
                 rowArray[22] = "independent";
                 rowArray[23] = commonData.invoiceDate;
@@ -389,6 +394,7 @@ export default function Stage7() {
                 rowArray[33] = commonData.remarks;
                 rowArray[99] = pkgBaseStr;
                 rowArray[100] = commonData.pkgGST || "";
+                rowArray[104] = item.warrantyClaim || "";  // DA: Warranty Information
 
                 const params = new URLSearchParams();
                 params.append("action", "update");
@@ -459,6 +465,7 @@ export default function Stage7() {
             paymentAmountLabour: "",
             paymentAmountHamali: "",
             qcRequirement: "",
+            warrantyClaim: "",
             remarks: "",
             pkgAmount: "",
             pkgGST: "",
@@ -487,7 +494,7 @@ export default function Stage7() {
                 : typeof form.receivedItemImage === "string" ? form.receivedItemImage : "";
 
             const dateStr = new Date().toISOString().split('T')[0];
-            const rowArray = new Array(101).fill("");
+            const rowArray = new Array(105).fill("");
             rowArray[20] = dateStr;               // U: Actual1
             rowArray[22] = "independent";         // W: Invoice Type
             rowArray[23] = form.invoiceDate;      // X
@@ -503,6 +510,7 @@ export default function Stage7() {
             rowArray[33] = form.remarks;          // AH
             rowArray[99] = form.pkgAmount || "";  // CV
             rowArray[100] = form.pkgGST || "";     // CW
+            rowArray[104] = form.warrantyClaim || ""; // DA: Warranty Information
 
             const params = new URLSearchParams();
             params.append("action", "update");
@@ -1111,6 +1119,23 @@ export default function Stage7() {
                                                 </Select>
                                             </div>
                                             <div className="space-y-2">
+                                                <Label>Warranty Information</Label>
+                                                <Select
+                                                    value={item.warrantyClaim}
+                                                    onValueChange={(v) => {
+                                                        const newItems = [...bulkItems];
+                                                        newItems[idx].warrantyClaim = v;
+                                                        setBulkItems(newItems);
+                                                    }}
+                                                >
+                                                    <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="yes">Yes</SelectItem>
+                                                        <SelectItem value="no">No</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="space-y-2">
                                                 <Label>Item Image</Label>
                                                 <input
                                                     id={`bulkItemImage-${idx}`}
@@ -1362,6 +1387,22 @@ export default function Stage7() {
                                     <Select
                                         value={form.qcRequirement}
                                         onValueChange={(v) => setForm({ ...form, qcRequirement: v })}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="yes">Yes</SelectItem>
+                                            <SelectItem value="no">No</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Warranty Information</Label>
+                                    <Select
+                                        value={form.warrantyClaim}
+                                        onValueChange={(v) => setForm({ ...form, warrantyClaim: v })}
                                     >
                                         <SelectTrigger>
                                             <SelectValue placeholder="Select..." />
