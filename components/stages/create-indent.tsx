@@ -491,18 +491,19 @@ export default function Stage1() {
   };
 
 
-  // submitToSheet: Uses insertIndent GAS action which atomically generates
-  // unique IN-NNN[A/B/C] IDs under a LockService lock, preventing duplicates
-  // when multiple users submit simultaneously.
-  // Returns the generated indent IDs so the counter can be synced.
-  const submitToSheet = async (data: any, attachmentUrl: string): Promise<string[]> => {
-    const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
-    if (!SHEET_API_URL) throw new Error("Sheet API URL is not defined");
+    // submitToSheet: Uses insertIndent GAS action which atomically generates
+    // unique IN-NNN[A/B/C] IDs under a LockService lock, preventing duplicates
+    // when multiple users submit simultaneously.
+    // Returns the generated indent IDs so the counter can be synced.
+    const submitToSheet = async (data: any, attachmentUrl: string): Promise<string[]> => {
+        const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+        if (!SHEET_API_URL) throw new Error("Sheet API URL is not defined");
 
-    // Build rows WITHOUT Col B (index 1) — GAS will fill it with unique IDs
-    const rows = data.items.map((item: any, i: number) => {
-      const d = new Date(new Date().getTime() + i * 1000);
-      const timestamp = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+        // Build rows WITHOUT Col B (index 1) — GAS will fill it with unique IDs
+        const rows = data.items.map((item: any, i: number) => {
+            const d = new Date(new Date().getTime() + i * 1000);
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 
       const row = new Array(70).fill("");
       row[0] = timestamp;                    // A: Timestamp

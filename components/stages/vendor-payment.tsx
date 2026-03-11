@@ -85,10 +85,10 @@ const toDate = (val: any): string => {
 const parseNum = (val: any): number =>
     parseFloat(String(val || 0).replace(/,/g, "")) || 0;
 
-// Google Sheets-compatible timestamp  (M/D/YYYY H:MM:SS)
 const gsNow = (): string => {
     const n = new Date();
-    return `${n.getMonth() + 1}/${n.getDate()}/${n.getFullYear()} ${n.getHours()}:${String(n.getMinutes()).padStart(2, "0")}:${String(n.getSeconds()).padStart(2, "0")}`;
+    const pad = (num: number) => String(num).padStart(2, "0");
+    return `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())} ${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
 };
 
 const safeValue = (val: any) => {

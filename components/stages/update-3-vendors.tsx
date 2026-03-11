@@ -510,8 +510,9 @@ export default function Stage3() {
         // IMPORTANT: Use a sparse array. Do NOT resubmit A-S (0-18) or any other existing data.
         const rowArray: any[] = [];
 
-        // Update T (19) and Vendor blocks
-        rowArray[19] = formatDate(now); // T (ACTUAL2) - Strictly DD/MM/YYYY
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        rowArray[19] = timestamp; // T (ACTUAL2)
 
         const v1Bulk = bulkVendorData[1]?.[id] || {};
         const v2Bulk = bulkVendorData[2]?.[id] || {};

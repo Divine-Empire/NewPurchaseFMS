@@ -34,8 +34,8 @@ import { toast } from "sonner";
 // ─── WARRANTY sheet column map (0-based, headers row 5, data from row 7) ──────
 // A(0): Indent No.  B(1): Lift No.  C(2): Vendor Name  D(3): Invoice No.
 // E(4): Invoice Date  F(5): Invoice Copy  G(6): PO Number  H(7): PO Copy
-// I(8): Qty  J(9): Item-Name  K(10): JSON [{ serialNo, startDate, endDate }]
-// L(11): JSON [startDate]  M(12): JSON [endDate]
+// I(8): Qty  J(9): Item-Name  K(10): Serial No
+// L(11): Start Date  M(12): End Date
 
 const PENDING_COLUMNS = [
     { key: "indentNo", label: "Indent #" },
@@ -232,32 +232,29 @@ export default function WarrantyInfo() {
         try {
             const ts = localTimestamp();
 
-            // 1. batchInsert new row into WARRANTY sheet from row 7
-            const warrantyRow = new Array(15).fill("");
-            warrantyRow[0] = selectedRecord.data.indentNo;    // A: Indent No.
-            warrantyRow[1] = selectedRecord.data.liftNo;      // B: Lift No.
-            warrantyRow[2] = selectedRecord.data.vendorName;  // C: Vendor Name
-            warrantyRow[3] = selectedRecord.data.invoiceNo;   // D: Invoice No.
-            warrantyRow[4] = formatDate(selectedRecord.data.invoiceDate); // E: Invoice Date
-            warrantyRow[5] = selectedRecord.data.invoiceCopy; // F: Invoice Copy
-            warrantyRow[6] = selectedRecord.data.poNumber;    // G: PO Number
-            warrantyRow[7] = selectedRecord.data.poCopy;      // H: PO Copy
-            warrantyRow[8] = selectedRecord.data.receivedQty; // I: Qty
-            warrantyRow[9] = selectedRecord.data.itemName;    // J: Item-Name
-            warrantyRow[10] = JSON.stringify(              // K: Serial Nos (JSON array)
-                entries.map((entry) => entry.serialNo)
-            );
-            warrantyRow[11] = JSON.stringify(              // L: Start Dates (JSON array)
-                entries.map((entry) => entry.startDate)
-            );
-            warrantyRow[12] = JSON.stringify(              // M: End Dates (JSON array)
-                entries.map((entry) => getEndDate(entry))
-            );
+            // 1. batchInsert new rows into WARRANTY sheet from row 7
+            const rowsData = entries.map((entry) => {
+                const warrantyRow = new Array(15).fill("");
+                warrantyRow[0] = selectedRecord.data.indentNo;    // A: Indent No.
+                warrantyRow[1] = selectedRecord.data.liftNo;      // B: Lift No.
+                warrantyRow[2] = selectedRecord.data.vendorName;  // C: Vendor Name
+                warrantyRow[3] = selectedRecord.data.invoiceNo;   // D: Invoice No.
+                warrantyRow[4] = formatDate(selectedRecord.data.invoiceDate); // E: Invoice Date
+                warrantyRow[5] = selectedRecord.data.invoiceCopy; // F: Invoice Copy
+                warrantyRow[6] = selectedRecord.data.poNumber;    // G: PO Number
+                warrantyRow[7] = selectedRecord.data.poCopy;      // H: PO Copy
+                warrantyRow[8] = "1";                             // I: Qty (1 per serial no)
+                warrantyRow[9] = selectedRecord.data.itemName;    // J: Item-Name
+                warrantyRow[10] = entry.serialNo;                 // K: Serial No
+                warrantyRow[11] = entry.startDate;                // L: Start Date
+                warrantyRow[12] = getEndDate(entry);              // M: End Date
+                return warrantyRow;
+            });
 
             const insertParams = new URLSearchParams();
             insertParams.append("action", "batchInsert");
             insertParams.append("sheetName", "WARRANTY");
-            insertParams.append("rowsData", JSON.stringify([warrantyRow]));
+            insertParams.append("rowsData", JSON.stringify(rowsData));
             insertParams.append("startRow", "7");
 
             // 2. Update RECEIVING-ACCOUNTS col DC (index 106) = Actual timestamp

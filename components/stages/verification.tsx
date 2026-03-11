@@ -335,6 +335,10 @@ export default function Stage11() {
       const d = formData.verificationDate;
       const verDateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
       // Iterate and submit for ALL selected records
       for (const rec of selectedRecords) {
         // Create sparse row (DO NOT copy original row)
@@ -346,7 +350,7 @@ export default function Stage11() {
         }
 
         // 61: Actual 10 (Verification Date)
-        rowArray[55] = verDateStr; // BD(55): Actual 5
+        rowArray[55] = timestamp; // BD(55): Actual 5
         // 56 (BE): Delay 5 (Skip)
 
         // 62: Verified Received By

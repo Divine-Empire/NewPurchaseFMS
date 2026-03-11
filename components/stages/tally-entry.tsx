@@ -105,7 +105,9 @@ export default function Stage9() {
     setIsSubmitting(true);
     try {
       const now = new Date();
-      const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      
       const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
 
       // Process sequentially
@@ -115,7 +117,7 @@ export default function Stage9() {
         // AJ (35): Plan2 (Leave)
         // AK (36): Actual2 - Write if Checked=Yes
         if (formData.checkedStatus === "Yes") {
-          rowArray[36] = todayStr;
+          rowArray[36] = timestamp;
         }
 
         // AL (37): Delay2 (Formula - Skip)

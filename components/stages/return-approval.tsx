@@ -316,7 +316,9 @@ export default function Stage13() {
             }
 
             const d = new Date(formData.actualDate);
-            const dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+            const dateStr = timestamp;
 
             // 1-based Write Indices: Y=25, AA=27, AB=28, AC=29
             const updates = [
@@ -369,7 +371,9 @@ export default function Stage13() {
             const imageUrl = await uploadFileToDrive(bulkFormData.returnImage, SHEET_API_URL);
 
             const d = new Date(bulkFormData.actualDate);
-            const dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+            const dateStr = timestamp;
 
             // Process all selected records in parallel (limit concurrency if needed, but here simple parallel is fine)
             // Note: Parallelizing updates across *rows* and *columns* simultaneously

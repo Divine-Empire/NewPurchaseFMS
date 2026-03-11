@@ -286,9 +286,8 @@ export default function Stage4() {
 
     try {
       const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const dd = String(now.getDate()).padStart(2, "0");
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
       // FIX: Start with empty strings to prevent overwriting/reformatting existing cells
       // Only update columns AU (46), AV (47), AW (48), AX (49), AY (50)
@@ -304,7 +303,7 @@ export default function Stage4() {
       const selectedVendorObj = currentVendors.find(v => v && v.id === formData.selectedVendor);
       const selectedVendorName = selectedVendorObj ? selectedVendorObj.name : "";
 
-      rowArray[46] = `${yyyy}-${mm}-${dd}`;       // AU: Current Date (YYYY-MM-DD)
+      rowArray[46] = timestamp;                  // AU: Current Date (YYYY-MM-DD HH:mm:ss)
       // Index 47 is AV - User requested NOT to submit data here
       rowArray[48] = selectedVendorName;         // AW: Vendor Name
       rowArray[49] = formData.approvedBy;        // AX: Approved By
@@ -438,9 +437,8 @@ export default function Stage4() {
 
     try {
       const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const dd = String(now.getDate()).padStart(2, "0");
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
       // Get selected vendor name from common vendors
       const commonVendors = getCommonVendors(bulkRecords);
@@ -450,7 +448,7 @@ export default function Stage4() {
       // Process each record sequentially
       for (const record of bulkRecords) {
         const rowArray = new Array(60).fill("");
-        rowArray[46] = `${yyyy}-${mm}-${dd}`;       // AU: Current Date
+        rowArray[46] = timestamp;                   // AU: Current Date
         rowArray[48] = selectedVendorName;          // AW: Vendor Name
         rowArray[49] = formData.approvedBy;         // AX: Approved By
         rowArray[50] = formData.remarks;            // AY: Remarks

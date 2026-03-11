@@ -252,15 +252,15 @@ export default function WarrantyClaim() {
             const newPending = Math.max(0, currentPending - claiming);
 
             // 1. batchInsert into "Warranty_Claim" from row 6
-            // A=Indent, B=Lift, C=JSON (array of SNs), D=Qty
-            const serialNumbers = entries.map(e => e.serialNo);
-            const singleRow = new Array(4).fill("");
-            singleRow[0] = selectedRecord.data.indentNo;      // A
-            singleRow[1] = selectedRecord.data.liftNo;        // B
-            singleRow[2] = JSON.stringify(serialNumbers);     // C
-            singleRow[3] = claiming.toString();               // D
-
-            const claimRows = [singleRow];
+            // A=Indent, B=Lift, C=Serial No, D=Qty
+            const claimRows = entries.map((entry) => {
+                const row = new Array(4).fill("");
+                row[0] = selectedRecord.data.indentNo;      // A
+                row[1] = selectedRecord.data.liftNo;        // B
+                row[2] = entry.serialNo;                    // C
+                row[3] = "1";                               // D (1 per serial no)
+                return row;
+            });
 
             const insertParams = new URLSearchParams();
             insertParams.append("action", "batchInsert");

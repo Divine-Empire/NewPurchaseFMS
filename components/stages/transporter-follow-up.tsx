@@ -332,15 +332,9 @@ export default function TransporterFollowUp() {
                 ? records.filter(r => selectedRows.has(r.id))
                 : [selectedRecord];
 
-            const timestamp = new Date().toLocaleString("en-US", {
-                month: "2-digit",
-                day: "2-digit",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-                hour12: false
-            });
+            const now = new Date();
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
             // Process sequentially to ensure order and avoid rate limits
             for (const record of recordsToProcess) {
@@ -364,8 +358,7 @@ export default function TransporterFollowUp() {
                 // If status is "Received", update "RECEIVING-ACCOUNTS"
                 if (formData.status === "Received" && record.rowIndex) {
                     const updateRow = new Array(95).fill("");
-                    const currentDate = new Date().toLocaleDateString("en-US");
-                    updateRow[89] = currentDate; // Column CL (Index 89)
+                    updateRow[89] = timestamp; // Column CL (Index 89)
 
                     const updateParams = new URLSearchParams();
                     updateParams.append("action", "update");

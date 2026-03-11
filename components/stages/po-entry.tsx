@@ -370,10 +370,9 @@ export default function Stage5() {
             // Prepare Update Data - Only update specific columns
             const rowArray = new Array(72).fill("");
 
-            // Format current date as YYYY-MM-DD
-            const yyyy = now.getFullYear();
-            const mm = String(now.getMonth() + 1).padStart(2, "0");
-            const dd = String(now.getDate()).padStart(2, "0");
+            // Format current date as YYYY-MM-DD HH:mm:ss
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
             // Calculate per-item packaging share
             const { perItemPkgTotal, perItemPkgBase } = getPkgTotals(
@@ -388,7 +387,7 @@ export default function Stage5() {
             const finalTotalWithTax = (basicVal + existingTax + perItemPkgTotal).toFixed(2);
 
             // Only update the required columns
-            rowArray[52] = `${yyyy}-${mm}-${dd}`;                  // BA: Current Date (Actual 4)
+            rowArray[52] = timestamp;                              // BA: Current Date (Actual 4)
             // BB (Index 53) - User requested skip
             rowArray[54] = commonPONumber;                         // BC: PO Number (shared)
             rowArray[55] = data.basicValue;                        // BD: Basic Value

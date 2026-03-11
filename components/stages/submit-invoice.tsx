@@ -314,15 +314,16 @@ export default function Stage10() {
 
       const now = new Date();
       // submissionDate is from formData.invoiceSubmissionDate
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
       const subDate = formData.invoiceSubmissionDate ? `${formData.invoiceSubmissionDate.getMonth() + 1}/${formData.invoiceSubmissionDate.getDate()}/${formData.invoiceSubmissionDate.getFullYear()}` : "";
-      const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
 
       // Iterate and submit for ALL selected records
       for (const rec of selectedRecords) {
         // Create sparse row (DO NOT copy original row)
         const rowArray = new Array(80).fill("");
         // 49 (AX): Actual 9
-        rowArray[49] = todayStr;
+        rowArray[49] = timestamp;
         // 51 (AZ): Handover By
         rowArray[51] = formData.handoverBy;
         // 53 (BB): Invoice Submission Date

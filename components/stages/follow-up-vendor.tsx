@@ -836,16 +836,15 @@ export default function Stage6() {
         const fmsRow = new Array(70).fill("");
 
         // Only update relevant columns
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, "0");
-        const dd = String(now.getDate()).padStart(2, "0");
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
         // If lifting, update Dispatch Date and Remaining Qty
         if (record.status === "lift-material") {
-          fmsRow[61] = `${yyyy}-${mm}-${dd}`; // BJ (Index 61): Current Date (YYYY-MM-DD)
+          fmsRow[61] = timestamp; // BJ (Index 61): Current Date (YYYY-MM-DD HH:mm:ss)
           // Do NOT touch BL (63) or BM (64) - handled by sheet formula
         } else {
-          fmsRow[61] = `${yyyy}-${mm}-${dd}`;
+          fmsRow[61] = timestamp;
         }
 
         updatesToFMS.push({

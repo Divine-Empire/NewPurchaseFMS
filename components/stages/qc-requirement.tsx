@@ -319,7 +319,9 @@ export default function Stage8() {
     setIsSubmitting(true);
     try {
       const now = new Date();
-      const mDYYYY = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const mDYYYY = timestamp;
       const qcDateFormatted = formData.qcDate
         ? (() => { const d = new Date(formData.qcDate); return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`; })()
         : "";

@@ -363,7 +363,9 @@ export default function Stage7() {
                 ? await uploadFileToDrive(commonData.billAttachment, SHEET_API_URL, folderId)
                 : "";
 
-            const dateStr = new Date().toISOString().split('T')[0];
+            const now = new Date();
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
             // Pre-calculate packaging split once (same for every item)
             const { perItemPkgBase } = getPkgTotals(
@@ -379,7 +381,7 @@ export default function Stage7() {
                     : "";
 
                 const rowArray = new Array(105).fill("");
-                rowArray[20] = dateStr;
+                rowArray[20] = timestamp;
                 rowArray[22] = "independent";
                 rowArray[23] = commonData.invoiceDate;
                 rowArray[24] = commonData.invoiceNumber;
@@ -493,9 +495,12 @@ export default function Stage7() {
                 ? await uploadFileToDrive(form.receivedItemImage, SHEET_API_URL, folderId)
                 : typeof form.receivedItemImage === "string" ? form.receivedItemImage : "";
 
-            const dateStr = new Date().toISOString().split('T')[0];
+            const now = new Date();
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            
             const rowArray = new Array(105).fill("");
-            rowArray[20] = dateStr;               // U: Actual1
+            rowArray[20] = timestamp;               // U: Actual6
             rowArray[22] = "independent";         // W: Invoice Type
             rowArray[23] = form.invoiceDate;      // X
             rowArray[24] = form.invoiceNumber;    // Y
