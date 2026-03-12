@@ -424,7 +424,7 @@ export default function Stage7() {
     /*  Get Vendor Data from Stage-6                                   */
     /* --------------------------------------------------------------- */
     const getVendorData = (record: any) => {
-        const selectedId = record?.data?.selectedVendor || "vendor1";
+        const selectedId = String(record?.data?.selectedVendor || "vendor1");
         const idx = parseInt(selectedId.replace("vendor", ""), 10) || 1;
         return {
             name: record?.data?.[`vendor${idx}Name`] || record?.data?.vendorName || "-",

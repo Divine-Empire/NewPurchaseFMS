@@ -389,7 +389,7 @@ export default function Stage11() {
   const getVendorData = (record: any) => {
     const data = record?.data;
     if (!data) return { name: "-", rate: "-", terms: "-" };
-    const selectedId = data.selectedVendor || "vendor1";
+    const selectedId = String(data.selectedVendor || "vendor1");
     const idx = parseInt(selectedId.replace("vendor", ""), 10) || 1;
     return {
       name: data[`vendor${idx}Name`] || "-",
