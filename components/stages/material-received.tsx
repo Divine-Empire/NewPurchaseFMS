@@ -409,9 +409,6 @@ export default function Stage7() {
                 rowArray[105] = item.duration || "";       // DB: Duration
                 rowArray[106] = item.warrantyExpiry || ""; // DC: Warranty Expiry
                 rowArray[107] = item.productExpiry || "";  // DD: Product Expiry
-                if (item.warrantyClaim === "yes") {
-                    rowArray[108] = timestamp;             // DE: Planned (Stage 8)
-                }
 
                 const params = new URLSearchParams();
                 params.append("action", "update");
@@ -514,9 +511,6 @@ export default function Stage7() {
             rowArray[105] = form.duration || "";       // DB: Duration
             rowArray[106] = form.warrantyExpiry || ""; // DC: Warranty Expiry
             rowArray[107] = form.productExpiry || "";  // DD: Product Expiry
-            if (form.warrantyClaim === "yes") {
-                rowArray[108] = timestamp;             // DE: Planned (Stage 8)
-            }
 
             const params = new URLSearchParams();
             params.append("action", "update");
