@@ -139,6 +139,9 @@ export default function Stage7() {
         receivedQty: string;
         qcRequirement: string;
         warrantyClaim: string;
+        duration: string;
+        warrantyExpiry: string;
+        productExpiry: string;
         receivedItemImage: File | null;
         index: number;
     }[]>([]);
@@ -283,8 +286,11 @@ export default function Stage7() {
         paymentAmountHydra: "",
         paymentAmountLabour: "",
         paymentAmountHamali: "",
-        qcRequirement: "",
-        warrantyClaim: "",
+        qcRequirement: "no",
+        warrantyClaim: "no",
+        duration: "",
+        warrantyExpiry: "",
+        productExpiry: "",
         remarks: "",
         pkgAmount: "",
         pkgGST: "",
@@ -342,7 +348,10 @@ export default function Stage7() {
                 itemName: rec?.data?.itemName || "",
                 receivedQty: "",
                 qcRequirement: "no",
-                warrantyClaim: "",
+                warrantyClaim: "no",
+                duration: "",
+                warrantyExpiry: "",
+                productExpiry: "",
                 receivedItemImage: null,
                 index: rec?.rowIndex || 0
             };
@@ -380,7 +389,7 @@ export default function Stage7() {
                     ? await uploadFileToDrive(item.receivedItemImage, SHEET_API_URL, folderId)
                     : "";
 
-                const rowArray = new Array(105).fill("");
+                const rowArray = new Array(110).fill("");
                 rowArray[20] = timestamp;
                 rowArray[22] = "independent";
                 rowArray[23] = commonData.invoiceDate;
@@ -396,7 +405,13 @@ export default function Stage7() {
                 rowArray[33] = commonData.remarks;
                 rowArray[99] = pkgBaseStr;
                 rowArray[100] = commonData.pkgGST || "";
-                rowArray[104] = item.warrantyClaim || "";  // DA: Warranty Information
+                rowArray[104] = item.warrantyClaim || "";  // DA: Warranty Claim
+                rowArray[105] = item.duration || "";       // DB: Duration
+                rowArray[106] = item.warrantyExpiry || ""; // DC: Warranty Expiry
+                rowArray[107] = item.productExpiry || "";  // DD: Product Expiry
+                if (item.warrantyClaim === "yes") {
+                    rowArray[108] = timestamp;             // DE: Planned (Stage 8)
+                }
 
                 const params = new URLSearchParams();
                 params.append("action", "update");
@@ -420,29 +435,6 @@ export default function Stage7() {
     }, [commonData, bulkItems, getPkgTotals, fetchData]);
 
 
-    /* --------------------------------------------------------------- */
-    /*  Get Vendor Data from Stage-6                                   */
-    /* --------------------------------------------------------------- */
-    const getVendorData = (record: any) => {
-        const selectedId = String(record?.data?.selectedVendor || "vendor1");
-        const idx = parseInt(selectedId.replace("vendor", ""), 10) || 1;
-        return {
-            name: record?.data?.[`vendor${idx}Name`] || record?.data?.vendorName || "-",
-            rate: record?.data?.[`vendor${idx}Rate`] || record?.data?.ratePerQty,
-            terms: record?.data?.[`vendor${idx}Terms`] || record?.data?.paymentTerms,
-            delivery:
-                record?.data?.[`vendor${idx}DeliveryDate`] || record?.data?.deliveryDate,
-            warrantyType:
-                record?.data?.[`vendor${idx}WarrantyType`] || record?.data?.warrantyType,
-            attachment:
-                record?.data?.[`vendor${idx}Attachment`] || record?.data?.vendorAttachment,
-            approvedBy: record?.data?.approvedBy || "-",
-            poNumber: record?.data?.poNumber || "-",
-            basicValue: record?.data?.basicValue || "-",
-            totalWithTax: record?.data?.totalWithTax || "-",
-            poCopy: record?.data?.poCopy,
-        };
-    };
 
     /* --------------------------------------------------------------- */
     /*  Open Modal                                                     */
@@ -466,8 +458,11 @@ export default function Stage7() {
             paymentAmountHydra: "",
             paymentAmountLabour: "",
             paymentAmountHamali: "",
-            qcRequirement: "",
-            warrantyClaim: "",
+            qcRequirement: "no",
+            warrantyClaim: "no",
+            duration: "",
+            warrantyExpiry: "",
+            productExpiry: "",
             remarks: "",
             pkgAmount: "",
             pkgGST: "",
@@ -499,7 +494,7 @@ export default function Stage7() {
             const pad = (n: number) => String(n).padStart(2, "0");
             const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
             
-            const rowArray = new Array(105).fill("");
+            const rowArray = new Array(110).fill("");
             rowArray[20] = timestamp;               // U: Actual6
             rowArray[22] = "independent";         // W: Invoice Type
             rowArray[23] = form.invoiceDate;      // X
@@ -515,7 +510,13 @@ export default function Stage7() {
             rowArray[33] = form.remarks;          // AH
             rowArray[99] = form.pkgAmount || "";  // CV
             rowArray[100] = form.pkgGST || "";     // CW
-            rowArray[104] = form.warrantyClaim || ""; // DA: Warranty Information
+            rowArray[104] = form.warrantyClaim || ""; // DA: Warranty Claim
+            rowArray[105] = form.duration || "";       // DB: Duration
+            rowArray[106] = form.warrantyExpiry || ""; // DC: Warranty Expiry
+            rowArray[107] = form.productExpiry || "";  // DD: Product Expiry
+            if (form.warrantyClaim === "yes") {
+                rowArray[108] = timestamp;             // DE: Planned (Stage 8)
+            }
 
             const params = new URLSearchParams();
             params.append("action", "update");
@@ -899,20 +900,7 @@ export default function Stage7() {
                                     </TableHeader>
                                     <TableBody>
                                         {completed.map((record) => {
-                                            // Get data from stage 7 history entry
-                                            const stage7History = record.history?.find(
-                                                (h: any) => h.stage === 7
-                                            );
-                                            const historyData = stage7History
-                                                ? stage7History.data
-                                                : record.data;
-                                            const lift =
-                                                ((historyData.liftingData as any[]) ?? [])[0] ??
-                                                {};
-                                            const vendor = getVendorData({
-                                                ...record,
-                                                data: historyData,
-                                            });
+                                            const historyData = record.data;
 
                                             return (
                                                 <TableRow key={record.id} className="bg-green-50">
@@ -1080,111 +1068,183 @@ export default function Stage7() {
                     {isBulkMode ? (
                         /* BULK FORM */
                         <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">
-                            {/* Individual Items */}
+                            {/* Individual Items Table */}
                             <div className="space-y-4">
                                 <h3 className="font-semibold text-lg border-b pb-2">Items ({bulkItems.length})</h3>
-                                {bulkItems.map((item, idx) => (
-                                    <div key={item.recordId} className="border p-4 rounded-lg space-y-4">
-                                        <div className="flex items-center gap-4 text-sm font-medium bg-gray-100 p-2 rounded">
-                                            <span>Indent: {item.indentNumber}</span>
-                                            <span>|</span>
-                                            <span>Lift: {item.liftNumber}</span>
-                                            <span>|</span>
-                                            <span>Item: {item.itemName}</span>
-                                        </div>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            <div className="space-y-2">
-                                                <Label>Received Qty <span className="text-red-500">*</span></Label>
-                                                <Input
-                                                    type="number"
-                                                    value={item.receivedQty}
-                                                    onChange={(e) => {
-                                                        const newItems = [...bulkItems];
-                                                        newItems[idx].receivedQty = e.target.value;
-                                                        setBulkItems(newItems);
-                                                    }}
-                                                    required
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>QC Required <span className="text-red-500">*</span></Label>
-                                                <Select
-                                                    value={item.qcRequirement}
-                                                    onValueChange={(v) => {
-                                                        const newItems = [...bulkItems];
-                                                        newItems[idx].qcRequirement = v;
-                                                        setBulkItems(newItems);
-                                                    }}
-                                                >
-                                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="yes">Yes</SelectItem>
-                                                        <SelectItem value="no">No</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>Warranty Information</Label>
-                                                <Select
-                                                    value={item.warrantyClaim}
-                                                    onValueChange={(v) => {
-                                                        const newItems = [...bulkItems];
-                                                        newItems[idx].warrantyClaim = v;
-                                                        setBulkItems(newItems);
-                                                    }}
-                                                >
-                                                    <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="yes">Yes</SelectItem>
-                                                        <SelectItem value="no">No</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>Item Image</Label>
-                                                <input
-                                                    id={`bulkItemImage-${idx}`}
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={(e) => {
-                                                        const newItems = [...bulkItems];
-                                                        newItems[idx].receivedItemImage = e.target.files?.[0] || null;
-                                                        setBulkItems(newItems);
-                                                    }}
-                                                    className="hidden"
-                                                />
-                                                <label
-                                                    htmlFor={`bulkItemImage-${idx}`}
-                                                    className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400"
-                                                >
-                                                    <Upload className="w-6 h-6 text-gray-400 mr-2" />
-                                                    <span className="text-sm text-gray-600">Upload Image</span>
-                                                </label>
-                                                {item.receivedItemImage && (
-                                                    <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
-                                                        <div className="flex items-center">
-                                                            <FileText className="w-4 h-4 text-gray-500 mr-2" />
-                                                            <span className="text-sm text-gray-700">
-                                                                {item.receivedItemImage.name}
-                                                            </span>
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
+                                <div className="border rounded-lg overflow-x-auto">
+                                    <Table>
+                                        <TableHeader className="bg-gray-50">
+                                            <TableRow>
+                                                <TableHead className="w-[200px]">Item Details</TableHead>
+                                                <TableHead className="w-[120px]">Received Qty <span className="text-red-500">*</span></TableHead>
+                                                <TableHead className="w-[120px]">QC Required <span className="text-red-500">*</span></TableHead>
+                                                <TableHead className="w-[150px]">Item Image</TableHead>
+                                                <TableHead className="w-[120px]">Warranty</TableHead>
+                                                {bulkItems.some(i => i.warrantyClaim === "yes") && (
+                                                    <>
+                                                        <TableHead className="w-[100px]">Duration (M)</TableHead>
+                                                        <TableHead className="w-[120px]">Warranty Expiry</TableHead>
+                                                        <TableHead className="w-[150px]">Product Expiry</TableHead>
+                                                    </>
+                                                )}
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {bulkItems.map((item, idx) => (
+                                                <TableRow key={item.recordId}>
+                                                    <TableCell className="text-xs">
+                                                        <div className="font-bold">Ind: {item.indentNumber}</div>
+                                                        <div>Lift: {item.liftNumber}</div>
+                                                        <div className="text-gray-500 truncate max-w-[150px]" title={item.itemName}>{item.itemName}</div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Input
+                                                            type="number"
+                                                            value={item.receivedQty}
+                                                            onChange={(e) => {
                                                                 const newItems = [...bulkItems];
-                                                                newItems[idx].receivedItemImage = null;
+                                                                newItems[idx].receivedQty = e.target.value;
                                                                 setBulkItems(newItems);
                                                             }}
-                                                            className="text-red-600 hover:text-red-800"
+                                                            className="h-8"
+                                                            required
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Select
+                                                            value={item.qcRequirement}
+                                                            onValueChange={(v) => {
+                                                                const newItems = [...bulkItems];
+                                                                newItems[idx].qcRequirement = v;
+                                                                setBulkItems(newItems);
+                                                            }}
                                                         >
-                                                            <X className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                                                            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="yes">Yes</SelectItem>
+                                                                <SelectItem value="no">No</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="space-y-1">
+                                                            <input
+                                                                id={`bulkItemImage-${idx}`}
+                                                                type="file"
+                                                                accept="image/*"
+                                                                onChange={(e) => {
+                                                                    const newItems = [...bulkItems];
+                                                                    newItems[idx].receivedItemImage = e.target.files?.[0] || null;
+                                                                    setBulkItems(newItems);
+                                                                }}
+                                                                className="hidden"
+                                                            />
+                                                            {!item.receivedItemImage ? (
+                                                                <label
+                                                                    htmlFor={`bulkItemImage-${idx}`}
+                                                                    className="flex items-center justify-center h-8 border border-dashed rounded cursor-pointer hover:bg-gray-50 px-2"
+                                                                >
+                                                                    <Upload className="w-3 h-3 mr-1" />
+                                                                    <span className="text-[10px]">Upload</span>
+                                                                </label>
+                                                            ) : (
+                                                                <div className="flex items-center justify-between gap-1 p-1 bg-gray-50 border rounded">
+                                                                    <span className="text-[10px] truncate max-w-[60px]">{item.receivedItemImage.name}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const newItems = [...bulkItems];
+                                                                            newItems[idx].receivedItemImage = null;
+                                                                            setBulkItems(newItems);
+                                                                        }}
+                                                                        className="text-red-600"
+                                                                    >
+                                                                        <X className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Select
+                                                            value={item.warrantyClaim}
+                                                            onValueChange={(v) => {
+                                                                const newItems = [...bulkItems];
+                                                                newItems[idx].warrantyClaim = v;
+                                                                if (v === "no") {
+                                                                    newItems[idx].duration = "";
+                                                                    newItems[idx].warrantyExpiry = "";
+                                                                    newItems[idx].productExpiry = "";
+                                                                }
+                                                                setBulkItems(newItems);
+                                                            }}
+                                                        >
+                                                            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="yes">Yes</SelectItem>
+                                                                <SelectItem value="no">No</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </TableCell>
+                                                    {bulkItems.some(i => i.warrantyClaim === "yes") && (
+                                                        <>
+                                                            <TableCell>
+                                                                {item.warrantyClaim === "yes" ? (
+                                                                    <Input
+                                                                        type="number"
+                                                                        value={item.duration}
+                                                                        onChange={(e) => {
+                                                                            const newItems = [...bulkItems];
+                                                                            newItems[idx].duration = e.target.value;
+                                                                            // Auto-calculate warranty expiry
+                                                                            if (commonData.invoiceDate && e.target.value) {
+                                                                                const date = new Date(commonData.invoiceDate);
+                                                                                const months = parseInt(e.target.value, 10);
+                                                                                if (!isNaN(date.getTime()) && !isNaN(months)) {
+                                                                                    date.setMonth(date.getMonth() + months);
+                                                                                    newItems[idx].warrantyExpiry = date.toISOString().split("T")[0];
+                                                                                }
+                                                                            } else {
+                                                                                newItems[idx].warrantyExpiry = "";
+                                                                            }
+                                                                            setBulkItems(newItems);
+                                                                        }}
+                                                                        className="h-8"
+                                                                        placeholder="Months"
+                                                                    />
+                                                                ) : "-"}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {item.warrantyClaim === "yes" ? (
+                                                                    <Input
+                                                                        value={item.warrantyExpiry}
+                                                                        readOnly
+                                                                        className="h-8 bg-gray-50 text-[10px]"
+                                                                        placeholder="Auto-calc"
+                                                                    />
+                                                                ) : "-"}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {item.warrantyClaim === "yes" ? (
+                                                                    <Input
+                                                                        type="date"
+                                                                        value={item.productExpiry}
+                                                                        onChange={(e) => {
+                                                                            const newItems = [...bulkItems];
+                                                                            newItems[idx].productExpiry = e.target.value;
+                                                                            setBulkItems(newItems);
+                                                                        }}
+                                                                        className="h-8 text-[10px]"
+                                                                    />
+                                                                ) : "-"}
+                                                            </TableCell>
+                                                        </>
+                                                    )}
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
                             </div>
 
                             {/* Common Details */}
@@ -1196,7 +1256,25 @@ export default function Stage7() {
                                         <Input
                                             type="date"
                                             value={commonData.invoiceDate}
-                                            onChange={(e) => setCommonData({ ...commonData, invoiceDate: e.target.value })}
+                                            onChange={(e) => {
+                                                const newDate = e.target.value;
+                                                setCommonData({ ...commonData, invoiceDate: newDate });
+                                                // Trigger recalculation for all bulk items
+                                                if (newDate) {
+                                                    const updatedItems = bulkItems.map(item => {
+                                                        if (item.warrantyClaim === "yes" && item.duration) {
+                                                            const d = new Date(newDate);
+                                                            const months = parseInt(item.duration, 10);
+                                                            if (!isNaN(d.getTime()) && !isNaN(months)) {
+                                                                d.setMonth(d.getMonth() + months);
+                                                                return { ...item, warrantyExpiry: d.toISOString().split("T")[0] };
+                                                            }
+                                                        }
+                                                        return item;
+                                                    });
+                                                    setBulkItems(updatedItems);
+                                                }
+                                            }}
                                             required
                                         />
                                     </div>
@@ -1407,7 +1485,15 @@ export default function Stage7() {
                                     <Label>Warranty Information</Label>
                                     <Select
                                         value={form.warrantyClaim}
-                                        onValueChange={(v) => setForm({ ...form, warrantyClaim: v })}
+                                        onValueChange={(v) => {
+                                            const newForm = { ...form, warrantyClaim: v };
+                                            if (v === "no") {
+                                                newForm.duration = "";
+                                                newForm.warrantyExpiry = "";
+                                                newForm.productExpiry = "";
+                                            }
+                                            setForm(newForm);
+                                        }}
                                     >
                                         <SelectTrigger>
                                             <SelectValue placeholder="Select..." />
@@ -1419,6 +1505,51 @@ export default function Stage7() {
                                     </Select>
                                 </div>
                             </div>
+
+                            {form.warrantyClaim === "yes" && (
+                                <div className="grid grid-cols-3 gap-4 bg-amber-50 p-4 rounded-lg">
+                                    <div className="space-y-2">
+                                        <Label>Duration (Months)</Label>
+                                        <Input
+                                            type="number"
+                                            value={form.duration}
+                                            onChange={(e) => {
+                                                const duration = e.target.value;
+                                                const newForm = { ...form, duration };
+                                                if (form.invoiceDate && duration) {
+                                                    const d = new Date(form.invoiceDate);
+                                                    const months = parseInt(duration, 10);
+                                                    if (!isNaN(d.getTime()) && !isNaN(months)) {
+                                                        d.setMonth(d.getMonth() + months);
+                                                        newForm.warrantyExpiry = d.toISOString().split("T")[0];
+                                                    }
+                                                } else {
+                                                    newForm.warrantyExpiry = "";
+                                                }
+                                                setForm(newForm);
+                                            }}
+                                            placeholder="Months"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Warranty Expiry</Label>
+                                        <Input
+                                            value={form.warrantyExpiry}
+                                            readOnly
+                                            className="bg-gray-100"
+                                            placeholder="Auto-calc"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Product Expiry</Label>
+                                        <Input
+                                            type="date"
+                                            value={form.productExpiry}
+                                            onChange={(e) => setForm({ ...form, productExpiry: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Received Item Image */}
                             <div className="space-y-2">

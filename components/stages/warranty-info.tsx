@@ -25,8 +25,9 @@ import { toast } from "sonner";
 // ─── RECEIVING-ACCOUNTS column map (0-based) ──────────────────────────────────
 // B(1): Indent No.  C(2): Lift No.  D(3): Vendor Name  E(4): PO No.
 // H(7): Item Name   I(8): Lifting Qty  X(23): Invoice Date  Y(24): Invoice No.
-// Z(25): Received Qty  DA(104): Warranty applicable ("yes")
-// DB(105): Planned   DC(106): Actual   DD(107): Delay (untouched)
+// Z(25): Received Qty  DA(104): Warranty Claim  DB(105): Duration
+// DC(106): Warranty Expiry  DD(107): Product Expiry
+// DE(108): Planned   DF(109): Actual
 
 // ─── INDENT-LIFT sheet column map (0-based, headers row 8, data from row 9) ──
 // B(1): Indent No.  BG(58): PO Copy
@@ -68,8 +69,6 @@ const HISTORY_COLUMNS = [
 
 interface WarrantyEntry {
     serialNo: string;
-    startDate: string;
-    durationMonths: string;
 }
 
 // Local timestamp — no timezone suffix
@@ -86,17 +85,6 @@ const formatDate = (val: any): string => {
     if (isNaN(d.getTime())) return str;
     return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 };
-
-const addMonths = (dateStr: string, months: number): string => {
-    if (!dateStr || !months || months <= 0) return "";
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return "";
-    d.setMonth(d.getMonth() + months);
-    return d.toISOString().split("T")[0];
-};
-
-const getEndDate = (entry: WarrantyEntry): string =>
-    addMonths(entry.startDate, parseInt(entry.durationMonths) || 0);
 
 export default function WarrantyInfo() {
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
@@ -144,8 +132,8 @@ export default function WarrantyInfo() {
                 const history: any[] = [];
 
                 allRows.forEach(({ row, raIndex }: any) => {
-                    const planned = String(row[105] || "").trim(); // DB
-                    const actual = String(row[106] || "").trim(); // DC
+                    const planned = String(row[108] || "").trim(); // DE
+                    const actual = String(row[109] || "").trim(); // DF
                     const hasPlan = planned !== "" && planned !== "-";
                     const hasActual = actual !== "" && actual !== "-";
 
@@ -163,6 +151,7 @@ export default function WarrantyInfo() {
                         invoiceNo: row[24] || "",                 // Y
                         invoiceCopy: row[29] || "",                 // AD: Bill Attachment
                         poCopy: fmsRow ? (fmsRow[58] || "") : "", // FMS BG: PO Copy
+                        warrantyExpiry: row[106] || "",            // DC: Warranty Expiry
                         planned,
                         actual,
                     };
@@ -209,7 +198,7 @@ export default function WarrantyInfo() {
         setSelectedRecord(record);
         const qty = Math.max(1, parseInt(record.data.receivedQty) || 1);
         setEntries(Array.from({ length: qty }, () => ({
-            serialNo: "", startDate: "", durationMonths: "",
+            serialNo: "",
         })));
         setOpen(true);
     }, []);
@@ -234,20 +223,26 @@ export default function WarrantyInfo() {
 
             // 1. batchInsert new rows into WARRANTY sheet from row 7
             const rowsData = entries.map((entry) => {
-                const warrantyRow = new Array(15).fill("");
+                const warrantyRow = new Array(8).fill("");
+                
+                // Format the warranty expiry strictly as YYYY-MM-DD
+                let formattedWarrantyEnd = selectedRecord.data.warrantyExpiry;
+                if (formattedWarrantyEnd && formattedWarrantyEnd !== "-") {
+                    const d = new Date(formattedWarrantyEnd);
+                    if (!isNaN(d.getTime())) {
+                        const pad = (n: number) => String(n).padStart(2, "0");
+                        formattedWarrantyEnd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                    }
+                }
+
                 warrantyRow[0] = selectedRecord.data.indentNo;    // A: Indent No.
                 warrantyRow[1] = selectedRecord.data.liftNo;      // B: Lift No.
-                warrantyRow[2] = selectedRecord.data.vendorName;  // C: Vendor Name
-                warrantyRow[3] = selectedRecord.data.invoiceNo;   // D: Invoice No.
-                warrantyRow[4] = formatDate(selectedRecord.data.invoiceDate); // E: Invoice Date
-                warrantyRow[5] = selectedRecord.data.invoiceCopy; // F: Invoice Copy
-                warrantyRow[6] = selectedRecord.data.poNumber;    // G: PO Number
-                warrantyRow[7] = selectedRecord.data.poCopy;      // H: PO Copy
-                warrantyRow[8] = "1";                             // I: Qty (1 per serial no)
-                warrantyRow[9] = selectedRecord.data.itemName;    // J: Item-Name
-                warrantyRow[10] = entry.serialNo;                 // K: Serial No
-                warrantyRow[11] = entry.startDate;                // L: Start Date
-                warrantyRow[12] = getEndDate(entry);              // M: End Date
+                warrantyRow[2] = "";                              // C: Serial Code - auto generated
+                warrantyRow[3] = entry.serialNo;                  // D: Serial No.
+                warrantyRow[4] = selectedRecord.data.vendorName;  // E: Vendor Name
+                warrantyRow[5] = selectedRecord.data.itemName;    // F: Item-Name
+                warrantyRow[6] = formatDate(selectedRecord.data.invoiceDate); // G: Invoice Date
+                warrantyRow[7] = formattedWarrantyEnd;            // H: Warranty End
                 return warrantyRow;
             });
 
@@ -257,10 +252,10 @@ export default function WarrantyInfo() {
             insertParams.append("rowsData", JSON.stringify(rowsData));
             insertParams.append("startRow", "7");
 
-            // 2. Update RECEIVING-ACCOUNTS col DC (index 106) = Actual timestamp
-            //    Leave Planned (DB=105) and Delay (DD=107) untouched (sent as "")
-            const raRow = new Array(107).fill("");
-            raRow[106] = ts; // DC: Actual
+            // 2. Update RECEIVING-ACCOUNTS col DF (index 109) = Actual timestamp
+            //    Leave Planned (DE=108) untouched (sent as "")
+            const raRow = new Array(110).fill("");
+            raRow[109] = ts; // DF: Actual
 
             const updateParams = new URLSearchParams();
             updateParams.append("action", "update");
@@ -295,7 +290,7 @@ export default function WarrantyInfo() {
 
     const formValid = useMemo(() =>
         entries.length > 0 &&
-        entries.every((e) => e.serialNo.trim() && e.startDate && e.durationMonths && getEndDate(e)),
+        entries.every((e) => e.serialNo.trim() !== ""),
         [entries]
     );
 
@@ -319,7 +314,7 @@ export default function WarrantyInfo() {
         }
 
         // Date columns
-        if (key === "invoiceDate" || key === "planned" || key === "actual") {
+        if (key === "invoiceDate" || key === "planned" || key === "actual" || key === "warrantyEnd") {
             return formatDate(val);
         }
 
@@ -442,7 +437,7 @@ export default function WarrantyInfo() {
 
             {/* ── DIALOG ── */}
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+                <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
                     <DialogHeader className="shrink-0">
                         <DialogTitle>Warranty Information</DialogTitle>
                         {selectedRecord && (
@@ -458,40 +453,22 @@ export default function WarrantyInfo() {
                     <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
                         {/* Column headers */}
                         <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 py-2 border-b shrink-0">
-                            <div className="col-span-1 text-center">#</div>
-                            <div className="col-span-3">Serial No. *</div>
-                            <div className="col-span-3">Start Date *</div>
-                            <div className="col-span-2">Duration (mo.) *</div>
-                            <div className="col-span-3">End Date</div>
+                            <div className="col-span-2 text-center">#</div>
+                            <div className="col-span-10">Serial No. *</div>
                         </div>
 
                         {/* Scrollable rows */}
                         <div className="flex-1 overflow-y-auto space-y-2 py-3 pr-1">
                             {entries.map((entry, idx) => {
-                                const ed = getEndDate(entry);
                                 return (
                                     <div key={idx} className="grid grid-cols-12 gap-2 items-center px-1">
-                                        <div className="col-span-1 text-center text-sm font-medium text-gray-500">
+                                        <div className="col-span-2 text-center text-sm font-medium text-gray-500">
                                             {idx + 1}
                                         </div>
-                                        <div className="col-span-3">
+                                        <div className="col-span-10">
                                             <Input value={entry.serialNo}
                                                 onChange={(e) => updateEntry(idx, "serialNo", e.target.value)}
-                                                placeholder="S/N" className="h-8 text-sm" required />
-                                        </div>
-                                        <div className="col-span-3">
-                                            <Input type="date" value={entry.startDate}
-                                                onChange={(e) => updateEntry(idx, "startDate", e.target.value)}
-                                                className="h-8 text-sm" required />
-                                        </div>
-                                        <div className="col-span-2">
-                                            <Input type="number" min="1" value={entry.durationMonths}
-                                                onChange={(e) => updateEntry(idx, "durationMonths", e.target.value)}
-                                                placeholder="12" className="h-8 text-sm" required />
-                                        </div>
-                                        <div className="col-span-3">
-                                            <Input value={ed ? formatDate(ed) : "—"} readOnly
-                                                className="h-8 text-sm bg-gray-50 text-gray-600 cursor-not-allowed" />
+                                                placeholder="Enter Serial Number" className="h-8 text-sm" required />
                                         </div>
                                     </div>
                                 );
