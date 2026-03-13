@@ -208,11 +208,12 @@ export default function WarrantyClaim() {
 
             // Prepare batch insert for Warranty_Claim
             const claimRows = selectedRecords.map(rec => {
-                const row = new Array(4).fill("");
+                const row = new Array(5).fill("");
                 row[0] = rec.data.indentNo;      // A
                 row[1] = rec.data.liftNo;        // B
                 row[2] = rec.data.serialNo;      // C
                 row[3] = "1";                    // D
+                row[4] = ts;                     // E: Local Timestamp
                 return row;
             });
 

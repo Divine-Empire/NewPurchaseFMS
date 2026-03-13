@@ -47,7 +47,11 @@ import {
   Plus,
   Package,
   Users,
+  Loader2,
+  ShieldAlert,
+  Settings2,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -56,93 +60,35 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // === NEW DATA (DIFFERENT FROM MOCK) ===
 // Mock data removed or kept for other tabs if needed, but InTransit tab will override.
 const inTransitDataMock = [
-  {
-    erp: 892,
-    material: "MS Billet",
-    party: "JINDAL STEEL WORKS",
-    truck: "RJ14GA1234",
-    date: "02/11/2025",
-    qty: 120.5,
-  },
-  {
-    erp: 879,
-    material: "Ferro Chrome",
-    party: "TATA METALIKS",
-    truck: "WB19AB5678",
-    date: "02/11/2025",
-    qty: 45.2,
-  },
-  {
-    erp: 875,
-    material: "Silico Manganese",
-    party: "MAITHAN ALLOYS",
-    truck: "OR05CD9012",
-    date: "01/11/2025",
-    qty: 88.7,
-  },
-  {
-    erp: 861,
-    material: "Sponge Iron",
-    party: "RASHMI METALIKS",
-    truck: "CG07XY4455",
-    date: "01/11/2025",
-    qty: 67.3,
-  },
-  {
-    erp: 849,
-    material: "MS Scrap",
-    party: "BHUSHAN TRADERS",
-    truck: "MH12PQ8899",
-    date: "31/10/2025",
-    qty: 29.1,
-  },
-  {
-    erp: 837,
-    material: "Pig Iron",
-    party: "NEELACHAL ISPAT",
-    truck: "OD02LM3344",
-    date: "30/10/2025",
-    qty: 55.8,
-  },
-  {
-    erp: 824,
-    material: "MS Ingot",
-    party: "VANDANA STEELS",
-    truck: "CG04AB1122",
-    date: "29/10/2025",
-    qty: 41.6,
-  },
-  {
-    erp: 811,
-    material: "Ferro Silicon",
-    party: "IMFA LTD",
-    truck: "OR11JK5566",
-    date: "28/10/2025",
-    qty: 33.9,
-  },
-  {
-    erp: 799,
-    material: "MS Billet",
-    party: "ELECTROSTEEL",
-    truck: "WB25MN7788",
-    date: "27/10/2025",
-    qty: 95.4,
-  },
-  {
-    erp: 788,
-    material: "Sponge Iron",
-    party: "JAI BALAJI",
-    truck: "CG10EF9900",
-    date: "26/10/2025",
-    qty: 72.1,
-  },
+  // ... existing mock data ...
 ];
 
-// Mock data removed or kept for other tabs if needed, but Receive tab will override.
+// Helper to format date to yyyy-mm-dd
+const formatToDisplayDate = (dateStr: string) => {
+  if (!dateStr) return "-";
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    return `${year}-${month}-${day}`;
+  } catch (e) {
+    return dateStr;
+  }
+};
 const receivedDataMock = [
   {
     erp: 891,
@@ -416,6 +362,7 @@ export default function PurchaseDashboard() {
   const [inTransitSearch, setInTransitSearch] = useState("");
   const [receivedSearch, setReceivedSearch] = useState("");
   const [pendingSearch, setPendingSearch] = useState("");
+  const [warrantySearch, setWarrantySearch] = useState("");
 
   // Forms modal states
   const [formsMenuOpen, setFormsMenuOpen] = useState(false);
@@ -458,6 +405,21 @@ export default function PurchaseDashboard() {
     key: "erp",
     direction: "asc",
   });
+  const [warrantySort, setWarrantySort] = useState({
+    key: "indentNo",
+    direction: "desc",
+  });
+
+  const [warrantyVisibleColumns, setWarrantyVisibleColumns] = useState<string[]>([
+    "indentNo",
+    "liftNo",
+    "serialCode",
+    "serialNo",
+    "vendorName",
+    "itemName",
+    "invoiceDate",
+    "warrantyEnd"
+  ]);
 
   const [totalPurchaseOrders, setTotalPurchaseOrders] = useState<number | null>(null);
   const [pendingPOs, setPendingPOs] = useState<number | null>(null);
@@ -467,10 +429,13 @@ export default function PurchaseDashboard() {
   const [receivedItems, setReceivedItems] = useState<any[]>([]);
   const [inTransitItems, setInTransitItems] = useState<any[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<any[]>([]);
+  const [warrantyItems, setWarrantyItems] = useState<any[]>([]);
   const [overviewItems, setOverviewItems] = useState<any[]>([]);
   const [stageCounts, setStageCounts] = useState<any>({});
+  const [stageOverdueCounts, setStageOverdueCounts] = useState<any>({});
   const [topReceivedOrders, setTopReceivedOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   useEffect(() => {
     const fetchPOData = async () => {
@@ -614,6 +579,7 @@ export default function PurchaseDashboard() {
             "PO Entry": 0,
             "Follow-Up Vendor": 0,
           };
+          const overdueCounts = { ...counts };
 
           if (totalRows > 6) {
             for (let i = 6; i < totalRows; i++) {
@@ -637,21 +603,27 @@ export default function PurchaseDashboard() {
 
               // Indent Approval: J (9) yes, K (10) no
               if (has(9) && missing(10)) counts["Indent Approval"]++;
+              if (missing(10) && has(11)) overdueCounts["Indent Approval"]++;
 
               // Update 3 Vendors: S (18) yes, T (19) no
               if (has(18) && missing(19)) counts["Update 3 Vendors"]++;
+              if (missing(19) && has(20)) overdueCounts["Update 3 Vendors"]++;
 
               // Negotiation: AT (45) yes, AU (46) no
               if (has(45) && missing(46)) counts["Negotiation"]++;
+              if (missing(46) && has(47)) overdueCounts["Negotiation"]++;
 
               // PO Entry: AZ (51) yes, BA (52) no
               if (has(51) && missing(52)) counts["PO Entry"]++;
+              if (missing(52) && has(53)) overdueCounts["PO Entry"]++;
 
               // Follow-Up Vendor: BI (60) yes, BJ (61) no
               if (has(60) && missing(61)) counts["Follow-Up Vendor"]++;
+              if (missing(61) && has(62)) overdueCounts["Follow-Up Vendor"]++;
             }
           }
           setStageCounts((prev: any) => ({ ...prev, ...counts }));
+          setStageOverdueCounts((prev: any) => ({ ...prev, ...overdueCounts }));
 
           // Calculate Completion Rate
           const rate = count > 0 ? (completedCount / count) * 100 : 0;
@@ -766,6 +738,7 @@ export default function PurchaseDashboard() {
             "Verification by Accounts": 0,
             "Purchase Return": 0,
           };
+          const overdueRecCounts = { ...recCounts, "Material Received": 0 };
 
           // Data starts from row 7 (index 6)
           for (let i = 6; i < rows.length; i++) {
@@ -775,22 +748,31 @@ export default function PurchaseDashboard() {
             const has = (idx: number) => row[idx] !== null && row[idx] !== "" && row[idx] !== undefined;
             const missing = (idx: number) => row[idx] === null || row[idx] === "" || row[idx] === undefined;
 
+            // Material Received Overdue: T (19) yes, U (20) no, V (21) yes
+            if (missing(20) && has(21)) overdueRecCounts["Material Received"]++;
+
             // QC Requirement: AI (34) yes, AJ (35) no
             if (has(34) && missing(35)) recCounts["QC Requirement"]++;
+            if (missing(35) && has(36)) overdueRecCounts["QC Requirement"]++;
 
             // Receipt in Tally: AS (44) yes, AT (45) no
             if (has(44) && missing(45)) recCounts["Receipt in Tally"]++;
+            if (missing(45) && has(46)) overdueRecCounts["Receipt in Tally"]++;
 
             // Submit Invoice: AY (50) yes, AZ (51) no
             if (has(50) && missing(51)) recCounts["Submit Invoice"]++;
+            if (missing(51) && has(52)) overdueRecCounts["Submit Invoice"]++;
 
             // Verification: BE (56) yes, BF (57) no
             if (has(56) && missing(57)) recCounts["Verification by Accounts"]++;
+            if (missing(57) && has(58)) overdueRecCounts["Verification by Accounts"]++;
 
             // Purchase Return: BL (63) yes, BM (64) no
             if (has(63) && missing(64)) recCounts["Purchase Return"]++;
+            if (missing(64) && has(65)) overdueRecCounts["Purchase Return"]++;
           }
           setStageCounts((prev: any) => ({ ...prev, ...recCounts }));
+          setStageOverdueCounts((prev: any) => ({ ...prev, ...overdueRecCounts }));
         }
       } catch (error) {
         console.error("Error fetching received data:", error);
@@ -851,13 +833,57 @@ export default function PurchaseDashboard() {
       }
     };
 
+    const fetchWarrantyData = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URI}?sheet=WARRANTY`);
+        const result = await response.json();
+
+        if (result.success && result.data) {
+          const rows = result.data;
+          const parsedWarranty = [];
+
+          // Data starts from row 7 (index 6)
+          for (let i = 6; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || row.length < 8) continue;
+            
+            // Filter out empty rows (check Indent No and Vendor Name)
+            const indentNo = row[0] ? String(row[0]).trim() : "";
+            const vendorName = row[4] ? String(row[4]).trim() : "";
+            
+            if (!indentNo && !vendorName) continue;
+
+            parsedWarranty.push({
+              indentNo: indentNo,
+              liftNo: row[1] ? String(row[1]).trim() : "",
+              serialCode: row[2] ? String(row[2]).trim() : "",
+              serialNo: row[3] ? String(row[3]).trim() : "",
+              vendorName: vendorName,
+              itemName: row[5] ? String(row[5]).trim() : "",
+              invoiceDate: row[6] ? String(row[6]).trim() : "",
+              warrantyEnd: row[7] ? String(row[7]).trim() : "",
+              // Map to common fields for filters
+              party: vendorName,
+              material: row[5] ? String(row[5]).trim() : "",
+              date: row[6] ? String(row[6]).trim() : "",
+              erp: indentNo
+            });
+          }
+          setWarrantyItems(parsedWarranty);
+        }
+      } catch (error) {
+        console.error("Error fetching warranty data:", error);
+      }
+    };
+
     const fetchAll = async () => {
       setLoading(true);
       await Promise.all([
         fetchPOData(),
         fetchReceivedData(),
         fetchVendorPayments(),
-        fetchFreightPayments()
+        fetchFreightPayments(),
+        fetchWarrantyData()
       ]);
       setLoading(false);
     };
@@ -866,7 +892,7 @@ export default function PurchaseDashboard() {
   }, []);
 
   // Compute unique values for filters
-  const allData = [...inTransitItems, ...receivedItems, ...purchaseItems];
+  const allData = [...inTransitItems, ...receivedItems, ...purchaseItems, ...warrantyItems];
   const uniqueParties = [...new Set(allData.map((item) => item.party))].filter(Boolean).sort();
   const uniqueMaterials = [
     ...new Set(allData.map((item) => item.material)),
@@ -929,6 +955,7 @@ export default function PurchaseDashboard() {
   // const filteredReceivedData = applyFilters(receivedData, "received"); // Replacing with dynamic
   const filteredReceivedData = applyFilters(receivedItems, "received");
   const filteredPendingData = applyFilters(purchaseItems, "pending");
+  const filteredWarrantyData = applyFilters(warrantyItems, "warranty");
 
   // Sorting function
   const sortData = (data: any[], sortConfig: any) => {
@@ -954,31 +981,48 @@ export default function PurchaseDashboard() {
   const sortedInTransitData = sortData(filteredInTransitData, inTransitSort);
   const sortedReceivedData = sortData(filteredReceivedData, receivedSort);
   const sortedPendingData = sortData(filteredPendingData, pendingSort);
+  const sortedWarrantyData = sortData(filteredWarrantyData, warrantySort);
 
   // Apply search
   const searchData = (data: any[], searchTerm: string) => {
     if (!searchTerm) return data;
+    const term = searchTerm.toLowerCase();
     return data.filter(
       (item: any) =>
-        item.erp.toString().includes(searchTerm.toLowerCase()) ||
-        item.material.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.party.toLowerCase().includes(searchTerm.toLowerCase())
+        (item.erp && item.erp.toString().toLowerCase().includes(term)) ||
+        (item.material && item.material.toLowerCase().includes(term)) ||
+        (item.party && item.party.toLowerCase().includes(term)) ||
+        // Warranty specific fields
+        (item.indentNo && item.indentNo.toString().toLowerCase().includes(term)) ||
+        (item.liftNo && item.liftNo.toString().toLowerCase().includes(term)) ||
+        (item.serialNo && item.serialNo.toString().toLowerCase().includes(term))
     );
   };
 
   const finalInTransitData = searchData(sortedInTransitData, inTransitSearch);
   const finalReceivedData = searchData(sortedReceivedData, receivedSearch);
   const finalPendingData = searchData(sortedPendingData, pendingSearch);
+  const finalWarrantyData = searchData(sortedWarrantyData, warrantySearch);
 
   // Export to CSV function
-  const exportToCSV = (data: any[], filename: string) => {
+  const exportToCSV = (data: any[], filename: string, visibleColumns?: string[]) => {
     if (data.length === 0) return;
 
-    const headers = Object.keys(data[0]);
+    const allHeaders = Object.keys(data[0]);
+    // If visibleColumns is provided, only use those. Otherwise use all headers.
+    const headers = visibleColumns ? allHeaders.filter(h => visibleColumns.includes(h)) : allHeaders;
+
     const csvContent = [
-      headers.join(","),
+      headers.map(h => h.toUpperCase()).join(","),
       ...data.map((row: any) =>
-        headers.map((header) => `"${row[header]}"`).join(",")
+        headers.map((header) => {
+          let val = row[header];
+          // Format date fields in CSV if they look like dates
+          if (header.toLowerCase().includes("date") || header.toLowerCase().includes("end")) {
+            val = formatToDisplayDate(val);
+          }
+          return `"${val}"`;
+        }).join(",")
       ),
     ].join("\n");
 
@@ -991,6 +1035,118 @@ export default function PurchaseDashboard() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleGenerateReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const { pdf } = await import("@react-pdf/renderer");
+      const { ReportDocument } = await import("./report-pdf");
+
+      const API = process.env.NEXT_PUBLIC_API_URI;
+      const [fmsRes, raRes] = await Promise.all([
+        fetch(`${API}?sheet=INDENT-LIFT`),
+        fetch(`${API}?sheet=RECEIVING-ACCOUNTS`),
+      ]);
+      const [fmsJson, raJson] = await Promise.all([fmsRes.json(), raRes.json()]);
+
+      if (!fmsJson.success || !raJson.success) throw new Error("Failed fetching data");
+
+      const fmsRows = fmsJson.data;
+      const raRows = raJson.data;
+
+      const getResp = (rows: any[], colIdx: number) => {
+        if (!rows || rows.length < 3) return "-";
+        const r3 = rows[2];
+        if (!r3) return "-";
+        // Iterate backwards from the start column of the stage to find merged actual text
+        for (let i = colIdx; i >= 0; i--) {
+          if (r3[i] && String(r3[i]).trim() !== "") return String(r3[i]).trim();
+        }
+        return "-";
+      };
+
+      const respMap: Record<string, string> = {
+        "Indent Approval": getResp(fmsRows, 9),
+        "Update 3 Vendors": getResp(fmsRows, 18),
+        "Negotiation": getResp(fmsRows, 45),
+        "PO Entry": getResp(fmsRows, 51),
+        "Follow-Up Vendor": getResp(fmsRows, 60),
+        "Material Received": getResp(raRows, 19),
+        "QC Requirement": getResp(raRows, 34),
+        "Receipt in Tally": getResp(raRows, 44),
+        "Submit Invoice": getResp(raRows, 50),
+        "Verification by Accounts": getResp(raRows, 56),
+        "Purchase Return": getResp(raRows, 63),
+      };
+
+      const counts: Record<string, number> = {
+        "Indent Approval": 0, "Update 3 Vendors": 0, "Negotiation": 0,
+        "PO Entry": 0, "Follow-Up Vendor": 0, "Material Received": 0,
+        "QC Requirement": 0, "Receipt in Tally": 0, "Submit Invoice": 0,
+        "Verification by Accounts": 0, "Purchase Return": 0,
+      };
+
+      const detailed: any[] = [];
+
+      const fmsHas = (r: any, idx: number) => r[idx] !== null && r[idx] !== undefined && String(r[idx]).trim() !== "";
+      const fmsMiss = (r: any, idx: number) => !fmsHas(r, idx);
+
+      // FMS loop
+      for (let i = 6; i < fmsRows.length; i++) {
+        const r = fmsRows[i];
+        if (!r) continue;
+
+        const pushDet = (stage: string) => detailed.push({
+           indent: r[1] || "-", party: r[3] || "-", item: r[4] || "-", qty: r[5] || "-", stage
+        });
+
+        if (fmsHas(r, 9) && fmsMiss(r, 10)) { counts["Indent Approval"]++; pushDet("Indent Approval"); }
+        if (fmsHas(r, 18) && fmsMiss(r, 19)) { counts["Update 3 Vendors"]++; pushDet("Update 3 Vendors"); }
+        if (fmsHas(r, 45) && fmsMiss(r, 46)) { counts["Negotiation"]++; pushDet("Negotiation"); }
+        if (fmsHas(r, 51) && fmsMiss(r, 52)) { counts["PO Entry"]++; pushDet("PO Entry"); }
+        if (fmsHas(r, 60) && fmsMiss(r, 61)) { counts["Follow-Up Vendor"]++; pushDet("Follow-Up Vendor"); }
+      }
+
+      // RA loop
+      for (let i = 6; i < raRows.length; i++) {
+        const r = raRows[i];
+        if (!r) continue;
+
+        const pushDet = (stage: string) => detailed.push({
+           indent: r[1] || "-", party: r[3] || "-", item: r[7] || "-", qty: r[8] || "-", stage
+        });
+
+        if (fmsHas(r, 19) && fmsMiss(r, 20)) { counts["Material Received"]++; pushDet("Material Received"); }
+        if (fmsHas(r, 34) && fmsMiss(r, 35)) { counts["QC Requirement"]++; pushDet("QC Requirement"); }
+        if (fmsHas(r, 44) && fmsMiss(r, 45)) { counts["Receipt in Tally"]++; pushDet("Receipt in Tally"); }
+        if (fmsHas(r, 50) && fmsMiss(r, 51)) { counts["Submit Invoice"]++; pushDet("Submit Invoice"); }
+        if (fmsHas(r, 56) && fmsMiss(r, 57)) { counts["Verification by Accounts"]++; pushDet("Verification by Accounts"); }
+        if (fmsHas(r, 63) && fmsMiss(r, 64)) { counts["Purchase Return"]++; pushDet("Purchase Return"); }
+      }
+
+      const summaryData = purchaseStages
+        .filter(s => counts[s.name] > 0)
+        .map(s => ({
+          stage: s.name,
+          pending: counts[s.name],
+          responsible: respMap[s.name] || "-",
+        }));
+
+      const blob = await pdf(<ReportDocument summaryData={summaryData} detailedData={detailed} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Purchase_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to generate report");
+    } finally {
+      setIsGeneratingReport(false);
+    }
   };
 
   return (
@@ -1112,7 +1268,7 @@ export default function PurchaseDashboard() {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-11">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 h-11">
           <TabsTrigger value="overview" className="text-xs sm:text-sm">
             Overview
           </TabsTrigger>
@@ -1124,6 +1280,9 @@ export default function PurchaseDashboard() {
           </TabsTrigger>
           <TabsTrigger value="received" className="text-xs sm:text-sm">
             Received
+          </TabsTrigger>
+          <TabsTrigger value="warranty" className="text-xs sm:text-sm">
+            Warranty
           </TabsTrigger>
         </TabsList>
 
@@ -1190,13 +1349,24 @@ export default function PurchaseDashboard() {
 
           {/* Pending Items by Stage */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">
-                Pending Items by Stage
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Track all pending items across different purchase stages
-              </p>
+            <CardHeader className="pb-3 flex flex-row items-start justify-between">
+              <div>
+                <CardTitle className="text-sm font-medium">
+                  Pending Items by Stage
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Track all pending items across different purchase stages
+                </p>
+              </div>
+              <Button 
+                variant="default"
+                className="bg-blue-600 hover:bg-blue-700 h-8 text-xs flex items-center"
+                onClick={handleGenerateReport}
+                disabled={isGeneratingReport}
+              >
+                {isGeneratingReport ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <FileText className="w-3.5 h-3.5 mr-1.5" />}
+                {isGeneratingReport ? "Generating..." : "Generate Report"}
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -1205,6 +1375,9 @@ export default function PurchaseDashboard() {
                     <TableHead className="text-xs w-[200px]">Stage</TableHead>
                     <TableHead className="text-xs text-right w-[100px]">
                       Pending
+                    </TableHead>
+                    <TableHead className="text-xs text-right w-[100px]">
+                      Pending Overdue
                     </TableHead>
                     <TableHead className="text-xs w-[200px]">Status</TableHead>
                   </TableRow>
@@ -1218,6 +1391,8 @@ export default function PurchaseDashboard() {
                       dynamicCount = stageCounts[stage.name];
                     }
 
+                    let overdueCount = stageOverdueCounts[stage.name] || 0;
+
                     return (
                       <TableRow key={stage.id} className="hover:bg-gray-50">
                         <TableCell className="text-xs font-medium">
@@ -1230,6 +1405,9 @@ export default function PurchaseDashboard() {
                         </TableCell>
                         <TableCell className="text-xs text-right text-muted-foreground">
                           {dynamicCount}
+                        </TableCell>
+                        <TableCell className="text-xs text-right text-red-500 font-medium">
+                          {overdueCount > 0 ? overdueCount : "-"}
                         </TableCell>
                         <TableCell className="text-xs">
                           <div className="flex items-center gap-2">
@@ -1905,6 +2083,204 @@ export default function PurchaseDashboard() {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* WARRANTY TAB */}
+        <TabsContent value="warranty" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-amber-600" />
+              <h3 className="text-lg font-semibold">Warranty Information</h3>
+            </div>
+            <Badge variant="secondary" className="bg-amber-50 text-amber-700">
+              {finalWarrantyData.length} Items
+            </Badge>
+          </div>
+
+          {/* Search */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <Input
+              placeholder="Search by Indent, serial, or vendor..."
+              value={warrantySearch}
+              onChange={(e) => setWarrantySearch(e.target.value)}
+              className="flex-1 sm:max-w-sm"
+            />
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="flex items-center gap-1">
+                    <Settings2 className="h-3 w-3" />
+                    <span>Columns</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {[
+                    { id: "indentNo", label: "Indent No." },
+                    { id: "liftNo", label: "Lift No." },
+                    { id: "serialCode", label: "Serial-Code" },
+                    { id: "serialNo", label: "Serial No." },
+                    { id: "vendorName", label: "Vendor Name" },
+                    { id: "itemName", label: "Item-Name" },
+                    { id: "invoiceDate", label: "Invoice Date" },
+                    { id: "warrantyEnd", label: "Warranty End" },
+                  ].map((col) => (
+                    <DropdownMenuCheckboxItem
+                      key={col.id}
+                      checked={warrantyVisibleColumns.includes(col.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setWarrantyVisibleColumns([...warrantyVisibleColumns, col.id]);
+                        } else {
+                          setWarrantyVisibleColumns(warrantyVisibleColumns.filter(c => c !== col.id));
+                        }
+                      }}
+                    >
+                      {col.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  exportToCSV(finalWarrantyData, "warranty-data.csv", warrantyVisibleColumns)
+                }
+                className="flex items-center justify-center gap-1"
+              >
+                <Download className="h-3 w-3" />
+                <span className="hidden sm:inline">Export CSV</span>
+                <span className="sm:hidden">Export</span>
+              </Button>
+            </div>
+          </div>
+
+          <Card>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {warrantyVisibleColumns.includes("indentNo") && (
+                      <TableHead
+                        className="text-xs cursor-pointer hover:bg-gray-50"
+                        onClick={() =>
+                          setWarrantySort({
+                            key: "indentNo",
+                            direction:
+                              warrantySort.key === "indentNo" &&
+                                warrantySort.direction === "asc"
+                                ? "desc"
+                                : "asc",
+                          })
+                        }
+                      >
+                        Indent No.{" "}
+                        {warrantySort.key === "indentNo" &&
+                          (warrantySort.direction === "asc" ? "↑" : "↓")}
+                      </TableHead>
+                    )}
+                    {warrantyVisibleColumns.includes("liftNo") && <TableHead className="text-xs">Lift No.</TableHead>}
+                    {warrantyVisibleColumns.includes("serialCode") && <TableHead className="text-xs">Serial-Code</TableHead>}
+                    {warrantyVisibleColumns.includes("serialNo") && (
+                      <TableHead
+                        className="text-xs cursor-pointer hover:bg-gray-50"
+                        onClick={() =>
+                          setWarrantySort({
+                            key: "serialNo",
+                            direction:
+                              warrantySort.key === "serialNo" &&
+                                warrantySort.direction === "asc"
+                                ? "desc"
+                                : "asc",
+                          })
+                        }
+                      >
+                        Serial No.{" "}
+                        {warrantySort.key === "serialNo" &&
+                          (warrantySort.direction === "asc" ? "↑" : "↓")}
+                      </TableHead>
+                    )}
+                    {warrantyVisibleColumns.includes("vendorName") && (
+                      <TableHead
+                        className="text-xs cursor-pointer hover:bg-gray-50"
+                        onClick={() =>
+                          setWarrantySort({
+                            key: "vendorName",
+                            direction:
+                              warrantySort.key === "vendorName" &&
+                                warrantySort.direction === "asc"
+                                ? "desc"
+                                : "asc",
+                          })
+                        }
+                      >
+                        Vendor Name{" "}
+                        {warrantySort.key === "vendorName" &&
+                          (warrantySort.direction === "asc" ? "↑" : "↓")}
+                      </TableHead>
+                    )}
+                    {warrantyVisibleColumns.includes("itemName") && (
+                      <TableHead
+                        className="text-xs cursor-pointer hover:bg-gray-50"
+                        onClick={() =>
+                          setWarrantySort({
+                            key: "itemName",
+                            direction:
+                              warrantySort.key === "itemName" &&
+                                warrantySort.direction === "asc"
+                                ? "desc"
+                                : "asc",
+                          })
+                        }
+                      >
+                        Item-Name{" "}
+                        {warrantySort.key === "itemName" &&
+                          (warrantySort.direction === "asc" ? "↑" : "↓")}
+                      </TableHead>
+                    )}
+                    {warrantyVisibleColumns.includes("invoiceDate") && <TableHead className="text-xs">Invoice Date</TableHead>}
+                    {warrantyVisibleColumns.includes("warrantyEnd") && <TableHead className="text-xs">Warranty End</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {finalWarrantyData.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={warrantyVisibleColumns.length} className="text-center py-8 text-muted-foreground">
+                          No warranty data available
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      finalWarrantyData.map((item: any, idx: number) => (
+                        <TableRow key={idx}>
+                          {warrantyVisibleColumns.includes("indentNo") && (
+                            <TableCell className="font-medium text-xs">
+                              {item.indentNo}
+                            </TableCell>
+                          )}
+                          {warrantyVisibleColumns.includes("liftNo") && <TableCell className="text-xs">{item.liftNo}</TableCell>}
+                          {warrantyVisibleColumns.includes("serialCode") && <TableCell className="text-xs">{item.serialCode}</TableCell>}
+                          {warrantyVisibleColumns.includes("serialNo") && <TableCell className="text-xs">{item.serialNo}</TableCell>}
+                          {warrantyVisibleColumns.includes("vendorName") && <TableCell className="text-xs">{item.vendorName}</TableCell>}
+                          {warrantyVisibleColumns.includes("itemName") && <TableCell className="text-xs">{item.itemName}</TableCell>}
+                          {warrantyVisibleColumns.includes("invoiceDate") && (
+                            <TableCell className="text-xs">
+                              {formatToDisplayDate(item.invoiceDate)}
+                            </TableCell>
+                          )}
+                          {warrantyVisibleColumns.includes("warrantyEnd") && (
+                            <TableCell className="text-xs">
+                              {formatToDisplayDate(item.warrantyEnd)}
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))
+                    )}
                 </TableBody>
               </Table>
             </CardContent>
