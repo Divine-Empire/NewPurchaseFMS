@@ -179,12 +179,13 @@ export default function Stage5() {
                 vendor3Attachment: row[44],
 
                 // Stage 4 Data (Negotiation)
-                planned3: row[45],
-                actual3: row[46],
-                selectedVendor: row[47],
-                finalApprovedBy: row[48],
-                negotiationRemarks: row[49],
-                delay3: row[50],
+                planned3: row[45],           // AT
+                actual3: row[46],            // AU
+                selectedVendor: row[47],     // AV
+                selectedVendorName: row[48], // AW
+                finalApprovedBy: row[49],    // AX
+                negotiationRemarks: row[50], // AY
+                delay3: row[51],             // AZ
 
                 // Stage 5 Data (PO) - USER Mapping
                 planned4: row[51],      // AZ (Index 51)

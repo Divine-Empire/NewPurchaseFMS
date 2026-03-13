@@ -97,6 +97,8 @@ export default function WarrantyInfo() {
     const [open, setOpen] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState<any>(null);
     const [entries, setEntries] = useState<WarrantyEntry[]>([]);
+    const [isAutoMode, setIsAutoMode] = useState(false);
+    const [vendorCodes, setVendorCodes] = useState<Record<string, string>>({});
 
     // ─── Fetch ───────────────────────────────────────────────────────────────
     const fetchData = useCallback(async () => {
@@ -105,11 +107,25 @@ export default function WarrantyInfo() {
         setIsLoading(true);
         try {
             // Need INDENT-LIFT for PO Copy (col BG = 58)
-            const [raRes, fmsRes] = await Promise.all([
+            const [raRes, fmsRes, dropRes] = await Promise.all([
                 fetch(`${API}?sheet=RECEIVING-ACCOUNTS&action=getAll`),
-                fetch(`${API}?sheet=INDENT-LIFT&action=getAll`)
+                fetch(`${API}?sheet=INDENT-LIFT&action=getAll`),
+                fetch(`${API}?sheet=Dropdown&action=getAll`)
             ]);
-            const [raJson, fmsJson] = await Promise.all([raRes.json(), fmsRes.json()]);
+            const [raJson, fmsJson, dropJson] = await Promise.all([raRes.json(), fmsRes.json(), dropRes.json()]);
+
+            // Vendor Codes mapping (F: Vendor Code, G: Vendor List)
+            const vCodes: Record<string, string> = {};
+            if (dropJson.success && Array.isArray(dropJson.data)) {
+                dropJson.data.slice(1).forEach((r: any) => {
+                    const code = String(r[5] || "").trim(); // F
+                    const name = String(r[6] || "").trim(); // G
+                    if (code && name) {
+                        vCodes[name] = code;
+                    }
+                });
+                setVendorCodes(vCodes);
+            }
 
             // Create FMS Map (Indent # -> Row) for PO Copy
             const fmsMap = new Map<string, any[]>();
@@ -196,12 +212,39 @@ export default function WarrantyInfo() {
     // ─── Open form ────────────────────────────────────────────────────────────
     const openForm = useCallback((record: any) => {
         setSelectedRecord(record);
+        setIsAutoMode(false); // Reset to manual by default
         const qty = Math.max(1, parseInt(record.data.receivedQty) || 1);
         setEntries(Array.from({ length: qty }, () => ({
             serialNo: "",
         })));
         setOpen(true);
     }, []);
+
+    // ─── Auto Serial Generation Logic ───
+    useEffect(() => {
+        if (isAutoMode && selectedRecord) {
+            const vendorCode = vendorCodes[selectedRecord.data.vendorName] || "UNKNOWN";
+            
+            // Format Invoice Date as DD-MM-YYYY
+            let dateStr = "00-00-0000";
+            if (selectedRecord.data.invoiceDate && selectedRecord.data.invoiceDate !== "-") {
+                const d = new Date(selectedRecord.data.invoiceDate);
+                if (!isNaN(d.getTime())) {
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    dateStr = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+                }
+            }
+
+            setEntries(prev => prev.map((_, idx) => ({
+                serialNo: `${vendorCode}/${dateStr}/${String(idx + 1).padStart(3, "0")}`
+            })));
+        } else if (!isAutoMode && selectedRecord) {
+            // If switching from auto to manual, optionally clear or keep
+            // User said: "when button=Manual, then it will show the current serial no. fields"
+            // Let's clear for better UX or keep for editing. User's prompt implies manual entry.
+            // I'll keep them but allow editing.
+        }
+    }, [isAutoMode, selectedRecord, vendorCodes]);
 
     const updateEntry = useCallback((idx: number, field: keyof WarrantyEntry, value: string) => {
         setEntries((prev) => {
@@ -441,11 +484,25 @@ export default function WarrantyInfo() {
                     <DialogHeader className="shrink-0">
                         <DialogTitle>Warranty Information</DialogTitle>
                         {selectedRecord && (
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 mt-1">
-                                <span>Indent: <span className="font-medium text-gray-700">{selectedRecord.data.indentNo}</span></span>
-                                <span>Vendor: <span className="font-medium text-gray-700">{selectedRecord.data.vendorName}</span></span>
-                                <span>Item: <span className="font-medium text-gray-700">{selectedRecord.data.itemName}</span></span>
-                                <span>Received Qty: <span className="font-medium text-gray-700">{selectedRecord.data.receivedQty}</span></span>
+                            <div className="flex flex-col gap-2 mt-1">
+                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
+                                    <span>Indent: <span className="font-medium text-gray-700">{selectedRecord.data.indentNo}</span></span>
+                                    <span>Vendor: <span className="font-medium text-gray-700">{selectedRecord.data.vendorName}</span></span>
+                                    <span>Item: <span className="font-medium text-gray-700">{selectedRecord.data.itemName}</span></span>
+                                    <span>Qty: <span className="font-medium text-gray-700">{selectedRecord.data.receivedQty}</span></span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <span className="text-sm font-medium text-gray-700">Serial Mode:</span>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant={isAutoMode ? "default" : "outline"}
+                                        className={isAutoMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-amber-500 text-amber-600 hover:bg-amber-50"}
+                                        onClick={() => setIsAutoMode(!isAutoMode)}
+                                    >
+                                        {isAutoMode ? "Auto" : "Manual"}
+                                    </Button>
+                                </div>
                             </div>
                         )}
                     </DialogHeader>
@@ -466,9 +523,14 @@ export default function WarrantyInfo() {
                                             {idx + 1}
                                         </div>
                                         <div className="col-span-10">
-                                            <Input value={entry.serialNo}
+                                            <Input 
+                                                value={entry.serialNo}
                                                 onChange={(e) => updateEntry(idx, "serialNo", e.target.value)}
-                                                placeholder="Enter Serial Number" className="h-8 text-sm" required />
+                                                placeholder={isAutoMode ? "Auto-generated" : "Enter Serial Number"}
+                                                className={`h-8 text-sm ${isAutoMode ? "bg-gray-50 font-mono" : ""}`}
+                                                required 
+                                                readOnly={isAutoMode}
+                                            />
                                         </div>
                                     </div>
                                 );

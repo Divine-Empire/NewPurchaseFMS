@@ -322,22 +322,27 @@ const topVendors = [
   },
 ];
 
-// Define all purchase order stages with pending counts
+// Define all purchase order stages with pending counts (Excluding Create Indent)
 const purchaseStages = [
-  { id: 1, name: "Indent Approval", pending: 12, color: "bg-blue-500" },
-  { id: 2, name: "Update 3 Vendors", pending: 8, color: "bg-purple-500" },
-  { id: 3, name: "Negotiation", pending: 15, color: "bg-indigo-500" },
-  { id: 4, name: "PO Entry", pending: 6, color: "bg-cyan-500" },
-  { id: 5, name: "Follow-Up Vendor", pending: 10, color: "bg-teal-500" },
-  { id: 6, name: "Material Received", pending: 5, color: "bg-green-500" },
-  { id: 7, name: "QC Requirement", pending: 7, color: "bg-lime-500" },
-  { id: 8, name: "Receipt in Tally", pending: 4, color: "bg-amber-500" },
-  { id: 9, name: "Submit Invoice", pending: 9, color: "bg-orange-500" },
-  { id: 11, name: "Verification by Accounts", pending: 11, color: "bg-red-500" },
-  { id: 12, name: "Purchase Return", pending: 2, color: "bg-rose-500" },
-  { id: 13, name: "Vendor Payments", pending: 3, color: "bg-pink-500" },
-  { id: 14, name: "Freight Payments", pending: 5, color: "bg-fuchsia-500" },
+  { id: 2, name: "Indent Approval", color: "bg-purple-500" },
+  { id: 3, name: "Update 3 Vendors", color: "bg-indigo-500" },
+  { id: 4, name: "Negotiation", color: "bg-cyan-500" },
+  { id: 5, name: "PO Entry", color: "bg-teal-500" },
+  { id: 6, name: "Follow-Up Vendor", color: "bg-emerald-500" },
+  { id: 7, name: "Transporter Follow-Up", color: "bg-green-500" },
+  { id: 8, name: "Material Received", color: "bg-lime-500" },
+  { id: 9, name: "Warranty Information", color: "bg-yellow-500" },
+  { id: 11, name: "Receipt in Tally", color: "bg-orange-500" },
+  { id: 12, name: "Submit Invoice (HO)", color: "bg-red-500" },
+  { id: 13, name: "Submit Invoice", color: "bg-rose-500" },
+  { id: 14, name: "Verification by Accounts", color: "bg-pink-500" },
+  { id: 15, name: "QC Requirement", color: "bg-fuchsia-500" },
+  { id: 16, name: "Purchase Return", color: "bg-violet-500" },
+  { id: 17, name: "Return Approval", color: "bg-indigo-600" },
+  { id: 18, name: "Vendor Payment", color: "bg-slate-500" },
+  { id: 19, name: "Freight Payments", color: "bg-zinc-500" },
 ];
+
 
 const vendorBarData = topVendors.map((v) => ({
   name: v.vendor.split(" ").slice(0, 2).join(" "),
@@ -413,13 +418,14 @@ export default function PurchaseDashboard() {
   const [warrantyVisibleColumns, setWarrantyVisibleColumns] = useState<string[]>([
     "indentNo",
     "liftNo",
-    "serialCode",
     "serialNo",
     "vendorName",
     "itemName",
     "invoiceDate",
     "warrantyEnd"
   ]);
+
+  const [warrantyMonthsFilter, setWarrantyMonthsFilter] = useState<string>("");
 
   const [totalPurchaseOrders, setTotalPurchaseOrders] = useState<number | null>(null);
   const [pendingPOs, setPendingPOs] = useState<number | null>(null);
@@ -571,57 +577,45 @@ export default function PurchaseDashboard() {
           setPurchaseItems(parsedPurchaseItems);
           setOverviewItems(parsedOverviewItems);
 
-          // Calculate Pending Items by Stage
-          const counts = {
-            "Indent Approval": 0,
-            "Update 3 Vendors": 0,
-            "Negotiation": 0,
-            "PO Entry": 0,
-            "Follow-Up Vendor": 0,
-          };
-          const overdueCounts = { ...counts };
+          // Calculate Pending Items by Stage (Only PO Stages)
+          const poStages = ["Indent Approval", "Update 3 Vendors", "Negotiation", "PO Entry", "Follow-Up Vendor"];
+          const counts: Record<string, number> = {};
+          const overdueCounts: Record<string, number> = {};
+          poStages.forEach(name => {
+            counts[name] = 0;
+            overdueCounts[name] = 0;
+          });
 
           if (totalRows > 6) {
             for (let i = 6; i < totalRows; i++) {
               const row = result.data[i];
               if (!row) continue;
 
-              // Helper to check Not Null (exists) and Null (empty) with strict trimming
               const has = (idx: number) => {
                 const val = row[idx];
                 if (val === null || val === undefined) return false;
-                if (typeof val === 'string') return val.trim() !== "";
+                if (typeof val === 'string') return val.trim() !== "" && val.trim() !== "-";
                 return val !== "";
               };
 
-              const missing = (idx: number) => {
-                const val = row[idx];
-                if (val === null || val === undefined) return true;
-                if (typeof val === 'string') return val.trim() === "";
-                return val === "";
+              const missing = (idx: number) => !has(idx);
+
+              const check = (name: string, start: number, actual: number, plan: number) => {
+                if (has(start) && missing(actual)) {
+                  counts[name]++;
+                  if (has(plan)) overdueCounts[name]++;
+                }
               };
 
-              // Indent Approval: J (9) yes, K (10) no
-              if (has(9) && missing(10)) counts["Indent Approval"]++;
-              if (missing(10) && has(11)) overdueCounts["Indent Approval"]++;
-
-              // Update 3 Vendors: S (18) yes, T (19) no
-              if (has(18) && missing(19)) counts["Update 3 Vendors"]++;
-              if (missing(19) && has(20)) overdueCounts["Update 3 Vendors"]++;
-
-              // Negotiation: AT (45) yes, AU (46) no
-              if (has(45) && missing(46)) counts["Negotiation"]++;
-              if (missing(46) && has(47)) overdueCounts["Negotiation"]++;
-
-              // PO Entry: AZ (51) yes, BA (52) no
-              if (has(51) && missing(52)) counts["PO Entry"]++;
-              if (missing(52) && has(53)) overdueCounts["PO Entry"]++;
-
-              // Follow-Up Vendor: BI (60) yes, BJ (61) no
-              if (has(60) && missing(61)) counts["Follow-Up Vendor"]++;
-              if (missing(61) && has(62)) overdueCounts["Follow-Up Vendor"]++;
+              // Indices verified against stage components
+              check("Indent Approval", 9, 10, 11);
+              check("Update 3 Vendors", 18, 19, 20);
+              check("Negotiation", 45, 46, 45);
+              check("PO Entry", 51, 52, 51);
+              check("Follow-Up Vendor", 60, 61, 60);
             }
           }
+
           setStageCounts((prev: any) => ({ ...prev, ...counts }));
           setStageOverdueCounts((prev: any) => ({ ...prev, ...overdueCounts }));
 
@@ -730,47 +724,43 @@ export default function PurchaseDashboard() {
           processedOrders.sort((a, b) => b.vendorTotalCount - a.vendorTotalCount);
           setTopReceivedOrders(processedOrders.slice(0, 10));
 
-          // Calculate Pending Items by Stage from RECEIVING-ACCOUNTS
-          const recCounts = {
-            "QC Requirement": 0,
-            "Receipt in Tally": 0,
-            "Submit Invoice": 0,
-            "Verification by Accounts": 0,
-            "Purchase Return": 0,
-          };
-          const overdueRecCounts = { ...recCounts, "Material Received": 0 };
+          // Calculate Pending Items by Stage (Only RA Stages)
+          const raStages = ["Transporter Follow-Up", "Material Received", "Warranty Information", "QC Requirement", "Receipt in Tally", "Submit Invoice (HO)", "Submit Invoice", "Verification by Accounts", "Purchase Return"];
+          const recCounts: Record<string, number> = {};
+          const overdueRecCounts: Record<string, number> = {};
+          raStages.forEach(name => {
+            recCounts[name] = 0;
+            overdueRecCounts[name] = 0;
+          });
 
-          // Data starts from row 7 (index 6)
-          for (let i = 6; i < rows.length; i++) {
-            const row = rows[i];
-            if (!row) continue;
+          if (rows.length > 6) {
+            for (let i = 6; i < rows.length; i++) {
+              const r = rows[i];
+              if (!r || !r[1]) continue;
 
-            const has = (idx: number) => row[idx] !== null && row[idx] !== "" && row[idx] !== undefined;
-            const missing = (idx: number) => row[idx] === null || row[idx] === "" || row[idx] === undefined;
+              const has = (idx: number) => r[idx] !== null && r[idx] !== undefined && String(r[idx]).trim() !== "" && String(r[idx]).trim() !== "-";
+              const missing = (idx: number) => !has(idx);
 
-            // Material Received Overdue: T (19) yes, U (20) no, V (21) yes
-            if (missing(20) && has(21)) overdueRecCounts["Material Received"]++;
+              const check = (name: string, start: number, actual: number, plan: number) => {
+                if (has(start) && missing(actual)) {
+                  recCounts[name]++;
+                  if (has(plan)) overdueRecCounts[name]++;
+                }
+              };
 
-            // QC Requirement: AI (34) yes, AJ (35) no
-            if (has(34) && missing(35)) recCounts["QC Requirement"]++;
-            if (missing(35) && has(36)) overdueRecCounts["QC Requirement"]++;
-
-            // Receipt in Tally: AS (44) yes, AT (45) no
-            if (has(44) && missing(45)) recCounts["Receipt in Tally"]++;
-            if (missing(45) && has(46)) overdueRecCounts["Receipt in Tally"]++;
-
-            // Submit Invoice: AY (50) yes, AZ (51) no
-            if (has(50) && missing(51)) recCounts["Submit Invoice"]++;
-            if (missing(51) && has(52)) overdueRecCounts["Submit Invoice"]++;
-
-            // Verification: BE (56) yes, BF (57) no
-            if (has(56) && missing(57)) recCounts["Verification by Accounts"]++;
-            if (missing(57) && has(58)) overdueRecCounts["Verification by Accounts"]++;
-
-            // Purchase Return: BL (63) yes, BM (64) no
-            if (has(63) && missing(64)) recCounts["Purchase Return"]++;
-            if (missing(64) && has(65)) overdueRecCounts["Purchase Return"]++;
+              // Indices verified against specialized stage components:
+              check("Transporter Follow-Up", 88, 89, 88);
+              check("Material Received", 19, 20, 19);
+              check("Warranty Information", 104, 109, 108);
+              check("QC Requirement", 61, 62, 61);
+              check("Receipt in Tally", 35, 36, 35);
+              check("Submit Invoice (HO)", 43, 44, 43);
+              check("Submit Invoice", 48, 49, 48);
+              check("Verification by Accounts", 54, 55, 54);
+              check("Purchase Return", 63, 64, 63);
+            }
           }
+
           setStageCounts((prev: any) => ({ ...prev, ...recCounts }));
           setStageOverdueCounts((prev: any) => ({ ...prev, ...overdueRecCounts }));
         }
@@ -787,19 +777,21 @@ export default function PurchaseDashboard() {
         if (result.success && result.data) {
           const rows = result.data;
           let count = 0;
+          let overdue = 0;
 
-          // Data starts from row 7 (index 6)
           for (let i = 6; i < rows.length; i++) {
             const row = rows[i];
-            if (!row) continue;
+            if (!row || !row[1]) continue;
+            const has = (idx: number) => row[idx] !== null && row[idx] !== undefined && String(row[idx]).trim() !== "" && String(row[idx]).trim() !== "-";
+            const missing = (idx: number) => !has(idx);
 
-            const has = (idx: number) => row[idx] !== null && row[idx] !== "" && row[idx] !== undefined;
-            const missing = (idx: number) => row[idx] === null || row[idx] === "" || row[idx] === undefined;
-
-            // Vendor Payments: R (17) yes, S (18) no
-            if (has(17) && missing(18)) count++;
+            if (has(13) && missing(14)) {
+              count++;
+              if (has(13)) overdue++; // Payment is usually overdue if planned exists but actual doesn't
+            }
           }
-          setStageCounts((prev: any) => ({ ...prev, "Vendor Payments": count }));
+          setStageCounts((prev: any) => ({ ...prev, "Vendor Payment": count }));
+          setStageOverdueCounts((prev: any) => ({ ...prev, "Vendor Payment": overdue }));
         }
       } catch (error) {
         console.error("Error fetching vendor payments:", error);
@@ -814,22 +806,54 @@ export default function PurchaseDashboard() {
         if (result.success && result.data) {
           const rows = result.data;
           let count = 0;
+          let overdue = 0;
 
-          // Data starts from row 7 (index 6)
           for (let i = 6; i < rows.length; i++) {
             const row = rows[i];
-            if (!row) continue;
+            if (!row || !row[1]) continue;
+            const has = (idx: number) => row[idx] !== null && row[idx] !== undefined && String(row[idx]).trim() !== "" && String(row[idx]).trim() !== "-";
+            const missing = (idx: number) => !has(idx);
 
-            const has = (idx: number) => row[idx] !== null && row[idx] !== "" && row[idx] !== undefined;
-            const missing = (idx: number) => row[idx] === null || row[idx] === "" || row[idx] === undefined;
-
-            // Freight Payments: N (13) yes, O (14) no
-            if (has(13) && missing(14)) count++;
+            if (has(9) && missing(10)) {
+              count++;
+              if (has(9)) overdue++;
+            }
           }
           setStageCounts((prev: any) => ({ ...prev, "Freight Payments": count }));
+          setStageOverdueCounts((prev: any) => ({ ...prev, "Freight Payments": overdue }));
         }
       } catch (error) {
         console.error("Error fetching freight payments:", error);
+      }
+    };
+
+    const fetchSpecializedStages = async () => {
+      try {
+        const API = process.env.NEXT_PUBLIC_API_URI;
+        const [warrantyRes, partialRes] = await Promise.all([
+          fetch(`${API}?sheet=WARRANTY`),
+          fetch(`${API}?sheet=${encodeURIComponent("Partial QC")}`)
+        ]);
+        const [warrantyJson, partialJson] = await Promise.all([warrantyRes.json(), partialRes.json()]);
+
+        const counts: Record<string, number> = { "Return Approval": 0 };
+        const overdue: Record<string, number> = { "Return Approval": 0 };
+
+        if (partialJson.success && Array.isArray(partialJson.data)) {
+          partialJson.data.slice(1).forEach((row: any) => {
+            const has = (idx: number) => row[idx] !== null && row[idx] !== undefined && String(row[idx]).trim() !== "" && String(row[idx]).trim() !== "-";
+            // Check for valid Indent Number (index 1) to avoid counting empty rows
+            if (has(1) && has(23) && !has(24)) {
+              counts["Return Approval"]++;
+              overdue["Return Approval"]++;
+            }
+          });
+        }
+
+        setStageCounts((prev: any) => ({ ...prev, ...counts }));
+        setStageOverdueCounts((prev: any) => ({ ...prev, ...overdue }));
+      } catch (error) {
+        console.error("Error specialized stages:", error);
       }
     };
 
@@ -846,11 +870,11 @@ export default function PurchaseDashboard() {
           for (let i = 6; i < rows.length; i++) {
             const row = rows[i];
             if (!row || row.length < 8) continue;
-            
+
             // Filter out empty rows (check Indent No and Vendor Name)
             const indentNo = row[0] ? String(row[0]).trim() : "";
             const vendorName = row[4] ? String(row[4]).trim() : "";
-            
+
             if (!indentNo && !vendorName) continue;
 
             parsedWarranty.push({
@@ -883,7 +907,8 @@ export default function PurchaseDashboard() {
         fetchReceivedData(),
         fetchVendorPayments(),
         fetchFreightPayments(),
-        fetchWarrantyData()
+        fetchWarrantyData(),
+        fetchSpecializedStages()
       ]);
       setLoading(false);
     };
@@ -945,6 +970,23 @@ export default function PurchaseDashboard() {
         selectedStatus !== dataType
       )
         return false;
+
+      // Warranty Months Left filter
+      if (dataType === "warranty" && warrantyMonthsFilter) {
+        const months = parseInt(warrantyMonthsFilter);
+        if (!isNaN(months)) {
+          const itemDate = new Date(item.warrantyEnd);
+          if (isNaN(itemDate.getTime())) return false;
+
+          const maxDate = new Date();
+          maxDate.setMonth(maxDate.getMonth() + months);
+
+          if (itemDate > maxDate) return false;
+          // Also filter out past dates if strictly "months left" means future? 
+          // Usually "months left" implies filter <= X months from now.
+          if (itemDate < new Date()) return false;
+        }
+      }
 
       return true;
     });
@@ -1044,94 +1086,195 @@ export default function PurchaseDashboard() {
       const { ReportDocument } = await import("./report-pdf");
 
       const API = process.env.NEXT_PUBLIC_API_URI;
-      const [fmsRes, raRes] = await Promise.all([
+      const [fmsRes, raRes, masterRes, warrantyRes, partialRes, vendorRes, freightRes] = await Promise.all([
         fetch(`${API}?sheet=INDENT-LIFT`),
         fetch(`${API}?sheet=RECEIVING-ACCOUNTS`),
+        fetch(`${API}?sheet=Master`),
+        fetch(`${API}?sheet=WARRANTY`),
+        fetch(`${API}?sheet=${encodeURIComponent("Partial QC")}`),
+        fetch(`${API}?sheet=VENDOR-PAYMENTS`),
+        fetch(`${API}?sheet=FREIGHT-PAYMENTS`),
       ]);
-      const [fmsJson, raJson] = await Promise.all([fmsRes.json(), raRes.json()]);
+      const [fmsJson, raJson, masterJson, warrantyJson, partialJson, vendorJson, freightJson] = await Promise.all([
+        fmsRes.json(), raRes.json(), masterRes.json(), warrantyRes.json(), partialRes.json(), vendorRes.json(), freightRes.json()
+      ]);
 
-      if (!fmsJson.success || !raJson.success) throw new Error("Failed fetching data");
+      if (!fmsJson.success || !raJson.success || !masterJson.success || !warrantyJson.success || !partialJson.success || !vendorJson.success || !freightJson.success) {
+        throw new Error("Failed fetching comprehensive data for report");
+      }
 
       const fmsRows = fmsJson.data;
       const raRows = raJson.data;
+      const masterRows = masterJson.data;
+      const warrantyRows = warrantyJson.data;
+      const partialRows = partialJson.data;
+      const vendorRows = vendorJson.data;
+      const freightRows = freightJson.data;
 
-      const getResp = (rows: any[], colIdx: number) => {
-        if (!rows || rows.length < 3) return "-";
-        const r3 = rows[2];
-        if (!r3) return "-";
-        // Iterate backwards from the start column of the stage to find merged actual text
-        for (let i = colIdx; i >= 0; i--) {
-          if (r3[i] && String(r3[i]).trim() !== "") return String(r3[i]).trim();
-        }
-        return "-";
-      };
+      // Map Responsible Persons from Master sheet (Col G -> Stage, Col H -> Responsible)
+      const respMap: Record<string, string> = {};
+      if (Array.isArray(masterRows)) {
+        masterRows.slice(1).forEach((row: any) => {
+          const stageName = row[6]; // Col G
+          const respPerson = row[7]; // Col H
+          if (stageName && respPerson) {
+            respMap[String(stageName).trim()] = String(respPerson).trim();
+          }
+        });
+      }
 
-      const respMap: Record<string, string> = {
-        "Indent Approval": getResp(fmsRows, 9),
-        "Update 3 Vendors": getResp(fmsRows, 18),
-        "Negotiation": getResp(fmsRows, 45),
-        "PO Entry": getResp(fmsRows, 51),
-        "Follow-Up Vendor": getResp(fmsRows, 60),
-        "Material Received": getResp(raRows, 19),
-        "QC Requirement": getResp(raRows, 34),
-        "Receipt in Tally": getResp(raRows, 44),
-        "Submit Invoice": getResp(raRows, 50),
-        "Verification by Accounts": getResp(raRows, 56),
-        "Purchase Return": getResp(raRows, 63),
-      };
-
-      const counts: Record<string, number> = {
-        "Indent Approval": 0, "Update 3 Vendors": 0, "Negotiation": 0,
-        "PO Entry": 0, "Follow-Up Vendor": 0, "Material Received": 0,
-        "QC Requirement": 0, "Receipt in Tally": 0, "Submit Invoice": 0,
-        "Verification by Accounts": 0, "Purchase Return": 0,
-      };
+      const totalCounts: Record<string, number> = {};
+      const overdueCounts: Record<string, number> = {};
+      purchaseStages.forEach(s => {
+        totalCounts[s.name] = 0;
+        overdueCounts[s.name] = 0;
+      });
 
       const detailed: any[] = [];
-
-      const fmsHas = (r: any, idx: number) => r[idx] !== null && r[idx] !== undefined && String(r[idx]).trim() !== "";
+      const fmsHas = (r: any, idx: number) => r[idx] !== null && r[idx] !== undefined && String(r[idx]).trim() !== "" && String(r[idx]).trim() !== "-";
       const fmsMiss = (r: any, idx: number) => !fmsHas(r, idx);
 
-      // FMS loop
+      // FMS loop logic
       for (let i = 6; i < fmsRows.length; i++) {
         const r = fmsRows[i];
-        if (!r) continue;
+        if (!r || !r[1]) continue;
 
-        const pushDet = (stage: string) => detailed.push({
-           indent: r[1] || "-", party: r[3] || "-", item: r[4] || "-", qty: r[5] || "-", stage
-        });
+        const checkStage = (name: string, start: number, actual: number, plan: number, mode: 'category' | 'vendor' | 'default' = 'default') => {
+          if (fmsHas(r, start) && fmsMiss(r, actual)) {
+            totalCounts[name]++;
+            if (fmsHas(r, plan)) {
+              overdueCounts[name]++;
 
-        if (fmsHas(r, 9) && fmsMiss(r, 10)) { counts["Indent Approval"]++; pushDet("Indent Approval"); }
-        if (fmsHas(r, 18) && fmsMiss(r, 19)) { counts["Update 3 Vendors"]++; pushDet("Update 3 Vendors"); }
-        if (fmsHas(r, 45) && fmsMiss(r, 46)) { counts["Negotiation"]++; pushDet("Negotiation"); }
-        if (fmsHas(r, 51) && fmsMiss(r, 52)) { counts["PO Entry"]++; pushDet("PO Entry"); }
-        if (fmsHas(r, 60) && fmsMiss(r, 61)) { counts["Follow-Up Vendor"]++; pushDet("Follow-Up Vendor"); }
+              let party = "-";
+              if (mode === 'category') {
+                party = r[3] || "-";
+              } else if (mode === 'vendor') {
+                const awName = String(r[48] || "").trim();
+                const axName = String(r[49] || "").trim();
+                const avName = String(r[47] || "").trim();
+                const selectedId = avName.toLowerCase();
+
+                if (awName && awName !== "-") {
+                  party = awName;
+                } else if (selectedId.includes("vendor1") || selectedId === "1" || selectedId === "vendor 1") {
+                  party = r[21] || "-";
+                } else if (selectedId.includes("vendor2") || selectedId === "2" || selectedId === "vendor 2") {
+                  party = r[29] || "-";
+                } else if (selectedId.includes("vendor3") || selectedId === "3" || selectedId === "vendor 3") {
+                  party = r[37] || "-";
+                } else if (axName && axName !== "-" && isNaN(Date.parse(axName)) && isNaN(Number(axName))) {
+                  party = axName;
+                } else if (avName && avName !== "-" && isNaN(Date.parse(avName)) && isNaN(Number(avName))) {
+                  party = avName;
+                } else {
+                  party = r[3] || "-"; // Fallback to category
+                }
+              } else {
+                party = r[3] || "-";
+              }
+
+              const qty = (name === "PO Entry" || name === "Follow-Up Vendor" || name === "Negotiation") ? (r[14] || r[5] || "-") : (r[5] || "-");
+
+              detailed.push({
+                indent: r[1] || "-",
+                party,
+                item: r[4] || "-",
+                qty: qty,
+                stage: name
+              });
+            }
+          }
+        };
+
+        checkStage("Indent Approval", 9, 10, 11, 'category');
+        checkStage("Update 3 Vendors", 18, 19, 20, 'category');
+        checkStage("Negotiation", 45, 46, 45, 'category'); // Header requested as Category
+        checkStage("PO Entry", 51, 52, 51, 'vendor');
+        checkStage("Follow-Up Vendor", 60, 61, 60, 'vendor');
       }
 
-      // RA loop
+      // RA loop logic
       for (let i = 6; i < raRows.length; i++) {
         const r = raRows[i];
-        if (!r) continue;
+        if (!r || !r[1]) continue;
 
-        const pushDet = (stage: string) => detailed.push({
-           indent: r[1] || "-", party: r[3] || "-", item: r[7] || "-", qty: r[8] || "-", stage
-        });
+        const checkStageRA = (name: string, start: number, actual: number, plan: number, itemIdx = 7) => {
+          if (fmsHas(r, start) && fmsMiss(r, actual)) {
+            totalCounts[name]++;
+            if (fmsHas(r, plan)) {
+              overdueCounts[name]++;
+              detailed.push({
+                indent: r[1] || "-", party: r[3] || "-", item: r[itemIdx] || "-", qty: r[8] || "-", stage: name
+              });
+            }
+          }
+        };
 
-        if (fmsHas(r, 19) && fmsMiss(r, 20)) { counts["Material Received"]++; pushDet("Material Received"); }
-        if (fmsHas(r, 34) && fmsMiss(r, 35)) { counts["QC Requirement"]++; pushDet("QC Requirement"); }
-        if (fmsHas(r, 44) && fmsMiss(r, 45)) { counts["Receipt in Tally"]++; pushDet("Receipt in Tally"); }
-        if (fmsHas(r, 50) && fmsMiss(r, 51)) { counts["Submit Invoice"]++; pushDet("Submit Invoice"); }
-        if (fmsHas(r, 56) && fmsMiss(r, 57)) { counts["Verification by Accounts"]++; pushDet("Verification by Accounts"); }
-        if (fmsHas(r, 63) && fmsMiss(r, 64)) { counts["Purchase Return"]++; pushDet("Purchase Return"); }
+        checkStageRA("Transporter Follow-Up", 88, 89, 88, 7);
+        checkStageRA("Material Received", 19, 20, 19, 7);
+        checkStageRA("Warranty Information", 104, 109, 108, 7);
+        checkStageRA("QC Requirement", 61, 62, 61, 7);
+        checkStageRA("Receipt in Tally", 35, 36, 35, 7);
+        checkStageRA("Submit Invoice (HO)", 43, 44, 43, 7);
+        checkStageRA("Submit Invoice", 48, 49, 48, 7);
+        checkStageRA("Verification by Accounts", 54, 55, 54, 7);
+        checkStageRA("Purchase Return", 63, 64, 63, 7);
       }
 
+      const checkSimple = (rows: any[], startRow: number, name: string, startIdx: number, actualIdx: number, planIdx: number, mapRow: (r: any) => any) => {
+        for (let i = startRow; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[0]) continue;
+          if (fmsHas(r, startIdx) && fmsMiss(r, actualIdx)) {
+            totalCounts[name]++;
+            if (fmsHas(r, planIdx)) {
+              overdueCounts[name]++;
+              detailed.push({ ...mapRow(r), stage: name });
+            }
+          }
+        }
+      };
+
+      // Build lookup for Return Approval
+      const raLookup = new Map<string, any>();
+      raRows.slice(6).forEach((row: any) => {
+        const indentNo = String(row[1] || "").trim();
+        if (indentNo) raLookup.set(indentNo, { vendor: row[3], item: row[7], qty: row[8] });
+      });
+
+      checkSimple(partialRows, 1, "Return Approval", 1, 24, 23, (r) => {
+        const indent = String(r[1] || "").trim();
+        const info = raLookup.get(indent) || {};
+        return {
+          indent: indent || "-",
+          party: info.vendor || "-",
+          item: info.item || "-",
+          qty: r[16] || info.qty || "-",
+          stage: "Return Approval"
+        };
+      });
+
+      checkSimple(vendorRows, 6, "Vendor Payment", 1, 14, 13, (r) => ({
+        indent: r[1] || "-", party: r[4] || "-", item: r[12] || "-", qty: r[10] || "-", stage: "Vendor Payment"
+      }));
+
+      checkSimple(freightRows, 6, "Freight Payments", 1, 10, 9, (r) => ({
+        indent: r[1] || "-", // LR No
+        party: r[4] || "-",  // Transporter
+        item: r[14] || "-",   // Invoice No
+        qty: "-",
+        stage: "Freight Payments"
+      }));
+
+      // Filter summary to only stages with overdueCount > 0
       const summaryData = purchaseStages
-        .filter(s => counts[s.name] > 0)
+        .filter(s => overdueCounts[s.name] > 0)
         .map(s => ({
           stage: s.name,
-          pending: counts[s.name],
+          pending: overdueCounts[s.name],
           responsible: respMap[s.name] || "-",
         }));
+
 
       const blob = await pdf(<ReportDocument summaryData={summaryData} detailedData={detailed} />).toBlob();
       const url = URL.createObjectURL(blob);
@@ -1358,7 +1501,7 @@ export default function PurchaseDashboard() {
                   Track all pending items across different purchase stages
                 </p>
               </div>
-              <Button 
+              <Button
                 variant="default"
                 className="bg-blue-600 hover:bg-blue-700 h-8 text-xs flex items-center"
                 onClick={handleGenerateReport}
@@ -1373,10 +1516,10 @@ export default function PurchaseDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs w-[200px]">Stage</TableHead>
-                    <TableHead className="text-xs text-right w-[100px]">
+                    <TableHead className="text-xs text-right w-[80px]">
                       Pending
                     </TableHead>
-                    <TableHead className="text-xs text-right w-[100px]">
+                    <TableHead className="text-xs text-right w-[80px]">
                       Pending Overdue
                     </TableHead>
                     <TableHead className="text-xs w-[200px]">Status</TableHead>
@@ -1384,12 +1527,7 @@ export default function PurchaseDashboard() {
                 </TableHeader>
                 <TableBody>
                   {purchaseStages.map((stage) => {
-                    let dynamicCount = 0;
-                    if (stage.name === "Material Received") {
-                      dynamicCount = inTransitItems.length;
-                    } else if (stageCounts[stage.name] !== undefined) {
-                      dynamicCount = stageCounts[stage.name];
-                    }
+                    let dynamicCount = stageCounts[stage.name] || 0;
 
                     let overdueCount = stageOverdueCounts[stage.name] || 0;
 
@@ -2123,7 +2261,6 @@ export default function PurchaseDashboard() {
                   {[
                     { id: "indentNo", label: "Indent No." },
                     { id: "liftNo", label: "Lift No." },
-                    { id: "serialCode", label: "Serial-Code" },
                     { id: "serialNo", label: "Serial No." },
                     { id: "vendorName", label: "Vendor Name" },
                     { id: "itemName", label: "Item-Name" },
@@ -2158,6 +2295,16 @@ export default function PurchaseDashboard() {
                 <span className="hidden sm:inline">Export CSV</span>
                 <span className="sm:hidden">Export</span>
               </Button>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Months Left:</span>
+                <Input
+                  type="number"
+                  placeholder="e.g. 6"
+                  className="h-8 w-20 text-xs"
+                  value={warrantyMonthsFilter}
+                  onChange={(e) => setWarrantyMonthsFilter(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
@@ -2186,7 +2333,6 @@ export default function PurchaseDashboard() {
                       </TableHead>
                     )}
                     {warrantyVisibleColumns.includes("liftNo") && <TableHead className="text-xs">Lift No.</TableHead>}
-                    {warrantyVisibleColumns.includes("serialCode") && <TableHead className="text-xs">Serial-Code</TableHead>}
                     {warrantyVisibleColumns.includes("serialNo") && (
                       <TableHead
                         className="text-xs cursor-pointer hover:bg-gray-50"
@@ -2250,37 +2396,53 @@ export default function PurchaseDashboard() {
                 </TableHeader>
                 <TableBody>
                   {finalWarrantyData.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={warrantyVisibleColumns.length} className="text-center py-8 text-muted-foreground">
-                          No warranty data available
-                        </TableCell>
+                    <TableRow>
+                      <TableCell colSpan={warrantyVisibleColumns.length} className="text-center py-8 text-muted-foreground">
+                        No warranty data available
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    finalWarrantyData.map((item: any, idx: number) => (
+                      <TableRow key={idx}>
+                        {warrantyVisibleColumns.includes("indentNo") && (
+                          <TableCell className="font-medium text-xs">
+                            {item.indentNo}
+                          </TableCell>
+                        )}
+                        {warrantyVisibleColumns.includes("liftNo") && <TableCell className="text-xs">{item.liftNo}</TableCell>}
+                        {warrantyVisibleColumns.includes("serialNo") && <TableCell className="text-xs">{item.serialNo}</TableCell>}
+                        {warrantyVisibleColumns.includes("vendorName") && <TableCell className="text-xs">{item.vendorName}</TableCell>}
+                        {warrantyVisibleColumns.includes("itemName") && <TableCell className="text-xs">{item.itemName}</TableCell>}
+                        {warrantyVisibleColumns.includes("invoiceDate") && (
+                          <TableCell className="text-xs">
+                            {formatToDisplayDate(item.invoiceDate)}
+                          </TableCell>
+                        )}
+                        {warrantyVisibleColumns.includes("warrantyEnd") && (
+                          <TableCell className="text-xs">
+                            {(() => {
+                              const date = new Date(item.warrantyEnd);
+                              const today = new Date();
+                              const nextMonth = new Date();
+                              nextMonth.setMonth(today.getMonth() + 1);
+
+                              const isExpiringSoon = !isNaN(date.getTime()) && date > today && date <= nextMonth;
+                              const formattedDate = formatToDisplayDate(item.warrantyEnd);
+
+                              if (isExpiringSoon) {
+                                return (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-800 border border-red-200">
+                                    {formattedDate}
+                                  </span>
+                                );
+                              }
+                              return formattedDate;
+                            })()}
+                          </TableCell>
+                        )}
                       </TableRow>
-                    ) : (
-                      finalWarrantyData.map((item: any, idx: number) => (
-                        <TableRow key={idx}>
-                          {warrantyVisibleColumns.includes("indentNo") && (
-                            <TableCell className="font-medium text-xs">
-                              {item.indentNo}
-                            </TableCell>
-                          )}
-                          {warrantyVisibleColumns.includes("liftNo") && <TableCell className="text-xs">{item.liftNo}</TableCell>}
-                          {warrantyVisibleColumns.includes("serialCode") && <TableCell className="text-xs">{item.serialCode}</TableCell>}
-                          {warrantyVisibleColumns.includes("serialNo") && <TableCell className="text-xs">{item.serialNo}</TableCell>}
-                          {warrantyVisibleColumns.includes("vendorName") && <TableCell className="text-xs">{item.vendorName}</TableCell>}
-                          {warrantyVisibleColumns.includes("itemName") && <TableCell className="text-xs">{item.itemName}</TableCell>}
-                          {warrantyVisibleColumns.includes("invoiceDate") && (
-                            <TableCell className="text-xs">
-                              {formatToDisplayDate(item.invoiceDate)}
-                            </TableCell>
-                          )}
-                          {warrantyVisibleColumns.includes("warrantyEnd") && (
-                            <TableCell className="text-xs">
-                              {formatToDisplayDate(item.warrantyEnd)}
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      ))
-                    )}
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
