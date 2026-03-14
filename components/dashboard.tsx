@@ -1519,7 +1519,7 @@ export default function PurchaseDashboard() {
                     <TableHead className="text-xs text-right w-[80px]">
                       Pending
                     </TableHead>
-                    <TableHead className="text-xs text-right w-[80px]">
+                    <TableHead className="text-xs text-center w-[120px] pl-6">
                       Pending Overdue
                     </TableHead>
                     <TableHead className="text-xs w-[200px]">Status</TableHead>
@@ -1544,7 +1544,7 @@ export default function PurchaseDashboard() {
                         <TableCell className="text-xs text-right text-muted-foreground">
                           {dynamicCount}
                         </TableCell>
-                        <TableCell className="text-xs text-right text-red-500 font-medium">
+                        <TableCell className="text-xs text-center text-red-500 font-medium pl-6">
                           {overdueCount > 0 ? overdueCount : "-"}
                         </TableCell>
                         <TableCell className="text-xs">
