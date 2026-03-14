@@ -19,8 +19,15 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Search, ShieldAlert } from "lucide-react";
+import { Loader2, Search, ShieldAlert, Eye } from "lucide-react";
 import { toast } from "sonner";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import QRCode from "qrcode";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 
 // ─── RECEIVING-ACCOUNTS column map (0-based) ──────────────────────────────────
 // B(1): Indent No.  C(2): Lift No.  D(3): Vendor Name  E(4): PO No.
@@ -71,20 +78,111 @@ interface WarrantyEntry {
     serialNo: string;
 }
 
-// Local timestamp — no timezone suffix
-const localTimestamp = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+const toBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (error) => reject(error);
+    });
+
+const uploadFileToDrive = async (
+    blob: Blob,
+    fileName: string,
+    apiUrl: string,
+    folderId: string
+): Promise<string> => {
+    const uploadParams = new URLSearchParams();
+    uploadParams.append("action", "uploadFile");
+    uploadParams.append("base64Data", await toBase64(blob));
+    uploadParams.append("fileName", fileName);
+    uploadParams.append("mimeType", "image/png");
+    uploadParams.append("folderId", folderId);
+    const res = await fetch(apiUrl, { method: "POST", body: uploadParams });
+    const json = await res.json();
+    return json.success ? json.fileUrl : "";
 };
 
-const formatDate = (val: any): string => {
-    if (!val || String(val).trim() === "" || val === "-") return "-";
-    const str = String(val).trim();
-    const d = new Date(str.includes(" ") && !str.includes("T") ? str.replace(" ", "T") : str);
-    if (isNaN(d.getTime())) return str;
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+const generateQRLabel = async (
+    itemName: string,
+    itemCode: string,
+    serialNo: string
+): Promise<Blob> => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 400;
+    canvas.height = 520; // Increased height for better spacing
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not get canvas context");
+
+    // Clear and fill with pure white (important for scanning)
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Text settings
+    ctx.fillStyle = "black";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+
+    // Item Name + Item Code (Top)
+    ctx.font = "bold 20px Arial";
+    const headerText = `${itemName} (${itemCode})`;
+    
+    // Simple text wrapping for header
+    const words = headerText.split(' ');
+    let line = '';
+    let y = 25;
+    const lineHeight = 28;
+    const maxWidth = 370;
+
+    for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && n > 0) {
+            ctx.fillText(line, canvas.width / 2, y);
+            line = words[n] + ' ';
+            y += lineHeight;
+        } else {
+            line = testLine;
+        }
+    }
+    ctx.fillText(line, canvas.width / 2, y);
+
+    // QR Code (Middle)
+    // We encode the serial number with a label to make it clear what was scanned
+    const qrData = serialNo.trim();
+    const qrSize = 320; // Larger QR for better scan
+    const qrY = y + 45;
+    
+    // Use toCanvas for sharper rendering
+    const qrCanvas = document.createElement("canvas");
+    await QRCode.toCanvas(qrCanvas, qrData, { 
+        margin: 4, 
+        width: qrSize,
+        errorCorrectionLevel: 'H', // Maximum error correction
+        color: {
+            dark: '#000000',
+            light: '#ffffff'
+        }
+    });
+
+    // Draw the QR onto our main canvas
+    ctx.imageSmoothingEnabled = false; // Keep QR sharp
+    ctx.drawImage(qrCanvas, (canvas.width - qrSize) / 2, qrY, qrSize, qrSize);
+
+    // Serial No (Bottom)
+    ctx.font = "bold 24px Arial";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(serialNo, canvas.width / 2, canvas.height - 25);
+
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("Canvas toBlob failed"));
+        }, "image/png", 1.0); // Maximum quality
+    });
 };
+
 
 export default function WarrantyInfo() {
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
@@ -99,6 +197,8 @@ export default function WarrantyInfo() {
     const [entries, setEntries] = useState<WarrantyEntry[]>([]);
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [vendorCodes, setVendorCodes] = useState<Record<string, string>>({});
+    const [itemCodeMap, setItemCodeMap] = useState<Record<string, string>>({});
+    const [previewImages, setPreviewImages] = useState<Record<number, string>>({});
 
     // ─── Fetch ───────────────────────────────────────────────────────────────
     const fetchData = useCallback(async () => {
@@ -114,17 +214,23 @@ export default function WarrantyInfo() {
             ]);
             const [raJson, fmsJson, dropJson] = await Promise.all([raRes.json(), fmsRes.json(), dropRes.json()]);
 
-            // Vendor Codes mapping (F: Vendor Code, G: Vendor List)
+            // Dropdown mapping
             const vCodes: Record<string, string> = {};
+            const iCodes: Record<string, string> = {};
             if (dropJson.success && Array.isArray(dropJson.data)) {
                 dropJson.data.slice(1).forEach((r: any) => {
-                    const code = String(r[5] || "").trim(); // F
-                    const name = String(r[6] || "").trim(); // G
-                    if (code && name) {
-                        vCodes[name] = code;
-                    }
+                    // Vendor Codes (F=5: Code, G=6: Name)
+                    const vCode = String(r[5] || "").trim();
+                    const vName = String(r[6] || "").trim();
+                    if (vCode && vName) vCodes[vName] = vCode;
+
+                    // Item Codes (C=2: Code, E=4: Name)
+                    const iCode = String(r[2] || "").trim();
+                    const iName = String(r[4] || "").trim();
+                    if (iCode && iName) iCodes[iName] = iCode;
                 });
                 setVendorCodes(vCodes);
+                setItemCodeMap(iCodes);
             }
 
             // Create FMS Map (Indent # -> Row) for PO Copy
@@ -252,23 +358,64 @@ export default function WarrantyInfo() {
             next[idx] = { ...next[idx], [field]: value };
             return next;
         });
+        // Clear preview when value changes
+        setPreviewImages(prev => {
+            const next = { ...prev };
+            delete next[idx];
+            return next;
+        });
     }, []);
+
+    const handlePreview = async (idx: number) => {
+        if (!selectedRecord) return;
+        const entry = entries[idx];
+        if (!entry.serialNo.trim()) {
+            toast.error("Please enter a serial number first");
+            return;
+        }
+
+        try {
+            const itemName = selectedRecord.data.itemName;
+            const itemCode = itemCodeMap[itemName] || "N/A";
+            const blob = await generateQRLabel(itemName, itemCode, entry.serialNo);
+            const url = URL.createObjectURL(blob);
+            setPreviewImages(prev => ({ ...prev, [idx]: url }));
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to generate preview");
+        }
+    };
 
     // ─── Submit ───────────────────────────────────────────────────────────────
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         const API = process.env.NEXT_PUBLIC_API_URI;
-        if (!selectedRecord || !API) return;
+        const FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID;
+        if (!selectedRecord || !API || !FOLDER_ID) return;
 
         setIsSubmitting(true);
         try {
-            const ts = localTimestamp();
+            const ts = getFmsTimestamp();
+            const itemName = selectedRecord.data.itemName;
+            const itemCode = itemCodeMap[itemName] || "N/A";
 
-            // 1. batchInsert new rows into WARRANTY sheet from row 7
-            const rowsData = entries.map((entry) => {
+            // 1. Generate and Upload images for each serial number
+            const uploadResults = await Promise.all(entries.map(async (entry, idx) => {
+                try {
+                    const blob = await generateQRLabel(itemName, itemCode, entry.serialNo);
+                    const fileName = `QR_${entry.serialNo.replace(/[/\\:]/g, '_')}.png`;
+                    const driveUrl = await uploadFileToDrive(blob, fileName, API, FOLDER_ID);
+                    return driveUrl;
+                } catch (err) {
+                    console.error("Upload error for index", idx, err);
+                    return "";
+                }
+            }));
+
+            // 2. batchInsert new rows into WARRANTY sheet
+            const rowsData = entries.map((entry, idx) => {
                 const warrantyRow = new Array(8).fill("");
                 
-                // Format the warranty expiry strictly as YYYY-MM-DD
                 let formattedWarrantyEnd = selectedRecord.data.warrantyExpiry;
                 if (formattedWarrantyEnd && formattedWarrantyEnd !== "-") {
                     const d = new Date(formattedWarrantyEnd);
@@ -280,7 +427,7 @@ export default function WarrantyInfo() {
 
                 warrantyRow[0] = selectedRecord.data.indentNo;    // A: Indent No.
                 warrantyRow[1] = selectedRecord.data.liftNo;      // B: Lift No.
-                warrantyRow[2] = "";                              // C: Serial Code - auto generated
+                warrantyRow[2] = uploadResults[idx] || "";        // C: Serial Code (Drive Link)
                 warrantyRow[3] = entry.serialNo;                  // D: Serial No.
                 warrantyRow[4] = selectedRecord.data.vendorName;  // E: Vendor Name
                 warrantyRow[5] = selectedRecord.data.itemName;    // F: Item-Name
@@ -295,8 +442,7 @@ export default function WarrantyInfo() {
             insertParams.append("rowsData", JSON.stringify(rowsData));
             insertParams.append("startRow", "7");
 
-            // 2. Update RECEIVING-ACCOUNTS col DF (index 109) = Actual timestamp
-            //    Leave Planned (DE=108) untouched (sent as "")
+            // 3. Update RECEIVING-ACCOUNTS col DF (index 109) = Actual timestamp
             const raRow = new Array(110).fill("");
             raRow[109] = ts; // DF: Actual
 
@@ -306,11 +452,11 @@ export default function WarrantyInfo() {
             updateParams.append("rowData", JSON.stringify(raRow));
             updateParams.append("rowIndex", selectedRecord.raIndex.toString());
 
-            // Fire both requests in parallel
             const [insertRes, updateRes] = await Promise.all([
                 fetch(API, { method: "POST", body: insertParams }),
                 fetch(API, { method: "POST", body: updateParams }),
             ]);
+            
             const [insertJson, updateJson] = await Promise.all([
                 insertRes.json(), updateRes.json(),
             ]);
@@ -329,7 +475,7 @@ export default function WarrantyInfo() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [selectedRecord, entries, fetchData]);
+    }, [selectedRecord, entries, fetchData, itemCodeMap]);
 
     const formValid = useMemo(() =>
         entries.length > 0 &&
@@ -374,10 +520,7 @@ export default function WarrantyInfo() {
                     <div className="flex items-center gap-3">
                         <ShieldAlert className="w-7 h-7 text-amber-600" />
                         <div>
-                            <h2 className="text-2xl font-bold">Warranty Information</h2>
-                            <p className="text-gray-500 text-sm mt-0.5">
-                                Track and process Warranty Information for received items.
-                            </p>
+                            <h2 className="text-2xl font-bold">Stage: Warranty Information</h2>
                         </div>
                     </div>
                     <div className="relative flex-1 max-w-sm">
@@ -510,8 +653,9 @@ export default function WarrantyInfo() {
                     <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
                         {/* Column headers */}
                         <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 py-2 border-b shrink-0">
-                            <div className="col-span-2 text-center">#</div>
+                            <div className="col-span-1 text-center">#</div>
                             <div className="col-span-10">Serial No. *</div>
+                            <div className="col-span-1 text-center">QR</div>
                         </div>
 
                         {/* Scrollable rows */}
@@ -519,7 +663,7 @@ export default function WarrantyInfo() {
                             {entries.map((entry, idx) => {
                                 return (
                                     <div key={idx} className="grid grid-cols-12 gap-2 items-center px-1">
-                                        <div className="col-span-2 text-center text-sm font-medium text-gray-500">
+                                        <div className="col-span-1 text-center text-sm font-medium text-gray-500">
                                             {idx + 1}
                                         </div>
                                         <div className="col-span-10">
@@ -531,6 +675,38 @@ export default function WarrantyInfo() {
                                                 required 
                                                 readOnly={isAutoMode}
                                             />
+                                        </div>
+                                        <div className="col-span-1 flex justify-center">
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <Button 
+                                                        type="button" 
+                                                        variant="ghost" 
+                                                        size="sm" 
+                                                        className="h-8 w-8 p-0"
+                                                        onClick={() => handlePreview(idx)}
+                                                        disabled={!entry.serialNo.trim()}
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-[420px] p-2 bg-white" side="left">
+                                                    <div className="flex flex-col items-center gap-2">
+                                                        <span className="text-xs font-semibold text-gray-500">Label Preview</span>
+                                                        {previewImages[idx] ? (
+                                                            <img 
+                                                                src={previewImages[idx]} 
+                                                                alt="QR Label Preview" 
+                                                                className="border shadow-sm max-w-full"
+                                                            />
+                                                        ) : (
+                                                            <div className="flex items-center justify-center w-[400px] h-[420px] bg-slate-50 border border-dashed rounded text-slate-400">
+                                                                <Loader2 className="h-8 w-8 animate-spin" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </PopoverContent>
+                                            </Popover>
                                         </div>
                                     </div>
                                 );
