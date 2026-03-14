@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, Search, RefreshCw } from "lucide-react";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { useMemo } from "react";
 import {
   Table,
   TableBody,
@@ -104,9 +106,7 @@ export default function Stage9() {
 
     setIsSubmitting(true);
     try {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const timestamp = getFmsTimestamp();
       
       const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
 
@@ -330,7 +330,7 @@ export default function Stage9() {
   }, []);
 
   // Filter records
-  const pending = sheetRecords
+  const pending = useMemo(() => sheetRecords
     .filter((r: any) => r.status === "pending")
     .filter((r) => {
       if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -344,8 +344,9 @@ export default function Stage9() {
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
-    });
-  const completed = sheetRecords
+    }), [sheetRecords, searchTerm, warehouseFilter]);
+
+  const completed = useMemo(() => sheetRecords
     .filter((r: any) => r.status === "completed")
     .filter((r: any) => {
       if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -360,7 +361,7 @@ export default function Stage9() {
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
-    });
+    }), [sheetRecords, searchTerm, warehouseFilter]);
 
   // Pending columns
   const pendingColumns = [
@@ -497,9 +498,8 @@ export default function Stage9() {
       if (val === undefined || val === null || String(val).trim() === "") return "-";
 
       const lowKey = key.toLowerCase();
-      if ((lowKey.includes("date") || lowKey.includes("plan") || lowKey.includes("actual")) &&
-        val && !isNaN(Date.parse(String(val)))) {
-        return new Date(String(val)).toLocaleDateString("en-IN");
+      if ((lowKey.includes("date") || lowKey.includes("plan") || lowKey.includes("actual"))) {
+        return formatDate(val);
       }
 
       return String(val);
@@ -528,7 +528,7 @@ export default function Stage9() {
           <div className="flex items-center gap-4">
             <Label className="text-sm font-medium">Show Columns:</Label>
             <Select value="" onValueChange={() => { }}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-40">
                 <SelectValue
                   placeholder={
                     activeTab === "pending"
@@ -537,7 +537,7 @@ export default function Stage9() {
                   }
                 />
               </SelectTrigger>
-              <SelectContent className="w-64 max-h-96 overflow-y-auto">
+              <SelectContent className="w-40 max-h-96 overflow-y-auto">
                 <div className="p-2">
                   <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
                     <Checkbox
@@ -601,18 +601,6 @@ export default function Stage9() {
             </Select>
           </div>
         </div>
-
-        {/* Tally Entry Button */}
-        {selectedRows.size >= 1 && (
-          <div className="mt-4 flex items-center gap-4">
-            <Button onClick={handleOpenModal} className="bg-blue-600 hover:bg-blue-700 text-white">
-              Tally Entry
-            </Button>
-            <span className="text-sm text-gray-500">
-              {selectedRows.size} item(s) selected
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Search Filter */}
@@ -620,7 +608,7 @@ export default function Stage9() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
           <Input
-            placeholder="Search by Indent No, Item Name, Vendor, PO, Invoice..."
+            placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 bg-white"
@@ -629,7 +617,7 @@ export default function Stage9() {
 
         {/* Warehouse Filter */}
         <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-          <SelectTrigger className="w-[200px] bg-white">
+          <SelectTrigger className="w-[150px] bg-white">
             <SelectValue placeholder="Select warehouse" />
           </SelectTrigger>
           <SelectContent className="bg-white">
@@ -646,6 +634,15 @@ export default function Stage9() {
             <RefreshCw className="w-4 h-4" />
           )}
         </Button>
+
+        {/* Bulk Action Button - Moved Here */}
+        {selectedRows.size >= 1 && (
+          <div className="ml-auto flex items-center gap-4">
+            <Button onClick={handleOpenModal} className="bg-blue-600 hover:bg-blue-700 text-white">
+              Tally Entry ({selectedRows.size})
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Modal Form */}

@@ -30,6 +30,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { useMemo } from "react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
@@ -176,7 +178,7 @@ export default function Stage10() {
     fetchData();
   }, []);
 
-  const pending = sheetRecords
+  const pending = useMemo(() => sheetRecords
     .filter((r) => r.status === "pending")
     .filter((r) => {
       if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -190,8 +192,9 @@ export default function Stage10() {
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
-    });
-  const completed = sheetRecords
+    }), [sheetRecords, searchTerm, warehouseFilter]);
+
+  const completed = useMemo(() => sheetRecords
     .filter((r) => r.status === "completed")
     .filter((r) => {
       if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -206,7 +209,7 @@ export default function Stage10() {
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
         String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
       );
-    });
+    }), [sheetRecords, searchTerm, warehouseFilter]);
 
   const pendingColumns = [
     { key: "indentNumber", label: "Indent #" },
@@ -312,10 +315,7 @@ export default function Stage10() {
       const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
       if (selectedRecords.length === 0) return;
 
-      const now = new Date();
-      // submissionDate is from formData.invoiceSubmissionDate
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const timestamp = getFmsTimestamp();
       const subDate = formData.invoiceSubmissionDate ? `${formData.invoiceSubmissionDate.getMonth() + 1}/${formData.invoiceSubmissionDate.getDate()}/${formData.invoiceSubmissionDate.getFullYear()}` : "";
 
       // Iterate and submit for ALL selected records
@@ -388,8 +388,8 @@ export default function Stage10() {
       const val = data[key];
       if (val === undefined || val === null || String(val).trim() === "") return "-";
 
-      if ((key.includes("Date") || key.includes("plan") || key.includes("actual")) && !isNaN(Date.parse(String(val)))) {
-        return new Date(String(val)).toLocaleDateString("en-IN");
+      if ((key.toLowerCase().includes("date") || key.toLowerCase().includes("plan") || key.toLowerCase().includes("actual"))) {
+        return formatDate(val);
       }
 
       return String(val);
@@ -418,15 +418,14 @@ export default function Stage10() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">Stage 10: Submit Invoice to Accounts</h2>
-            <p className="text-gray-600 mt-1">Hand over original invoice for payment</p>
           </div>
           <div className="flex items-center gap-4">
             <Label className="text-sm font-medium">Show Columns:</Label>
             <Select value="" onValueChange={() => { }}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-40">
                 <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
               </SelectTrigger>
-              <SelectContent className="w-64 max-h-96 overflow-y-auto">
+              <SelectContent className="w-40 max-h-96 overflow-y-auto">
                 <div className="p-2">
                   <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
                     <Checkbox
@@ -489,7 +488,7 @@ export default function Stage10() {
 
         {/* Warehouse Filter */}
         <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-          <SelectTrigger className="w-[200px] bg-white">
+          <SelectTrigger className="w-[150px] bg-white">
             <SelectValue placeholder="Select warehouse" />
           </SelectTrigger>
           <SelectContent className="bg-white">

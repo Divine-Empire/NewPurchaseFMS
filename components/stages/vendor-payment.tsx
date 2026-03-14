@@ -35,7 +35,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn, formatDate, getFmsTimestamp } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 // ─── Module-level constants (never re-created on render) ─────────────────────
@@ -71,25 +71,12 @@ const HISTORY_COLUMNS = [
 const ALL_PENDING_KEYS = PENDING_COLUMNS.map(c => c.key);
 
 // ─── Stable helper functions ──────────────────────────────────────────────────
-const toDate = (val: any): string => {
-    if (!val || String(val).trim() === "" || String(val).trim() === "-") return "-";
-    try {
-        const d = new Date(val);
-        if (isNaN(d.getTime())) return val;
-        return format(d, "dd-MM-yyyy");
-    } catch {
-        return val;
-    }
-};
+const toDate = (val: any): string => formatDate(val);
 
 const parseNum = (val: any): number =>
     parseFloat(String(val || 0).replace(/,/g, "")) || 0;
 
-const gsNow = (): string => {
-    const n = new Date();
-    const pad = (num: number) => String(num).padStart(2, "0");
-    return `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())} ${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
-};
+const gsNow = (): string => getFmsTimestamp();
 
 const safeValue = (val: any) => {
     if (!val || val === "-" || val === "") return "-";
@@ -457,7 +444,6 @@ export default function Stage13() {
             <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold">Stage 13: Vendor Payments</h2>
-                    <p className="text-gray-600 mt-1">Pending payments (Verified Accounts)</p>
                 </div>
 
                 <div className="flex gap-4 items-center">
@@ -474,7 +460,7 @@ export default function Stage13() {
                             placeholder="Search by Invoice, Vendor, Item, PO..."
                             value={searchTerm}
                             onChange={handleSearchChange}
-                            className="pl-9 bg-white w-[300px]"
+                            className="pl-9 bg-white w-[320px]"
                         />
                     </div>
 
@@ -493,7 +479,7 @@ export default function Stage13() {
                     </Button>
 
                     <Select value="" onValueChange={() => { }}>
-                        <SelectTrigger className="w-40"><SelectValue placeholder="Columns" /></SelectTrigger>
+                        <SelectTrigger className="w-35"><SelectValue placeholder="Columns" /></SelectTrigger>
                         <SelectContent className="max-h-64">
                             {PENDING_COLUMNS.map(c => (
                                 <div key={c.key} className="flex items-center p-2 gap-2">

@@ -439,16 +439,15 @@ export default function Stage13() {
                 <div className="flex justify-between items-center">
                     <div>
                         <h2 className="text-2xl font-bold">Stage 13: Return Approval</h2>
-                        <p className="text-gray-600 mt-1">Approve return requests (Partial QC)</p>
                     </div>
                     <div className="flex items-center gap-4">
                         <div className="relative flex-1 max-w-sm">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
                             <Input
-                                placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+                                placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9 bg-white w-[300px]"
+                                className="pl-9 bg-white w-[350px]"
                             />
                         </div>
                         <Button variant="outline" onClick={fetchData} disabled={isLoading}>

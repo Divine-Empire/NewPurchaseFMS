@@ -34,7 +34,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn, formatDate as sharedFormatDate, getFmsTimestamp } from "@/lib/utils";
 
 // ─── Module-level constants (never re-created on render) ──────────────────────
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -60,22 +60,13 @@ const COLUMNS = [
 const ALL_COLUMN_KEYS = COLUMNS.map(c => c.key);
 
 // Stable date formatter — defined outside component, not re-created each row
-const formatDate = (d: any): string => {
-    if (!d) return "";
-    const str = String(d);
-    if (str.includes("T")) return str.split("T")[0];
-    return str;
-};
+const formatDate = (d: any): string => sharedFormatDate(d);
 
 // Stable float parser
 const parseNum = (val: any): number =>
     parseFloat(String(val || 0).replace(/,/g, "")) || 0;
 
-const gsNow = (): string => {
-    const n = new Date();
-    const pad = (num: number) => String(num).padStart(2, "0");
-    return `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())} ${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
-};
+const gsNow = (): string => getFmsTimestamp();
 
 // Default form state factory — avoids sharing mutable reference
 const defaultForm = () => ({
@@ -361,7 +352,6 @@ export default function Stage14() {
             <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold">Stage 14: Freight Payments</h2>
-                    <p className="text-gray-600 mt-1">Pending freight charges (Transporters)</p>
                 </div>
 
                 <div className="flex gap-4 items-center">

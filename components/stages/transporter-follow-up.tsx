@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, ArrowUpDown, Search } from "lucide-react";
+import { Loader2, RefreshCw, ArrowUpDown, Search, Truck } from "lucide-react";
 import {
     Table,
     TableBody,
@@ -415,55 +415,62 @@ export default function TransporterFollowUp() {
 
     return (
         <div className="p-6">
-            <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
-                <div>
-                    <h2 className="text-2xl font-bold">Transporter Follow-Up</h2>
-                    <p className="text-gray-600 mt-1">Track transportation status and updates</p>
-                </div>
+            <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
+                            <Truck className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 7: Transporter Follow-Up</h2>
+                        </div>
+                    </div>
 
-                <div className="flex gap-4 items-center">
-                    {/* Bulk Button */}
-                    {activeTab === "pending" && selectedRows.size > 1 && (
-                        <Button
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                            onClick={handleBulkOpen}
-                        >
-                            Bulk Follow-Up ({selectedRows.size})
-                        </Button>
-                    )}
+                    <div className="flex items-center gap-4">
+                        <div className="relative w-full max-w-sm">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                            <Input
+                                placeholder="Search by Indent, Item, Vendor..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="pl-9 bg-white"
+                            />
+                        </div>
 
-                    {/* Sorting Dropdown - Only for Pending Tab */}
-                    {activeTab === "pending" && (
-                        <Select
-                            value={sortConfig?.key || ""}
-                            onValueChange={(value) => handleSort(value)}
-                        >
-                            <SelectTrigger className="w-[180px]">
-                                <SelectValue placeholder="Sort by..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="indentNumber">Sort by Indent No</SelectItem>
-                                <SelectItem value="expectedDate">Sort by Expected Date</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    )}
+                        <div className="h-8 w-px bg-slate-200 hidden md:block" />
 
-                    <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    </Button>
-                </div>
-            </div>
+                        <div className="flex gap-4 items-center">
+                            {/* Bulk Button */}
+                            {activeTab === "pending" && selectedRows.size > 1 && (
+                                <Button
+                                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                                    onClick={handleBulkOpen}
+                                >
+                                    Bulk Follow-Up ({selectedRows.size})
+                                </Button>
+                            )}
 
-            {/* Search Filter */}
-            <div className="mb-6 flex items-center gap-4">
-                <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                    <Input
-                        placeholder="Search by Indent No, Item Name, Vendor, PO, Invoice..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-9 bg-white"
-                    />
+                            {/* Sorting Dropdown - Only for Pending Tab */}
+                            {activeTab === "pending" && (
+                                <Select
+                                    value={sortConfig?.key || ""}
+                                    onValueChange={(value) => handleSort(value)}
+                                >
+                                    <SelectTrigger className="w-[150px]">
+                                        <SelectValue placeholder="Sort by..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="indentNumber">Indent No</SelectItem>
+                                        <SelectItem value="expectedDate">Expected Date</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )}
+
+                            <Button variant="outline" onClick={fetchData} disabled={isLoading}>
+                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

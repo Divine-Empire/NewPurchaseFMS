@@ -48,48 +48,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { cn, parseSheetDate, formatDate } from "@/lib/utils";
+import { Check, ChevronsUpDown } from "lucide-react";
 
 // ─── Pure utilities (defined outside component to avoid re-creation) ─────────
 
-const parseSheetDate = (dateStr: string | Date): Date | null => {
-  if (!dateStr || dateStr === "-" || dateStr === "—" || dateStr === "Invalid Date") return null;
-  if (dateStr instanceof Date) return dateStr;
-  const d = new Date(dateStr);
-  if (!isNaN(d.getTime())) return d;
-  const dateTimeParts = dateStr.includes(", ") ? dateStr.split(", ") : dateStr.split(" ");
-  const dateParts = dateTimeParts[0].split("/");
-  if (dateParts.length === 3) {
-    const day = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1;
-    const year = parseInt(dateParts[2], 10);
-    let hours = 0, mins = 0, secs = 0;
-    if (dateTimeParts[1]) {
-      const timeParts = dateTimeParts[1].split(":");
-      if (timeParts.length >= 2) {
-        hours = parseInt(timeParts[0], 10);
-        mins = parseInt(timeParts[1], 10);
-        if (timeParts[2]) secs = parseInt(timeParts[2], 10);
-        if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
-        if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
-      }
-    }
-    const parsed = new Date(year, month, day, hours, mins, secs);
-    if (!isNaN(parsed.getTime())) return parsed;
-  }
-  return null;
-};
 
-const formatDate = (date?: Date | string | null): string => {
-  if (!date || date === "-" || date === "—") return "";
-  const d = date instanceof Date ? date : parseSheetDate(date);
-  if (!d || isNaN(d.getTime())) return String(date || "");
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${dd}/${mm}/${yyyy}`;
-};
-
-const formatDateTime = (date?: Date | string | null): string => formatDate(date);
+const formatDateTime = (date?: Date | string | null): string => formatDate(date as any);
 
 const fuzzyFilter = (list: string[], search: string): string[] => {
   if (!search.trim()) return list.slice(0, 50);
@@ -647,13 +612,13 @@ export default function Stage3() {
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-64 justify-start">
+        <Button variant="outline" className="w-40 justify-start">
           {selectedColumns.length === baseColumns.length
             ? "All columns"
             : `${selectedColumns.length} column${selectedColumns.length > 1 ? "s" : ""} selected`}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2">
+      <PopoverContent className="w-40 p-2">
         <div className="space-y-2">
           <div className="flex items-center space-x-2 pb-2 border-b">
             <Checkbox
@@ -696,14 +661,23 @@ export default function Stage3() {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 3: Vendor Quotation</h2>
-              <p className="text-slate-500 font-medium text-sm">
-                {isThirdParty ? "Collect 3 vendor quotes" : "Update single vendor details"}
-              </p>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Show Columns:</Label>
-            <ColumnSelector />
+            <div className="relative w-full max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input
+                placeholder="Search by Indent No, Item Name..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-white"
+              />
+            </div>
+            <div className="h-8 w-px bg-slate-200 hidden md:block" />
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-medium">Show Columns:</Label>
+              <ColumnSelector />
+            </div>
           </div>
         </div>
       </div>
@@ -721,18 +695,6 @@ export default function Stage3() {
 
 
 
-      {/* Search Filter */}
-      <div className="mb-6 flex items-center gap-4 z-10 relative">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item Name, Vendor..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white shadow-sm border-slate-200 w-full"
-          />
-        </div>
-      </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">

@@ -30,6 +30,8 @@ import {
     DialogTitle,
     DialogFooter,
 } from "@/components/ui/dialog";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { useMemo } from "react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
@@ -112,7 +114,7 @@ export default function SubmitInvoiceHO() {
                         }
 
                         return {
-                            id: row[1] || `row-${originalIndex}`,
+                            id: `${row[1]}_${originalIndex}`,
                             rowIndex: originalIndex,
                             status,
                             originalRow: row, // Preserve data
@@ -158,7 +160,7 @@ export default function SubmitInvoiceHO() {
         fetchData();
     }, []);
 
-    const pending = sheetRecords
+    const pending = useMemo(() => sheetRecords
         .filter((r) => r.status === "pending")
         .filter((r) => {
             if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -172,8 +174,9 @@ export default function SubmitInvoiceHO() {
                 String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
                 String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
             );
-        });
-    const completed = sheetRecords
+        }), [sheetRecords, searchTerm, warehouseFilter]);
+
+    const completed = useMemo(() => sheetRecords
         .filter((r) => r.status === "completed")
         .filter((r) => {
             if (warehouseFilter === "NE Warehouse" && r.data.warehouse !== "NE Warehouse") return false;
@@ -188,7 +191,7 @@ export default function SubmitInvoiceHO() {
                 String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
                 String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower)
             );
-        });
+        }), [sheetRecords, searchTerm, warehouseFilter]);
 
     const pendingColumns = [
         { key: "indentNumber", label: "Indent #" },
@@ -224,17 +227,28 @@ export default function SubmitInvoiceHO() {
 
     // Toggle Selection
     const toggleRow = (id: string) => {
-        const newSet = new Set(selectedRows);
-        if (newSet.has(id)) newSet.delete(id);
-        else newSet.add(id);
-        setSelectedRows(newSet);
+        setSelectedRows(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
     };
 
     const toggleAll = () => {
-        if (selectedRows.size === pending.length) {
-            setSelectedRows(new Set());
+        const allPendingSelected = pending.length > 0 && pending.every(r => selectedRows.has(r.id));
+        if (allPendingSelected) {
+            setSelectedRows(prev => {
+                const next = new Set(prev);
+                pending.forEach(r => next.delete(r.id));
+                return next;
+            });
         } else {
-            setSelectedRows(new Set(pending.map((r) => r.id)));
+            setSelectedRows(prev => {
+                const next = new Set(prev);
+                pending.forEach(r => next.add(r.id));
+                return next;
+            });
         }
     };
 
@@ -295,9 +309,7 @@ export default function SubmitInvoiceHO() {
                 ? format(formData.submissionDate, "yyyy-MM-dd")
                 : "";
                 
-            const now = new Date();
-            const pad = (n: number) => String(n).padStart(2, "0");
-            const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            const timestamp = getFmsTimestamp();
 
             // Actual date should record precise local compilation time
             const actualDate = timestamp;
@@ -369,8 +381,8 @@ export default function SubmitInvoiceHO() {
             const val = data[key];
             if (val === undefined || val === null || String(val).trim() === "") return "-";
 
-            if ((key.includes("Date") || key.includes("plan") || key.includes("actual")) && !isNaN(Date.parse(String(val)))) {
-                return new Date(String(val)).toLocaleDateString("en-IN");
+            if ((key.toLowerCase().includes("date") || key.toLowerCase().includes("plan") || key.toLowerCase().includes("actual"))) {
+                return formatDate(val);
             }
 
             return String(val);
@@ -395,17 +407,15 @@ export default function SubmitInvoiceHO() {
             <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold">Submit Invoice (HO)</h2>
-                        <p className="text-gray-600 mt-1">Submit hardcopy invoices to Head Office</p>
+                        <h2 className="text-2xl font-bold">Stage: Submit Invoice (HO)</h2>
                     </div>
-                    {/* Header Actions */}
                     <div className="flex items-center gap-4">
                         <Label className="text-sm font-medium">Show Columns:</Label>
                         <Select value="" onValueChange={() => { }}>
-                            <SelectTrigger className="w-64">
+                            <SelectTrigger className="w-40">
                                 <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
                             </SelectTrigger>
-                            <SelectContent className="w-64 max-h-96 overflow-y-auto">
+                            <SelectContent className="w-40 max-h-96 overflow-y-auto">
                                 <div className="p-2">
                                     <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
                                         <Checkbox
@@ -437,20 +447,6 @@ export default function SubmitInvoiceHO() {
                         </Select>
                     </div>
                 </div>
-
-                {selectedRows.size > 0 && (
-                    <div className="mt-4 flex items-center gap-4">
-                        <Button
-                            onClick={() => handleOpenForm()}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                            Submit Invoice to HO ({selectedRows.size})
-                        </Button>
-                        <span className="text-sm text-gray-500">
-                            {selectedRows.size} item(s) selected
-                        </span>
-                    </div>
-                )}
             </div>
 
             {/* Search and Filters */}
@@ -467,7 +463,7 @@ export default function SubmitInvoiceHO() {
 
                 {/* Warehouse Filter */}
                 <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-                    <SelectTrigger className="w-[200px] bg-white">
+                    <SelectTrigger className="w-[150px] bg-white">
                         <SelectValue placeholder="Select warehouse" />
                     </SelectTrigger>
                     <SelectContent className="bg-white">
@@ -476,6 +472,18 @@ export default function SubmitInvoiceHO() {
                         <SelectItem value="Others">Others</SelectItem>
                     </SelectContent>
                 </Select>
+
+                {/* Bulk Action Button - Moved Here */}
+                {selectedRows.size > 0 && (
+                    <div className="ml-auto flex items-center gap-4">
+                        <Button
+                            onClick={() => handleOpenForm()}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                            Submit Invoice to HO ({selectedRows.size})
+                        </Button>
+                    </div>
+                )}
             </div>
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
@@ -494,7 +502,7 @@ export default function SubmitInvoiceHO() {
                                     <TableRow>
                                         <TableHead className="bg-white z-10 w-[100px]">
                                             <Checkbox
-                                                checked={selectedRows.size === pending.length && pending.length > 0}
+                                                checked={pending.length > 0 && pending.every(r => selectedRows.has(r.id))}
                                                 onCheckedChange={toggleAll}
                                             />
                                         </TableHead>

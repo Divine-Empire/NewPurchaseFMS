@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -39,19 +39,20 @@ import {
   CheckCircle,
   Clock,
   Filter,
-  Download,
-  Eye,
   Calendar,
   FileText,
   TrendingUp,
   Plus,
+  Loader2,
+  Download,
+  Eye,
   Package,
   Users,
-  Loader2,
   ShieldAlert,
   Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { parseSheetDate, formatDate } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -68,259 +69,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-// === NEW DATA (DIFFERENT FROM MOCK) ===
-// Mock data removed or kept for other tabs if needed, but InTransit tab will override.
-const inTransitDataMock = [
-  // ... existing mock data ...
-];
-
-// Helper to format date to yyyy-mm-dd
-const formatToDisplayDate = (dateStr: string) => {
-  if (!dateStr) return "-";
-  try {
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return dateStr;
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const year = date.getUTCFullYear();
-    return `${year}-${month}-${day}`;
-  } catch (e) {
-    return dateStr;
-  }
-};
-const receivedDataMock = [
-  {
-    erp: 891,
-    material: "MS Billet",
-    party: "JINDAL STEEL WORKS",
-    truck: "RJ14GA1234",
-    date: "02/11/2025",
-    qty: 120.5,
-  },
-  {
-    erp: 878,
-    material: "Ferro Chrome",
-    party: "TATA METALIKS",
-    truck: "WB19AB5678",
-    date: "01/11/2025",
-    qty: 45.2,
-  },
-  {
-    erp: 874,
-    material: "Silico Manganese",
-    party: "MAITHAN ALLOYS",
-    truck: "OR05CD9012",
-    date: "01/11/2025",
-    qty: 88.7,
-  },
-  {
-    erp: 860,
-    material: "Sponge Iron",
-    party: "RASHMI METALIKS",
-    truck: "CG07XY4455",
-    date: "31/10/2025",
-    qty: 67.3,
-  },
-  {
-    erp: 848,
-    material: "MS Scrap",
-    party: "BHUSHAN TRADERS",
-    truck: "MH12PQ8899",
-    date: "30/10/2025",
-    qty: 29.1,
-  },
-  {
-    erp: 836,
-    material: "Pig Iron",
-    party: "NEELACHAL ISPAT",
-    truck: "OD02LM3344",
-    date: "29/10/2025",
-    qty: 55.8,
-  },
-  {
-    erp: 823,
-    material: "MS Ingot",
-    party: "VANDANA STEELS",
-    truck: "CG04AB1122",
-    date: "28/10/2025",
-    qty: 41.6,
-  },
-  {
-    erp: 810,
-    material: "Ferro Silicon",
-    party: "IMFA LTD",
-    truck: "OR11JK5566",
-    date: "27/10/2025",
-    qty: 33.9,
-  },
-  {
-    erp: 798,
-    material: "MS Billet",
-    party: "ELECTROSTEEL",
-    truck: "WB25MN7788",
-    date: "26/10/2025",
-    qty: 95.4,
-  },
-  {
-    erp: 787,
-    material: "Sponge Iron",
-    party: "JAI BALAJI",
-    truck: "CG10EF9900",
-    date: "25/10/2025",
-    qty: 72.1,
-  },
-];
-
-// Mock data removed or kept for other tabs if needed, but Purchase Data tab will override.
-const pendingDataMock = [
-  {
-    erp: 701,
-    material: "MS Billet",
-    party: "JINDAL STEEL WORKS",
-    qty: 150,
-    rate: 48500,
-    pending: 150,
-    lifted: 0,
-    received: 0,
-    returned: 0,
-    cancelled: 0,
-  },
-  {
-    erp: 702,
-    material: "Sponge Iron",
-    party: "RASHMI METALIKS",
-    qty: 200,
-    rate: 28500,
-    pending: 180,
-    lifted: 20,
-    received: 20,
-    returned: 0,
-    cancelled: 0,
-  },
-  {
-    erp: 703,
-    material: "Ferro Chrome",
-    party: "TATA METALIKS",
-    qty: 50,
-    rate: 125000,
-    pending: 30,
-    lifted: 20,
-    received: 15,
-    returned: 5,
-    cancelled: 0,
-  },
-  {
-    erp: 704,
-    material: "MS Scrap",
-    party: "BHUSHAN TRADERS",
-    qty: 80,
-    rate: 32000,
-    pending: 80,
-    lifted: 0,
-    received: 0,
-    returned: 0,
-    cancelled: 0,
-  },
-  {
-    erp: 705,
-    material: "Silico Manganese",
-    party: "MAITHAN ALLOYS",
-    qty: 100,
-    rate: 78000,
-    pending: 70,
-    lifted: 30,
-    received: 25,
-    returned: 5,
-    cancelled: 0,
-  },
-];
-
-const topMaterials = [
-  { rank: 1, material: "MS Billet", qty: 18950.5 },
-  { rank: 2, material: "Sponge Iron", qty: 14230.75 },
-  { rank: 3, material: "Ferro Chrome", qty: 8750.2 },
-  { rank: 4, material: "Silico Manganese", qty: 7210.4 },
-  { rank: 5, material: "MS Scrap", qty: 4855.3 },
-  { rank: 6, material: "Pig Iron", qty: 3900.1 },
-  { rank: 7, material: "MS Ingot", qty: 3200.8 },
-  { rank: 8, material: "Ferro Silicon", qty: 2100.6 },
-  { rank: 9, material: "TMT Bar", qty: 1800.9 },
-  { rank: 10, material: "Wire Rod", qty: 1500.25 },
-];
-
-const topVendors = [
-  {
-    rank: 1,
-    vendor: "JINDAL STEEL WORKS",
-    qty: 18950.5,
-    price: 42500,
-    material: "MS Billet",
-  },
-  {
-    rank: 2,
-    vendor: "RASHMI METALIKS",
-    qty: 14230.75,
-    price: 41800,
-    material: "MS Billet",
-  },
-  {
-    rank: 3,
-    vendor: "TATA METALIKS",
-    qty: 8750.2,
-    price: 42200,
-    material: "Sponge Iron",
-  },
-  {
-    rank: 4,
-    vendor: "MAITHAN ALLOYS",
-    qty: 7210.4,
-    price: 42800,
-    material: "Ferro Chrome",
-  },
-  {
-    rank: 5,
-    vendor: "BHUSHAN TRADERS",
-    qty: 4855.3,
-    price: 41500,
-    material: "MS Scrap",
-  },
-  {
-    rank: 6,
-    vendor: "NEELACHAL ISPAT",
-    qty: 3900.1,
-    price: 42300,
-    material: "MS Billet",
-  },
-  {
-    rank: 7,
-    vendor: "VANDANA STEELS",
-    qty: 3200.8,
-    price: 42700,
-    material: "Sponge Iron",
-  },
-  {
-    rank: 8,
-    vendor: "IMFA LTD",
-    qty: 2100.6,
-    price: 42900,
-    material: "Ferro Chrome",
-  },
-  {
-    rank: 9,
-    vendor: "JAI BALAJI",
-    qty: 1800.9,
-    price: 41600,
-    material: "MS Scrap",
-  },
-  {
-    rank: 10,
-    vendor: "ELECTROSTEEL",
-    qty: 1500.25,
-    price: 43000,
-    material: "MS Billet",
-  },
-];
 
 // Define all purchase order stages with pending counts (Excluding Create Indent)
 const purchaseStages = [
@@ -341,16 +89,6 @@ const purchaseStages = [
   { id: 17, name: "Return Approval", color: "bg-indigo-600" },
   { id: 18, name: "Vendor Payment", color: "bg-slate-500" },
   { id: 19, name: "Freight Payments", color: "bg-zinc-500" },
-];
-
-
-const vendorBarData = topVendors.map((v) => ({
-  name: v.vendor.split(" ").slice(0, 2).join(" "),
-  qty: v.qty,
-}));
-const pieData = [
-  { name: "Complete", value: 88, color: "#10b981" },
-  { name: "Pending", value: 12, color: "#f59e0b" },
 ];
 
 export default function PurchaseDashboard() {
@@ -917,32 +655,29 @@ export default function PurchaseDashboard() {
   }, []);
 
   // Compute unique values for filters
-  const allData = [...inTransitItems, ...receivedItems, ...purchaseItems, ...warrantyItems];
-  const uniqueParties = [...new Set(allData.map((item) => item.party))].filter(Boolean).sort();
-  const uniqueMaterials = [
-    ...new Set(allData.map((item) => item.material)),
-  ].filter(Boolean).sort();
+  const allData = useMemo(() => [...inTransitItems, ...receivedItems, ...purchaseItems, ...warrantyItems], [inTransitItems, receivedItems, purchaseItems, warrantyItems]);
+  
+  const uniqueParties = useMemo(() => 
+    [...new Set(allData.map((item) => item.party))].filter(Boolean).sort()
+  , [allData]);
 
-  // Helper function to parse date dd-mm-yyyy
-  const parseDate = (dateStr: string) => {
-    if (!dateStr) return null;
-    const [day, month, year] = dateStr.split("-").map(Number);
-    return new Date(year, month - 1, day);
-  };
+  const uniqueMaterials = useMemo(() => 
+    [...new Set(allData.map((item) => item.material))].filter(Boolean).sort()
+  , [allData]);
 
   // Filtering function
   const applyFilters = (data: any[], dataType: string) => {
     return data.filter((item: any) => {
       // Date filter
       if (dateFrom || dateTo) {
-        const itemDate = parseDate(item.date);
+        const itemDate = parseSheetDate(item.date);
         if (!itemDate) return false;
         if (dateFrom) {
-          const fromDate = parseDate(dateFrom);
+          const fromDate = parseSheetDate(dateFrom);
           if (fromDate && itemDate < fromDate) return false;
         }
         if (dateTo) {
-          const toDate = parseDate(dateTo);
+          const toDate = parseSheetDate(dateTo);
           if (toDate && itemDate > toDate) return false;
         }
       }
@@ -993,11 +728,10 @@ export default function PurchaseDashboard() {
   };
 
   // Apply filters to data
-  const filteredInTransitData = applyFilters(inTransitItems, "intransit");
-  // const filteredReceivedData = applyFilters(receivedData, "received"); // Replacing with dynamic
-  const filteredReceivedData = applyFilters(receivedItems, "received");
-  const filteredPendingData = applyFilters(purchaseItems, "pending");
-  const filteredWarrantyData = applyFilters(warrantyItems, "warranty");
+  const filteredInTransitData = useMemo(() => applyFilters(inTransitItems, "intransit"), [inTransitItems, dateFrom, dateTo, selectedParty, selectedMaterial, selectedStatus]);
+  const filteredReceivedData = useMemo(() => applyFilters(receivedItems, "received"), [receivedItems, dateFrom, dateTo, selectedParty, selectedMaterial, selectedStatus]);
+  const filteredPendingData = useMemo(() => applyFilters(purchaseItems, "pending"), [purchaseItems, dateFrom, dateTo, selectedParty, selectedMaterial, selectedStatus]);
+  const filteredWarrantyData = useMemo(() => applyFilters(warrantyItems, "warranty"), [warrantyItems, dateFrom, dateTo, selectedParty, selectedMaterial, selectedStatus, warrantyMonthsFilter]);
 
   // Sorting function
   const sortData = (data: any[], sortConfig: any) => {
@@ -1006,24 +740,27 @@ export default function PurchaseDashboard() {
       let bVal = b[sortConfig.key];
 
       if (sortConfig.key === "date") {
-        aVal = parseDate(aVal);
-        bVal = parseDate(bVal);
+        aVal = parseSheetDate(aVal);
+        bVal = parseSheetDate(bVal);
       } else if (typeof aVal === "string") {
         aVal = aVal.toLowerCase();
         bVal = bVal.toLowerCase();
       }
 
-      if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+      const aTime = aVal instanceof Date ? aVal.getTime() : aVal;
+      const bTime = bVal instanceof Date ? bVal.getTime() : bVal;
+
+      if (aTime < bTime) return sortConfig.direction === "asc" ? -1 : 1;
+      if (aTime > bTime) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
   };
 
   // Apply sorting
-  const sortedInTransitData = sortData(filteredInTransitData, inTransitSort);
-  const sortedReceivedData = sortData(filteredReceivedData, receivedSort);
-  const sortedPendingData = sortData(filteredPendingData, pendingSort);
-  const sortedWarrantyData = sortData(filteredWarrantyData, warrantySort);
+  const sortedInTransitData = useMemo(() => sortData(filteredInTransitData, inTransitSort), [filteredInTransitData, inTransitSort]);
+  const sortedReceivedData = useMemo(() => sortData(filteredReceivedData, receivedSort), [filteredReceivedData, receivedSort]);
+  const sortedPendingData = useMemo(() => sortData(filteredPendingData, pendingSort), [filteredPendingData, pendingSort]);
+  const sortedWarrantyData = useMemo(() => sortData(filteredWarrantyData, warrantySort), [filteredWarrantyData, warrantySort]);
 
   // Apply search
   const searchData = (data: any[], searchTerm: string) => {
@@ -1041,10 +778,10 @@ export default function PurchaseDashboard() {
     );
   };
 
-  const finalInTransitData = searchData(sortedInTransitData, inTransitSearch);
-  const finalReceivedData = searchData(sortedReceivedData, receivedSearch);
-  const finalPendingData = searchData(sortedPendingData, pendingSearch);
-  const finalWarrantyData = searchData(sortedWarrantyData, warrantySearch);
+  const finalInTransitData = useMemo(() => searchData(sortedInTransitData, inTransitSearch), [sortedInTransitData, inTransitSearch]);
+  const finalReceivedData = useMemo(() => searchData(sortedReceivedData, receivedSearch), [sortedReceivedData, receivedSearch]);
+  const finalPendingData = useMemo(() => searchData(sortedPendingData, pendingSearch), [sortedPendingData, pendingSearch]);
+  const finalWarrantyData = useMemo(() => searchData(sortedWarrantyData, warrantySearch), [sortedWarrantyData, warrantySearch]);
 
   // Export to CSV function
   const exportToCSV = (data: any[], filename: string, visibleColumns?: string[]) => {
@@ -1061,7 +798,7 @@ export default function PurchaseDashboard() {
           let val = row[header];
           // Format date fields in CSV if they look like dates
           if (header.toLowerCase().includes("date") || header.toLowerCase().includes("end")) {
-            val = formatToDisplayDate(val);
+            val = formatDate(val);
           }
           return `"${val}"`;
         }).join(",")
@@ -2415,7 +2152,7 @@ export default function PurchaseDashboard() {
                         {warrantyVisibleColumns.includes("itemName") && <TableCell className="text-xs">{item.itemName}</TableCell>}
                         {warrantyVisibleColumns.includes("invoiceDate") && (
                           <TableCell className="text-xs">
-                            {formatToDisplayDate(item.invoiceDate)}
+                            {formatDate(item.invoiceDate)}
                           </TableCell>
                         )}
                         {warrantyVisibleColumns.includes("warrantyEnd") && (
@@ -2427,7 +2164,7 @@ export default function PurchaseDashboard() {
                               nextMonth.setMonth(today.getMonth() + 1);
 
                               const isExpiringSoon = !isNaN(date.getTime()) && date > today && date <= nextMonth;
-                              const formattedDate = formatToDisplayDate(item.warrantyEnd);
+                              const formattedDate = formatDate(item.warrantyEnd);
 
                               if (isExpiringSoon) {
                                 return (

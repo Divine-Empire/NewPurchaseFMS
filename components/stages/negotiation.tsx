@@ -37,6 +37,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { useMemo } from "react";
 
 export default function Stage4() {
   const { moveToNextStage, updateRecord } = useWorkflow();
@@ -64,24 +66,6 @@ export default function Stage4() {
 
 
 
-  const formatDate = (date?: Date | string) => {
-    if (!date) return "";
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return "";
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`; // YYYY-MM-DD format
-  };
-
-  const parseSheetDate = (dateStr: string) => {
-    if (!dateStr || dateStr === "-") return new Date();
-    const parts = dateStr.split("/");
-    if (parts.length === 3) {
-      return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-    }
-    return new Date(dateStr);
-  };
 
   const fetchData = async () => {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -207,7 +191,7 @@ export default function Stage4() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
-  const pending = sheetRecords
+  const pending = useMemo(() => sheetRecords
     .filter((r) => r.status === "pending")
     .filter((r) => {
       const searchLower = searchTerm.toLowerCase();
@@ -223,11 +207,11 @@ export default function Stage4() {
         r.data.vendor1Name?.toLowerCase().includes(searchLower) ||
         r.data.vendor2Name?.toLowerCase().includes(searchLower) ||
         r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
-        r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
         String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Number search
       );
-    });
-  const completed = sheetRecords
+    }), [sheetRecords, searchTerm]);
+
+  const completed = useMemo(() => sheetRecords
     .filter((r) => r.status === "completed")
     .filter((r) => {
       const searchLower = searchTerm.toLowerCase();
@@ -240,7 +224,7 @@ export default function Stage4() {
         r.data.vendor3Name?.toLowerCase().includes(searchLower) ||
         String(r.data.poNumber || "").toLowerCase().includes(searchLower)
       );
-    });
+    }), [sheetRecords, searchTerm]);
 
   const baseColumns = [
     { key: "indentNumber", label: "Indent #", icon: null },
@@ -436,9 +420,7 @@ export default function Stage4() {
     setSubmitError(null);
 
     try {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const timestamp = getFmsTimestamp();
 
       // Get selected vendor name from common vendors
       const commonVendors = getCommonVendors(bulkRecords);
@@ -487,13 +469,13 @@ export default function Stage4() {
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-64 justify-start">
+        <Button variant="outline" className="w-40 justify-start">
           {selectedColumns.length === baseColumns.length
             ? "All columns"
             : `${selectedColumns.length} column${selectedColumns.length > 1 ? "s" : ""} selected`}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2">
+      <PopoverContent className="w-40 p-2">
         <div className="space-y-2">
           <div className="flex items-center space-x-2 pb-2 border-b">
             <Checkbox
@@ -538,15 +520,24 @@ export default function Stage4() {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 4: Vendor Negotiation</h2>
-              <p className="text-slate-500 font-medium text-sm">
-                Compare quotes and select the best vendor
-              </p>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {isLoading && <Loader2 className="w-5 h-5 animate-spin text-black" />}
-            <Label className="text-sm font-medium">Show Columns:</Label>
-            <ColumnSelector />
+            <div className="relative w-full max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input
+                placeholder="Search by Indent, Item, Vendor..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-white"
+              />
+            </div>
+            <div className="h-8 w-px bg-slate-200 mx-2" />
+            <div className="flex items-center gap-4">
+              {isLoading && <Loader2 className="w-5 h-5 animate-spin text-black" />}
+              <Label className="text-sm font-medium">Show Columns:</Label>
+              <ColumnSelector />
+            </div>
           </div>
         </div>
       </div>
@@ -556,19 +547,6 @@ export default function Stage4() {
           <span className="font-medium">Error:</span> {submitError}
         </div>
       )}
-
-      {/* Search Filter */}
-      <div className="mb-6 flex items-center gap-4 z-10 relative">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item Name, Vendor..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white shadow-sm border-slate-200 w-full"
-          />
-        </div>
-      </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">

@@ -62,6 +62,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { useMemo } from "react";
 
 export default function Stage2() {
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
@@ -103,52 +105,6 @@ export default function Stage2() {
 
   // const approvers = ["John Doe", "Jane Smith", "Bob Johnson"]; // Replaced by dynamic fetch
 
-  const formatDate = (date: Date | string) => {
-    if (!date) return "-";
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return String(date);
-    const day = String(d.getDate()).padStart(2, "0");
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
-
-
-
-  const parseSheetDate = (dateStr: string) => {
-    if (!dateStr || dateStr === "-" || dateStr === "Invalid Date") return new Date();
-    // Try standard parsing
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) return d;
-
-    // Try parsing DD/MM/YYYY or DD/MM/YYYY, HH:mm:ss (handle both comma and space separators)
-    const dateTimeParts = dateStr.includes(", ") ? dateStr.split(", ") : dateStr.split(" ");
-    const dateParts = dateTimeParts[0].split("/");
-    if (dateParts.length === 3) {
-      const day = parseInt(dateParts[0], 10);
-      const month = parseInt(dateParts[1], 10) - 1;
-      const year = parseInt(dateParts[2], 10);
-
-      // Extract time if exists
-      let hours = 0, mins = 0, secs = 0;
-      if (dateTimeParts[1]) {
-        const timeParts = dateTimeParts[1].split(":");
-        if (timeParts.length >= 2) {
-          hours = parseInt(timeParts[0], 10);
-          mins = parseInt(timeParts[1], 10);
-          if (timeParts[2]) secs = parseInt(timeParts[2], 10);
-
-          // Handle AM/PM if present
-          if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
-          if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
-        }
-      }
-
-      const parsed = new Date(year, month, day, hours, mins, secs);
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
-    return new Date();
-  };
 
   const fetchData = async () => {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -238,7 +194,7 @@ export default function Stage2() {
 
   const [searchTerm, setSearchTerm] = useState("");
 
-  const pending = sheetRecords
+  const pending = useMemo(() => sheetRecords
     .filter((r) => r.status === "pending")
     .filter((r) => {
       const searchLower = searchTerm.toLowerCase();
@@ -248,9 +204,9 @@ export default function Stage2() {
         r.data.quantity?.toString().toLowerCase().includes(searchLower) ||
         r.data.vendorType?.toLowerCase().includes(searchLower)
       );
-    });
+    }), [sheetRecords, searchTerm]);
 
-  const history = sheetRecords
+  const history = useMemo(() => sheetRecords
     .filter((r) => r.status === "completed")
     .filter((r) => {
       const searchLower = searchTerm.toLowerCase();
@@ -261,7 +217,7 @@ export default function Stage2() {
         r.data.quantity?.toString().toLowerCase().includes(searchLower) ||
         r.data.vendorType?.toLowerCase().includes(searchLower)
       );
-    });
+    }), [sheetRecords, searchTerm]);
 
   const columns = [
     { key: "indentNumber", label: "Indent", icon: Hash },
@@ -373,16 +329,15 @@ export default function Stage2() {
         // ✅ UPDATED: sparse row (only update touched columns)
         const rowArray: any[] = [];
 
-        const actualDate = new Date(); // Get current date as Date object
+        const actualDate = getFmsTimestamp();
+        // Send dates as JavaScript Date objects (not strings) - Actually now sending standardized string
+        // Column K (index 10): Actual 1 Date
+        rowArray[10] = actualDate; 
 
         const itemData = (approvalData as any).lineData?.[record.id];
         const finalStatus = itemData?.status || approvalData.status || "approved";
         const finalQty = itemData?.approvedQty || approvalData.approvedQty || record.data.quantity;
         const finalVendorType = itemData?.vendorType || approvalData.vendorType || "regular";
-
-        // Send dates as JavaScript Date objects (not strings)
-        // Column K (index 10): Actual 1 Date
-        rowArray[10] = actualDate; // Send as Date object, not string
 
         rowArray[12] = approvalData.approvedBy; // M: Approved By
         rowArray[13] = finalStatus; // N: Status
@@ -452,14 +407,14 @@ export default function Stage2() {
   const ColumnSelector = () => (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className="w-64 justify-start">
+        <Button variant="outline" className="w-40 justify-start">
           {selectedColumns.length === columns.length
             ? "All columns"
             : `${selectedColumns.length} column${selectedColumns.length !== 1 ? "s" : ""
             } selected`}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-2">
+      <PopoverContent className="w-40 p-2">
         <div className="space-y-2">
           <div className="flex items-center space-x-2 pb-2 border-b">
             <Checkbox
@@ -504,38 +459,32 @@ export default function Stage2() {
     <div className="p-6">
       {/* Header Card */}
       <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
               <UserCheck className="w-6 h-6" />
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 2: Approval</h2>
-              <p className="text-slate-500 font-medium text-sm">
-                Review and approve/reject indents
-              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex-1 flex items-center justify-end gap-4">
+            <div className="relative w-full max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input
+                placeholder="Search by Indent No, Item Name..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-white"
+              />
+            </div>
+
             <div className="flex items-center gap-3">
               <Label className="text-sm font-semibold text-slate-600">Show Columns:</Label>
               <ColumnSelector />
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Search Filter */}
-      <div className="mb-6 flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item Name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white"
-          />
         </div>
       </div>
 

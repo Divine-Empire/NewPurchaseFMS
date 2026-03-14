@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useWorkflow } from "@/lib/workflow-context";
 import { StageTable } from "./stage-table";
 import {
@@ -21,11 +21,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { X, Loader2, PlusCircle, History as HistoryIcon, LayoutGrid, ClipboardList, FileText, Upload, Search } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { X, Loader2, PlusCircle, History as HistoryIcon, LayoutGrid, ClipboardList, FileText, Upload, Search, Check, ChevronsUpDown } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn, parseSheetDate } from "@/lib/utils";
 import {
   Command,
   CommandEmpty,
@@ -53,40 +52,6 @@ export default function Stage1() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
 
-  const parseSheetDate = (dateStr: string) => {
-    if (!dateStr || dateStr === "-" || dateStr === "Invalid Date") return new Date();
-    // Try standard parsing
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) return d;
-
-    // Try parsing DD/MM/YYYY or DD/MM/YYYY, HH:mm:ss (handle both comma and space separators)
-    const dateTimeParts = dateStr.includes(", ") ? dateStr.split(", ") : dateStr.split(" ");
-    const dateParts = dateTimeParts[0].split("/");
-    if (dateParts.length === 3) {
-      const day = parseInt(dateParts[0], 10);
-      const month = parseInt(dateParts[1], 10) - 1;
-      const year = parseInt(dateParts[2], 10);
-
-      // Extract time if exists
-      let hours = 0, mins = 0, secs = 0;
-      if (dateTimeParts[1]) {
-        const timeParts = dateTimeParts[1].split(":");
-        if (timeParts.length >= 2) {
-          hours = parseInt(timeParts[0], 10);
-          mins = parseInt(timeParts[1], 10);
-          if (timeParts[2]) secs = parseInt(timeParts[2], 10);
-
-          // Handle AM/PM if present
-          if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
-          if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
-        }
-      }
-
-      const parsed = new Date(year, month, day, hours, mins, secs);
-      if (!isNaN(parsed.getTime())) return parsed;
-    }
-    return new Date();
-  };
 
   const fetchData = async () => {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -187,13 +152,17 @@ export default function Stage1() {
     );
   };
 
-  const pending = sheetRecords
-    .filter((r) => r.status === "pending")
-    .filter(matchesSearch);
+  const pending = useMemo(() => 
+    sheetRecords
+      .filter((r) => r.status === "pending")
+      .filter(matchesSearch)
+  , [sheetRecords, searchTerm]);
 
-  const history = sheetRecords
-    .filter((r) => r.status === "completed")
-    .filter(matchesSearch);
+  const history = useMemo(() => 
+    sheetRecords
+      .filter((r) => r.status === "completed")
+      .filter(matchesSearch)
+  , [sheetRecords, searchTerm]);
 
   const Combobox = ({
     options,
@@ -386,7 +355,7 @@ export default function Stage1() {
   }, []);
 
   // Get unique categories from dropdown data
-  const categoryOptions = [...new Set(dropdownData.map(item => item.category))].filter(Boolean);
+  const categoryOptions = useMemo(() => [...new Set(dropdownData.map(item => item.category))].filter(Boolean), [dropdownData]);
 
   // Get items filtered by selected category
   const getItemsByCategory = (category: string) => {
@@ -826,10 +795,17 @@ export default function Stage1() {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 1: Create Indent</h2>
-              <p className="text-slate-500 font-medium text-sm">
-                Initiate and manage purchase indents & orders
-              </p>
             </div>
+          </div>
+
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+            <Input
+              placeholder="Search by Indent No, Item Name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 bg-white"
+            />
           </div>
 
           {activeTab === "pending" && (
@@ -843,19 +819,6 @@ export default function Stage1() {
               </Button>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Search Filter */}
-      <div className="mb-6 flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item Name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white"
-          />
         </div>
       </div>
 

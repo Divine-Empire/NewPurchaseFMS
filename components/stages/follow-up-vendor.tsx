@@ -61,7 +61,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, parseSheetDate, formatDate } from "@/lib/utils";
 
 interface LiftingEntry {
   liftNumber: string;
@@ -167,44 +167,6 @@ const TransporterCombobox = ({
   );
 };
 
-const formatDate = (date?: Date | string) => {
-  if (!date) return "";
-  const d = new Date(date);
-  if (isNaN(d.getTime())) return "";
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-};
-
-const parseSheetDate = (dateStr: string) => {
-  if (!dateStr || dateStr === "-" || dateStr === "Invalid Date") return new Date();
-
-  const d = new Date(dateStr);
-  if (!isNaN(d.getTime())) return d;
-
-  const dateTimeParts = dateStr.split(", ");
-  const dateParts = dateTimeParts[0].split("/");
-  if (dateParts.length === 3) {
-    const day = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1;
-    const year = parseInt(dateParts[2], 10);
-
-    let hours = 0, mins = 0, secs = 0;
-    if (dateTimeParts[1]) {
-      const timeParts = dateTimeParts[1].split(":");
-      if (timeParts.length >= 2) {
-        hours = parseInt(timeParts[0], 10);
-        mins = parseInt(timeParts[1], 10);
-        if (timeParts[2]) secs = parseInt(timeParts[2], 10);
-
-        if (dateTimeParts[1].toLowerCase().includes("pm") && hours < 12) hours += 12;
-        if (dateTimeParts[1].toLowerCase().includes("am") && hours === 12) hours = 0;
-      }
-    }
-
-    const parsed = new Date(year, month, day, hours, mins, secs);
-    if (!isNaN(parsed.getTime())) return parsed;
-  }
-  return new Date();
-};
 
 export default function Stage6() {
   const [open, setOpen] = useState(false);
@@ -985,69 +947,65 @@ export default function Stage6() {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 6: Vendor Follow-Up</h2>
-              <p className="text-slate-500 font-medium text-sm">
-                Track dispatch and material lift status
-              </p>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Show Columns:</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="w-64 justify-start">
-                  {selectedColumns.length} selected
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-2">
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2 pb-2 border-b">
-                    <Checkbox
-                      checked={selectedColumns.length === baseColumns.length}
-                      onCheckedChange={(c) => {
-                        if (c)
-                          setSelectedColumns(baseColumns.map((col) => col.key));
-                        else setSelectedColumns([]);
-                      }}
-                    />
-                    <Label className="text-sm font-medium">All Columns</Label>
-                  </div>
-                  {baseColumns.map((col) => (
-                    <div
-                      key={col.key}
-                      className="flex items-center space-x-2 py-1"
-                    >
+            <div className="relative w-full max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+              <Input
+                placeholder="Search by Indent, Item, Vendor..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 bg-white"
+              />
+            </div>
+            <div className="h-8 w-px bg-slate-200 mx-2" />
+            <div className="flex items-center gap-4">
+              <Label className="text-sm font-medium">Show Columns:</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-40 justify-start">
+                    {selectedColumns.length} selected
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-40 p-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 pb-2 border-b">
                       <Checkbox
-                        checked={selectedColumns.includes(col.key)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelectedColumns((prev) => [...prev, col.key]);
-                          } else {
-                            setSelectedColumns((prev) =>
-                              prev.filter((c) => c !== col.key)
-                            );
-                          }
+                        checked={selectedColumns.length === baseColumns.length}
+                        onCheckedChange={(c) => {
+                          if (c)
+                            setSelectedColumns(baseColumns.map((col) => col.key));
+                          else setSelectedColumns([]);
                         }}
                       />
-                      <Label className="text-sm">{col.label}</Label>
+                      <Label className="text-sm font-medium">All Columns</Label>
                     </div>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
+                    {baseColumns.map((col) => (
+                      <div
+                        key={col.key}
+                        className="flex items-center space-x-2 py-1"
+                      >
+                        <Checkbox
+                          checked={selectedColumns.includes(col.key)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedColumns((prev) => [...prev, col.key]);
+                            } else {
+                              setSelectedColumns((prev) =>
+                                prev.filter((c) => c !== col.key)
+                              );
+                            }
+                          }}
+                        />
+                        <Label className="text-sm">{col.label}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Search Filter */}
-      <div className="mb-6 flex items-center gap-4 z-10 relative">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item Name, Vendor..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white shadow-sm border-slate-200 w-full"
-          />
         </div>
       </div>
 

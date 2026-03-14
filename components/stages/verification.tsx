@@ -474,15 +474,14 @@ export default function Stage11() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">Stage 11: Verification by Accounts</h2>
-            <p className="text-gray-600 mt-1">Verify invoice details and complete financial check</p>
           </div>
           <div className="flex items-center gap-4">
             <Label className="text-sm font-medium">Show Columns:</Label>
             <Select value="" onValueChange={() => { }}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-40">
                 <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
               </SelectTrigger>
-              <SelectContent className="w-64 max-h-96 overflow-y-auto">
+              <SelectContent className="w-40 max-h-96 overflow-y-auto">
                 <div className="p-2">
                   <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
                     <Checkbox
@@ -541,7 +540,7 @@ export default function Stage11() {
 
         {/* Warehouse Filter */}
         <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-          <SelectTrigger className="w-[200px] bg-white">
+          <SelectTrigger className="w-[150px] bg-white">
             <SelectValue placeholder="Select warehouse" />
           </SelectTrigger>
           <SelectContent className="bg-white">

@@ -14,6 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Search, ShieldAlert } from "lucide-react";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 
 // ─── WARRANTY sheet column map (0-based, data from row 7) ──────
 // A(0): Indent No.  B(1): Lift No.  C(2): Serial Code  D(3): Serial No.
@@ -41,13 +42,6 @@ const HISTORY_COLUMNS = [
     { key: "actual", label: "Claimed On" },
 ];
 
-const formatDate = (val: any): string => {
-    if (!val || String(val).trim() === "" || val === "-") return "-";
-    const str = String(val).trim();
-    const d = new Date(str.includes(" ") && !str.includes("T") ? str.replace(" ", "T") : str);
-    if (isNaN(d.getTime())) return str;
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 export default function WarrantyClaim() {
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
@@ -59,12 +53,6 @@ export default function WarrantyClaim() {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Local timestamp
-    const localTimestamp = () => {
-        const now = new Date();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    };
 
     // ─── Fetch ───────────────────────────────────────────────────────────────
     const fetchData = useCallback(async () => {
@@ -194,8 +182,8 @@ export default function WarrantyClaim() {
 
         setIsSubmitting(true);
         try {
-            const ts = localTimestamp();
-
+            const ts = getFmsTimestamp();
+            
             // Find selected records
             const selectedRecords = pending.filter(p => selectedIds.includes(p.id));
 
@@ -281,10 +269,7 @@ export default function WarrantyClaim() {
                     <div className="flex items-center gap-3">
                         <ShieldAlert className="w-7 h-7 text-indigo-600" />
                         <div>
-                            <h2 className="text-2xl font-bold">Warranty Claim</h2>
-                            <p className="text-gray-500 text-sm mt-0.5">
-                                Track and process Warranty Claims for filed items.
-                            </p>
+                            <h2 className="text-2xl font-bold">Stage: Warranty Claim</h2>
                         </div>
                     </div>
                     <div className="flex items-center gap-4 flex-1 max-w-lg justify-end">

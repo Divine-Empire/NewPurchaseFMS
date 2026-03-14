@@ -31,6 +31,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Upload, X, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
+import { parseSheetDate, formatDate, getFmsTimestamp } from "@/lib/utils";
 
 // ─── Module-level helpers (stable references, no re-creation on render) ────
 const GST_RATES: Record<string, number> = {
@@ -170,13 +171,6 @@ export default function Stage7() {
         return { totalPkg, perItemPkgTotal, perItemPkgBase };
     }, []);
 
-    // Stable helper: format date for display
-    const formatDate = useCallback((date?: Date | string) => {
-        if (!date) return "";
-        const d = new Date(date);
-        if (isNaN(d.getTime())) return "";
-        return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
-    }, []);
 
     const fetchData = useCallback(async () => {
         const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -372,9 +366,7 @@ export default function Stage7() {
                 ? await uploadFileToDrive(commonData.billAttachment, SHEET_API_URL, folderId)
                 : "";
 
-            const now = new Date();
-            const pad = (n: number) => String(n).padStart(2, "0");
-            const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            const timestamp = getFmsTimestamp();
 
             // Pre-calculate packaging split once (same for every item)
             const { perItemPkgBase } = getPkgTotals(
@@ -487,9 +479,7 @@ export default function Stage7() {
                 ? await uploadFileToDrive(form.receivedItemImage, SHEET_API_URL, folderId)
                 : typeof form.receivedItemImage === "string" ? form.receivedItemImage : "";
 
-            const now = new Date();
-            const pad = (n: number) => String(n).padStart(2, "0");
-            const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            const timestamp = getFmsTimestamp();
             
             const rowArray = new Array(110).fill("");
             rowArray[20] = timestamp;               // U: Actual6
@@ -592,7 +582,7 @@ export default function Stage7() {
             <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h2 className="text-2xl font-bold">Stage 7: Material Receipt</h2>
+                        <h2 className="text-2xl font-bold">Stage 8: Material Receipt</h2>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -605,7 +595,7 @@ export default function Stage7() {
 
                         <Label className="text-sm font-medium">Show Columns:</Label>
                         <Select value="" onValueChange={() => { }}>
-                            <SelectTrigger className="w-64">
+                            <SelectTrigger className="w-40">
                                 <SelectValue
                                     placeholder={
                                         activeTab === "pending"
@@ -614,7 +604,7 @@ export default function Stage7() {
                                     }
                                 />
                             </SelectTrigger>
-                            <SelectContent className="w-64">
+                            <SelectContent className="w-40">
                                 <div className="p-2">
                                     <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
                                         <Checkbox
@@ -683,7 +673,7 @@ export default function Stage7() {
                     <div className="relative flex-1 max-w-sm">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
                         <Input
-                            placeholder="Search by Indent No, Item Name, Vendor, PO, Invoice..."
+                            placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="pl-9 bg-white"
@@ -692,7 +682,7 @@ export default function Stage7() {
 
                     {/* Warehouse Filter */}
                     <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-                        <SelectTrigger className="w-[200px] bg-white">
+                        <SelectTrigger className="w-[150px] bg-white">
                             <SelectValue placeholder="Select warehouse" />
                         </SelectTrigger>
                         <SelectContent className="bg-white">

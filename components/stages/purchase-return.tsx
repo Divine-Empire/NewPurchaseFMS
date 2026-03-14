@@ -393,16 +393,15 @@ export default function Stage12() {
       <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Stage 12: Purchase Return</h2>
-          <p className="text-gray-600 mt-1">Manage returns and credit notes</p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 max-w-md">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
             <Input
-              placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+              placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-white w-[300px]"
+              className="pl-9 bg-white w-[350px]"
             />
           </div>
           <Button variant="outline" onClick={fetchData} disabled={isLoading}>

@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
+import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
 const IMAGE_FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
@@ -40,12 +41,6 @@ const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   reader.onerror = error => reject(error);
 });
 
-const formatDisplayDate = (d: any) => {
-  if (!d || d === "" || d === "-" || d === "Invalid Date") return "-";
-  const date = new Date(d);
-  if (isNaN(date.getTime())) return d;
-  return date.toLocaleDateString("en-IN");
-};
 
 const PENDING_COLUMNS = [
   { key: "indentNumber", label: "Indent #" },
@@ -318,9 +313,7 @@ export default function Stage8() {
 
     setIsSubmitting(true);
     try {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const timestamp = getFmsTimestamp();
       const mDYYYY = timestamp;
       const qcDateFormatted = formData.qcDate
         ? (() => { const d = new Date(formData.qcDate); return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`; })()
@@ -495,7 +488,7 @@ export default function Stage8() {
       const val = data[key];
       const lowKey = key.toLowerCase();
       if (lowKey.includes("date") || lowKey.includes("plan") || lowKey.includes("actual")) {
-        return formatDisplayDate(val);
+        return formatDate(val);
       }
 
       if (val === undefined || val === null || String(val).trim() === "") return "-";
@@ -507,21 +500,18 @@ export default function Stage8() {
 
   return (
     <div className="p-6">
-      <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
+      <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Stage 8: Quality Control</h2>
-          <p className="text-gray-600 mt-1">Inspect and approve/reject received materials</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-            <Input
-              placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-white w-[300px]"
-            />
-          </div>
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+          <Input
+            placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 bg-white"
+          />
         </div>
       </div>
 
@@ -604,7 +594,7 @@ export default function Stage8() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Planned QC Date</Label>
-                  <Input value={formatDisplayDate(selectedRecord?.data?.plan7)} readOnly className="bg-gray-50" />
+                  <Input value={formatDate(selectedRecord?.data?.plan7)} readOnly className="bg-gray-50" />
                 </div>
                 <div>
                   <Label>QC Done By *</Label>
