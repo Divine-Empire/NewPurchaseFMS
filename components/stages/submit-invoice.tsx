@@ -114,8 +114,10 @@ export default function Stage10() {
               vendorDetails = { vendorName: fmsRow[37], rate: fmsRow[38], terms: fmsRow[39] };
             }
 
+            const liftNo = row[2]; // Column C (Lift No)
+            
             return {
-              id: row[1] || `row-${originalIndex}`,
+              id: `${row[1]}_${row[2]}` || `row-${originalIndex}`,
               rowIndex: originalIndex,
               stage: 10,
               status,
@@ -138,6 +140,7 @@ export default function Stage10() {
                 invoiceDate: row[23], // X: Invoice Date (Receiving Accounts)
                 srnNumber: row[32],
                 receiptLiftNumber: row[28],
+                liftNo: row[2], // Column C
 
                 // Stage 8 (40-49)
                 qcStatus: row[39], // AN: QC Status (Receiving Accounts)
@@ -213,6 +216,7 @@ export default function Stage10() {
 
   const pendingColumns = [
     { key: "indentNumber", label: "Indent #" },
+    { key: "liftNo", label: "Lift No." },
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
     { key: "quantity", label: "Qty" },
@@ -234,8 +238,9 @@ export default function Stage10() {
   ];
 
   const historyColumns = [
-    ...pendingColumns,
-    // plan9 and actual9 are already in pendingColumns, so don't re-add explicitly to avoid duplicates
+    { key: "indentNumber", label: "Indent #" },
+    { key: "liftNo", label: "Lift No." },
+    ...pendingColumns.filter(c => c.key !== "indentNumber" && c.key !== "liftNo"),
     { key: "handoverBy", label: "HardCopy Docs" },
     { key: "invoiceSubmissionDate", label: "Sub. Date" },
   ];
@@ -257,10 +262,17 @@ export default function Stage10() {
   };
 
   const toggleAll = () => {
-    if (selectedRows.size === pending.length) {
-      setSelectedRows(new Set());
+    const pendingIds = pending.map((r) => r.id);
+    const allSelected = pendingIds.length > 0 && pendingIds.every(id => selectedRows.has(id));
+    
+    if (allSelected) {
+      const newSet = new Set(selectedRows);
+      pendingIds.forEach(id => newSet.delete(id));
+      setSelectedRows(newSet);
     } else {
-      setSelectedRows(new Set(pending.map((r) => r.id)));
+      const newSet = new Set(selectedRows);
+      pendingIds.forEach(id => newSet.add(id));
+      setSelectedRows(newSet);
     }
   };
 
@@ -420,9 +432,9 @@ export default function Stage10() {
             <h2 className="text-2xl font-bold">Stage 10: Submit Invoice to Accounts</h2>
           </div>
           <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Show Columns:</Label>
+            <Label className="text-sm font-medium whitespace-nowrap">Show Columns:</Label>
             <Select value="" onValueChange={() => { }}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-35">
                 <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
               </SelectTrigger>
               <SelectContent className="w-40 max-h-96 overflow-y-auto">
@@ -457,46 +469,48 @@ export default function Stage10() {
             </Select>
           </div>
         </div>
-
-        {/* Header Actions */}
-        {selectedRows.size > 0 && (
-          <div className="mt-4 flex items-center gap-4">
-            <Button
-              onClick={() => handleOpenForm()}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              Submit Invoice ({selectedRows.size})
-            </Button>
-            <span className="text-sm text-gray-500">
-              {selectedRows.size} item(s) selected
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Search and Filters */}
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white"
-          />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-4 flex-1">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+            <Input
+              placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 bg-white"
+            />
+          </div>
+
+          {/* Warehouse Filter */}
+          <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+            <SelectTrigger className="w-[150px] bg-white">
+              <SelectValue placeholder="Select warehouse" />
+            </SelectTrigger>
+            <SelectContent className="bg-white">
+              <SelectItem value="All">All Warehouses</SelectItem>
+              <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+              <SelectItem value="Others">Others</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Warehouse Filter */}
-        <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-          <SelectTrigger className="w-[150px] bg-white">
-            <SelectValue placeholder="Select warehouse" />
-          </SelectTrigger>
-          <SelectContent className="bg-white">
-            <SelectItem value="All">All Warehouses</SelectItem>
-            <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
-            <SelectItem value="Others">Others</SelectItem>
-          </SelectContent>
-        </Select>
+        {selectedRows.size > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-slate-600 bg-slate-100 px-3 py-1.5 rounded-md border border-slate-200">
+              {selectedRows.size} selected
+            </span>
+            <Button
+              onClick={() => handleOpenForm()}
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+              size="sm"
+            >
+              Submit Invoice
+            </Button>
+          </div>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
@@ -515,7 +529,7 @@ export default function Stage10() {
                   <TableRow>
                     <TableHead className="w-12 sticky left-0 bg-white z-20">
                       <Checkbox
-                        checked={selectedRows.size === pending.length && pending.length > 0}
+                        checked={pending.length > 0 && pending.every(r => selectedRows.has(r.id))}
                         onCheckedChange={toggleAll}
                       />
                     </TableHead>
