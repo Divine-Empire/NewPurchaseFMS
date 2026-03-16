@@ -48,7 +48,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { cn, parseSheetDate, formatDate } from "@/lib/utils";
+import { cn, parseSheetDate, formatDate, getFmsTimestamp } from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
 
 // ─── Pure utilities (defined outside component to avoid re-creation) ─────────
@@ -475,8 +475,7 @@ export default function Stage3() {
         // IMPORTANT: Use a sparse array. Do NOT resubmit A-S (0-18) or any other existing data.
         const rowArray: any[] = [];
 
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        const timestamp = getFmsTimestamp();
         rowArray[19] = timestamp; // T (ACTUAL2)
 
         const v1Bulk = bulkVendorData[1]?.[id] || {};

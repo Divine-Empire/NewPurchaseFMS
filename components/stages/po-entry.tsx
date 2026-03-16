@@ -308,7 +308,7 @@ export default function Stage5() {
 
     const processPromise = (async () => {
       try {
-        const now = new Date();
+        const timestamp = getFmsTimestamp();
         let successCount = 0;
         let finalFileUrl = "";
 

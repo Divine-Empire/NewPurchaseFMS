@@ -61,7 +61,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { cn, parseSheetDate, formatDate } from "@/lib/utils";
+import { cn, parseSheetDate, formatDate, getFmsTimestamp } from "@/lib/utils";
 
 interface LiftingEntry {
   liftNumber: string;
@@ -605,11 +605,7 @@ export default function Stage6() {
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      const now = new Date();
-      const formatISO = (date: Date) => {
-        if (!date) return "";
-        return date.toISOString().split("T")[0];
-      };
+      const timestamp = getFmsTimestamp();
 
       const API_URL = process.env.NEXT_PUBLIC_API_URI;
       if (!API_URL) {
@@ -704,23 +700,12 @@ export default function Stage6() {
           return `${yyyy}-${mm}-${dd}`;
         };
 
-        // Helper to format timestamp as M/D/YYYY HH:MM:SS
-        const formatTimestamp = (date: Date) => {
-          const month = date.getMonth() + 1;
-          const day = date.getDate();
-          const year = date.getFullYear();
-          const hours = String(date.getHours()).padStart(2, "0");
-          const minutes = String(date.getMinutes()).padStart(2, "0");
-          const seconds = String(date.getSeconds()).padStart(2, "0");
-          return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
-        };
-
         // Current timestamp for column A
-        const currentTimestamp = formatTimestamp(now);
+        const currentTimestamp = timestamp;
 
         // Format dates as YYYY-MM-DD for backend
         const followUpDateFormatted = toYMD(record.followUpDate || "");
-        const dispatchDateFormatted = toYMD(lift.dispatchDate || "") || formatISO(now);
+        const dispatchDateFormatted = toYMD(lift.dispatchDate || "") || timestamp.split(" ")[0];
         const paymentDateFormatted = toYMD(lift.paymentDate || "");
         const expectedDeliveryDateFormatted = toYMD(lift.expectedDeliveryDate || "");
 
@@ -796,10 +781,6 @@ export default function Stage6() {
         // FIX: Use empty strings array to prevent overwriting other columns
         // INDENT-LIFT has many columns, ensure we cover up to index 68 (BQ)
         const fmsRow = new Array(70).fill("");
-
-        // Only update relevant columns
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
         // If lifting, update Dispatch Date and Remaining Qty
         if (record.status === "lift-material") {

@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, RefreshCw, Upload, FileText, X, Search } from "lucide-react";
 import { toast } from "sonner";
+import { getFmsTimestamp } from "@/lib/utils";
 
 // --- Static Helpers ---
 const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
@@ -253,7 +254,7 @@ export default function Stage13() {
             itemName: rec.data.itemName,
             invoiceNumber: rec.data.invoiceNumber,
             returnQty: rec.data.returnQty,
-            actualDate: new Date().toISOString().split("T")[0],
+            actualDate: getFmsTimestamp(),
             dnNumber: "",
             returnImage: null,
             remarks: "",
@@ -274,7 +275,7 @@ export default function Stage13() {
         }
 
         setBulkFormData({
-            actualDate: new Date().toISOString().split("T")[0],
+            actualDate: getFmsTimestamp(),
             dnNumber: "",
             returnImage: null,
             remarks: "",
@@ -315,10 +316,7 @@ export default function Stage13() {
                 imageUrl = await uploadFileToDrive(formData.returnImage, SHEET_API_URL);
             }
 
-            const d = new Date(formData.actualDate);
-            const pad = (n: number) => String(n).padStart(2, "0");
-            const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-            const dateStr = timestamp;
+            const dateStr = getFmsTimestamp();
 
             // 1-based Write Indices: Y=25, AA=27, AB=28, AC=29
             const updates = [
@@ -370,10 +368,7 @@ export default function Stage13() {
             // Upload once
             const imageUrl = await uploadFileToDrive(bulkFormData.returnImage, SHEET_API_URL);
 
-            const d = new Date(bulkFormData.actualDate);
-            const pad = (n: number) => String(n).padStart(2, "0");
-            const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-            const dateStr = timestamp;
+            const dateStr = getFmsTimestamp();
 
             // Process all selected records in parallel (limit concurrency if needed, but here simple parallel is fine)
             // Note: Parallelizing updates across *rows* and *columns* simultaneously

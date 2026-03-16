@@ -269,9 +269,7 @@ export default function Stage4() {
     setSubmitError(null);
 
     try {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const timestamp = getFmsTimestamp();
 
       // FIX: Start with empty strings to prevent overwriting/reformatting existing cells
       // Only update columns AU (46), AV (47), AW (48), AX (49), AY (50)

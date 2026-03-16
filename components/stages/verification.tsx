@@ -33,6 +33,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
+import { getFmsTimestamp } from "@/lib/utils";
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
 
@@ -335,9 +336,7 @@ export default function Stage11() {
       const d = formData.verificationDate;
       const verDateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      const timestamp = getFmsTimestamp();
 
       // Iterate and submit for ALL selected records
       for (const rec of selectedRecords) {

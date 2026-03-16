@@ -126,7 +126,7 @@ export default function Stage9() {
         rowArray[38] = formData.doneBy;
 
         // AN (39): Done Date
-        rowArray[39] = formData.submissionDate;
+        rowArray[39] = timestamp;
 
         // AO (40): Remarks
         rowArray[40] = formData.remarks;

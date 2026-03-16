@@ -823,7 +823,7 @@ export default function PurchaseDashboard() {
       const { ReportDocument } = await import("./report-pdf");
 
       const API = process.env.NEXT_PUBLIC_API_URI;
-      const [fmsRes, raRes, masterRes, warrantyRes, partialRes, vendorRes, freightRes] = await Promise.all([
+      const [fmsRes, raRes, masterRes, warrantyRes, partialRes, vendorRes, freightRes, transportRes] = await Promise.all([
         fetch(`${API}?sheet=INDENT-LIFT`),
         fetch(`${API}?sheet=RECEIVING-ACCOUNTS`),
         fetch(`${API}?sheet=Master`),
@@ -831,12 +831,13 @@ export default function PurchaseDashboard() {
         fetch(`${API}?sheet=${encodeURIComponent("Partial QC")}`),
         fetch(`${API}?sheet=VENDOR-PAYMENTS`),
         fetch(`${API}?sheet=FREIGHT-PAYMENTS`),
+        fetch(`${API}?sheet=${encodeURIComponent("Transport Flw-Up")}`),
       ]);
-      const [fmsJson, raJson, masterJson, warrantyJson, partialJson, vendorJson, freightJson] = await Promise.all([
-        fmsRes.json(), raRes.json(), masterRes.json(), warrantyRes.json(), partialRes.json(), vendorRes.json(), freightRes.json()
+      const [fmsJson, raJson, masterJson, warrantyJson, partialJson, vendorJson, freightJson, transportJson] = await Promise.all([
+        fmsRes.json(), raRes.json(), masterRes.json(), warrantyRes.json(), partialRes.json(), vendorRes.json(), freightRes.json(), transportRes.json()
       ]);
 
-      if (!fmsJson.success || !raJson.success || !masterJson.success || !warrantyJson.success || !partialJson.success || !vendorJson.success || !freightJson.success) {
+      if (!fmsJson.success || !raJson.success || !masterJson.success || !warrantyJson.success || !partialJson.success || !vendorJson.success || !freightJson.success || !transportJson.success) {
         throw new Error("Failed fetching comprehensive data for report");
       }
 
@@ -860,6 +861,16 @@ export default function PurchaseDashboard() {
         });
       }
 
+      // Build transport lookup
+      const transportMap = new Map<string, string>();
+      if (transportJson.success && Array.isArray(transportJson.data)) {
+        transportJson.data.slice(1).forEach((row: any) => {
+          const liftNo = row[1]; // Column B
+          const exDate = row[4]; // Column E
+          if (liftNo) transportMap.set(String(liftNo).trim(), String(exDate || ""));
+        });
+      }
+
       const totalCounts: Record<string, number> = {};
       const overdueCounts: Record<string, number> = {};
       purchaseStages.forEach(s => {
@@ -876,14 +887,16 @@ export default function PurchaseDashboard() {
         const r = fmsRows[i];
         if (!r || !r[1]) continue;
 
-        const checkStage = (name: string, start: number, actual: number, plan: number, mode: 'category' | 'vendor' | 'default' = 'default') => {
+        const checkStage = (name: string, start: number, actual: number, plan: number, delayIdx: number, mode: 'category' | 'vendor' | 'default' = 'default') => {
           if (fmsHas(r, start) && fmsMiss(r, actual)) {
             totalCounts[name]++;
             if (fmsHas(r, plan)) {
               overdueCounts[name]++;
 
               let party = "-";
-              if (mode === 'category') {
+              if (name === "Indent Approval") {
+                party = r[2] || "-"; // Created By
+              } else if (mode === 'category') {
                 party = r[3] || "-";
               } else if (mode === 'vendor') {
                 const awName = String(r[48] || "").trim();
@@ -917,17 +930,16 @@ export default function PurchaseDashboard() {
                 party,
                 item: r[4] || "-",
                 qty: qty,
-                stage: name
+                stage: name,
+                delay: r[delayIdx] || "0"
               });
             }
           }
         };
 
-        checkStage("Indent Approval", 9, 10, 11, 'category');
-        checkStage("Update 3 Vendors", 18, 19, 20, 'category');
-        checkStage("Negotiation", 45, 46, 45, 'category'); // Header requested as Category
-        checkStage("PO Entry", 51, 52, 51, 'vendor');
-        checkStage("Follow-Up Vendor", 60, 61, 60, 'vendor');
+        checkStage("Indent Approval", 9, 10, 11, 11, 'category');
+        checkStage("PO Entry", 51, 52, 51, 53, 'vendor');
+        checkStage("Follow-Up Vendor", 60, 61, 60, 62, 'vendor');
       }
 
       // RA loop logic
@@ -935,77 +947,38 @@ export default function PurchaseDashboard() {
         const r = raRows[i];
         if (!r || !r[1]) continue;
 
-        const checkStageRA = (name: string, start: number, actual: number, plan: number, itemIdx = 7) => {
+        const checkStageRA = (name: string, start: number, actual: number, plan: number, delayIdx: number, itemIdx = 7) => {
           if (fmsHas(r, start) && fmsMiss(r, actual)) {
             totalCounts[name]++;
             if (fmsHas(r, plan)) {
               overdueCounts[name]++;
-              detailed.push({
-                indent: r[1] || "-", party: r[3] || "-", item: r[itemIdx] || "-", qty: r[8] || "-", stage: name
-              });
+              const detail: any = {
+                indent: r[1] || "-", 
+                party: r[3] || "-", 
+                item: r[itemIdx] || "-", 
+                qty: r[8] || "-", 
+                stage: name, 
+                delay: r[delayIdx] || "0"
+              };
+
+              if (name === "Transporter Follow-Up") {
+                const liftNo = String(r[2] || "").trim();
+                detail.expectedDate = transportMap.get(liftNo) || "-";
+                detail.transporterName = r[9] || "-";
+              }
+              
+              detailed.push(detail);
             }
           }
         };
 
-        checkStageRA("Transporter Follow-Up", 88, 89, 88, 7);
-        checkStageRA("Material Received", 19, 20, 19, 7);
-        checkStageRA("Warranty Information", 104, 109, 108, 7);
-        checkStageRA("QC Requirement", 61, 62, 61, 7);
-        checkStageRA("Receipt in Tally", 35, 36, 35, 7);
-        checkStageRA("Submit Invoice (HO)", 43, 44, 43, 7);
-        checkStageRA("Submit Invoice", 48, 49, 48, 7);
-        checkStageRA("Verification by Accounts", 54, 55, 54, 7);
-        checkStageRA("Purchase Return", 63, 64, 63, 7);
+        checkStageRA("Transporter Follow-Up", 88, 89, 88, 90, 7);
       }
 
-      const checkSimple = (rows: any[], startRow: number, name: string, startIdx: number, actualIdx: number, planIdx: number, mapRow: (r: any) => any) => {
-        for (let i = startRow; i < rows.length; i++) {
-          const r = rows[i];
-          if (!r || !r[0]) continue;
-          if (fmsHas(r, startIdx) && fmsMiss(r, actualIdx)) {
-            totalCounts[name]++;
-            if (fmsHas(r, planIdx)) {
-              overdueCounts[name]++;
-              detailed.push({ ...mapRow(r), stage: name });
-            }
-          }
-        }
-      };
-
-      // Build lookup for Return Approval
-      const raLookup = new Map<string, any>();
-      raRows.slice(6).forEach((row: any) => {
-        const indentNo = String(row[1] || "").trim();
-        if (indentNo) raLookup.set(indentNo, { vendor: row[3], item: row[7], qty: row[8] });
-      });
-
-      checkSimple(partialRows, 1, "Return Approval", 1, 24, 23, (r) => {
-        const indent = String(r[1] || "").trim();
-        const info = raLookup.get(indent) || {};
-        return {
-          indent: indent || "-",
-          party: info.vendor || "-",
-          item: info.item || "-",
-          qty: r[16] || info.qty || "-",
-          stage: "Return Approval"
-        };
-      });
-
-      checkSimple(vendorRows, 6, "Vendor Payment", 1, 14, 13, (r) => ({
-        indent: r[1] || "-", party: r[4] || "-", item: r[12] || "-", qty: r[10] || "-", stage: "Vendor Payment"
-      }));
-
-      checkSimple(freightRows, 6, "Freight Payments", 1, 10, 9, (r) => ({
-        indent: r[1] || "-", // LR No
-        party: r[4] || "-",  // Transporter
-        item: r[14] || "-",   // Invoice No
-        qty: "-",
-        stage: "Freight Payments"
-      }));
-
-      // Filter summary to only stages with overdueCount > 0
+      // Filter summary to only stages with overdueCount > 0 and only the 4 requested stages
+      const allowedStages = ["Indent Approval", "PO Entry", "Follow-Up Vendor", "Transporter Follow-Up"];
       const summaryData = purchaseStages
-        .filter(s => overdueCounts[s.name] > 0)
+        .filter(s => allowedStages.includes(s.name) && overdueCounts[s.name] > 0)
         .map(s => ({
           stage: s.name,
           pending: overdueCounts[s.name],

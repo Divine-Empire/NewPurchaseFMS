@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { X, Loader2, PlusCircle, History as HistoryIcon, LayoutGrid, ClipboardList, FileText, Upload, Search, Check, ChevronsUpDown } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, parseSheetDate } from "@/lib/utils";
+import { cn, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 import {
   Command,
   CommandEmpty,
@@ -469,10 +469,8 @@ export default function Stage1() {
         if (!SHEET_API_URL) throw new Error("Sheet API URL is not defined");
 
         // Build rows WITHOUT Col B (index 1) — GAS will fill it with unique IDs
-        const rows = data.items.map((item: any, i: number) => {
-            const d = new Date(new Date().getTime() + i * 1000);
-            const pad = (n: number) => String(n).padStart(2, "0");
-            const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        const rows = data.items.map((item: any) => {
+            const timestamp = getFmsTimestamp();
 
       const row = new Array(70).fill("");
       row[0] = timestamp;                    // A: Timestamp

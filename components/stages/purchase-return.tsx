@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getFmsTimestamp } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -336,9 +337,7 @@ export default function Stage12() {
 
       if (uploadPromises.length > 0) await Promise.all(uploadPromises);
 
-      const d = formData.actual6Date;
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const timestamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      const timestamp = getFmsTimestamp();
       const dateStr = timestamp;
 
       // Update specific Partial QC cells using updateCell to avoid overwriting row data (col A-N) or formulas (col P)

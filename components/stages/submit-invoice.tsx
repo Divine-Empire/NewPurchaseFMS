@@ -328,7 +328,7 @@ export default function Stage10() {
       if (selectedRecords.length === 0) return;
 
       const timestamp = getFmsTimestamp();
-      const subDate = formData.invoiceSubmissionDate ? `${formData.invoiceSubmissionDate.getMonth() + 1}/${formData.invoiceSubmissionDate.getDate()}/${formData.invoiceSubmissionDate.getFullYear()}` : "";
+      const subDate = getFmsTimestamp();
 
       // Iterate and submit for ALL selected records
       for (const rec of selectedRecords) {

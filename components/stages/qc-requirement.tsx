@@ -278,7 +278,7 @@ export default function Stage8() {
     setSelectedRecordId(recordId);
     setFormData({
       qcBy: "",
-      qcDate: new Date().toISOString().split("T")[0],
+      qcDate: getFmsTimestamp(),
       qcStatus: "",
       rejectRemarks: "",
       rejectQty: "",

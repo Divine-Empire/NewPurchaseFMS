@@ -34,16 +34,123 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
   }, {} as Record<string, any[]>);
 
   const getHeaders = (stageName: string) => {
-    if (stageName === "Indent Approval" || stageName === "Update 3 Vendors" || stageName === "Negotiation") {
-      return ["Indent No", "Category", "Item", "Qty"];
+    if (stageName === "Indent Approval") {
+      return ["Indent No", "Created By", "Item", "Qty", "Delay (Days)"];
     }
-    if (stageName === "Freight Payments") {
-      return ["LR No", "Transporter", "Invoice No", ""];
+    if (stageName === "PO Entry") {
+      return ["Indent No", "Item", "Vendor", "Qty", "Delay (Days)"];
     }
-    if (stageName === "Vendor Payment") {
-      return ["Invoice No", "Party/Vendor", "Item", "Qty"];
+    if (stageName === "Follow-Up Vendor") {
+      return ["Indent No", "Item", "Vendor", "Delay (Days)"];
+    }
+    if (stageName === "Transporter Follow-Up") {
+      return ["Indent No", "Item", "Vendor", "Transporter", "Expected Date", "Delay (Days)"];
     }
     return ["Indent No", "Party/Vendor", "Item", "Qty"];
+  };
+
+  const getColStyles = (heads: string[]) => {
+    if (heads.length === 6) {
+      return [
+        { width: '10%' }, // Indent
+        { width: '15%' }, // Item
+        { width: '15%' }, // Vendor
+        { width: '15%' }, // Transporter
+        { width: '15%' }, // Expected Date
+        { width: '10%' }, // Delay
+      ];
+    }
+    if (heads.length === 5) {
+      return [
+        { width: '10%' }, // Indent
+        { width: '35%' }, // Party/Created By
+        { width: '35%' }, // Item
+        { width: '10%', justifyContent: 'center' as const }, // Qty
+        { width: '10%' }, // Delay
+      ];
+    }
+    if (heads.length === 4) {
+      return [
+        { width: '15%' }, // Indent
+        { width: '30%' }, // Item
+        { width: '40%' }, // Vendor
+        { width: '15%' }, // Delay
+      ];
+    }
+    // Default 4 columns
+    return [
+      { width: '15%' }, // Indent
+      { width: '35%' }, // Party
+      { width: '40%' }, // Item
+      { width: '10%', justifyContent: 'center' as const }, // Qty
+    ];
+  };
+
+  const formatDelay = (delay: any, stage?: string) => {
+    if (!delay || delay === "-" || delay === "0") return stage === "Follow-Up Vendor" ? "0" : "0:00:00";
+    
+    const delayStr = String(delay).trim();
+    let totalHours = 0;
+    let isNegative = delayStr.startsWith("-");
+    const cleanStr = isNegative ? delayStr.substring(1) : delayStr;
+
+    // 1. Calculate totalHours from input
+    if (delayStr.includes('T') && (delayStr.startsWith('1900') || delayStr.startsWith('1899') || delayStr.startsWith('00'))) {
+       const date = new Date(delayStr);
+       if (!isNaN(date.getTime())) {
+          const epoch = new Date('1899-12-30T00:00:00.000Z').getTime();
+          const offsetMs = new Date().getTimezoneOffset() * 60000;
+          totalHours = (date.getTime() - epoch - offsetMs) / (1000 * 60 * 60);
+       }
+    } else if (cleanStr.includes(":")) {
+      const parts = cleanStr.split(":");
+      const hours = parseFloat(parts[0]) || 0;
+      const minutes = parseFloat(parts[1]) || 0;
+      const seconds = parseFloat(parts[2]) || 0;
+      totalHours = hours + (minutes / 60) + (seconds / 3600);
+    } else {
+      const val = parseFloat(delayStr);
+      if (isNaN(val)) totalHours = 0;
+      else totalHours = val; // Assuming numeric input is already in hours
+    }
+
+    // 2. Format based on stage
+    if (stage === "Follow-Up Vendor") {
+      const days = totalHours / 24;
+      return Math.round(isNegative ? -days : days).toString();
+    }
+
+    // Default: HH:MM:SS
+    const absHours = Math.abs(totalHours);
+    const h = Math.floor(absHours);
+    const m = Math.floor((absHours % 1) * 60);
+    const s = Math.round(((absHours % 1) * 60 % 1) * 60);
+    
+    // Handle second overflow (e.g. 59.999 -> 60)
+    let finalH = h;
+    let finalM = m;
+    let finalS = s;
+    if (finalS >= 60) { finalS = 0; finalM += 1; }
+    if (finalM >= 60) { finalM = 0; finalH += 1; }
+
+    const formatted = `${isNegative ? '-' : ''}${finalH}:${String(finalM).padStart(2, '0')}:${String(finalS).padStart(2, '0')}`;
+    return formatted;
+  };
+
+  const getRowData = (row: any, stage: string) => {
+    if (stage === "Indent Approval") {
+      return [row.indent, row.party, row.item, row.qty, formatDelay(row.delay, stage)];
+    }
+    if (stage === "PO Entry") {
+      return [row.indent, row.item, row.party, row.qty, formatDelay(row.delay, stage)];
+    }
+    if (stage === "Follow-Up Vendor") {
+      return [row.indent, row.item, row.party, formatDelay(row.delay, stage)];
+    }
+    if (stage === "Transporter Follow-Up") {
+      return [row.indent, row.item, row.party, row.transporterName, row.expectedDate, formatDelay(row.delay, stage)];
+    }
+    return [row.indent, row.party, row.item, row.qty];
   };
 
   return (
@@ -74,6 +181,8 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
       {Object.entries(groupedDetailedData).map(([stageName, itemsArray], idx) => {
         const items = itemsArray as any[];
         const heads = getHeaders(stageName);
+        const colStyles = getColStyles(heads);
+
         return (
           <Page key={idx} size="A4" style={styles.page} orientation="landscape">
             <Text style={styles.header}>Detailed Report: {String(stageName)} ({String(items.length)} Overdue)</Text>
@@ -82,20 +191,25 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
               <View style={styles.table}>
                 {/* Column Headers - Re-added 'fixed' so they repeat on every page of this stage */}
                 <View style={[styles.tableRow, styles.bgHeader]} fixed >
-                  <View style={styles.colDetIndent}><Text style={styles.tableCellHeader}>{heads[0]}</Text></View>
-                  <View style={styles.colDetParty}><Text style={styles.tableCellHeader}>{heads[1]}</Text></View>
-                  <View style={styles.colDetItem}><Text style={styles.tableCellHeader}>{heads[2]}</Text></View>
-                  <View style={styles.colDetQty}><Text style={styles.tableCellHeader}>{heads[3]}</Text></View>
+                  {heads.map((head, i) => (
+                    <View key={i} style={[colStyles[i], { padding: 5, borderRightWidth: 1, borderColor: '#e5e7eb' }]} >
+                      <Text style={styles.tableCellHeader}>{head}</Text>
+                    </View>
+                  ))}
                 </View>
 
-                {items.map((row, i) => (
-                  <View style={styles.tableRow} key={i} wrap={false}>
-                    <View style={styles.colDetIndent}><Text style={styles.tableCell}>{String(row.indent)}</Text></View>
-                    <View style={styles.colDetParty}><Text style={styles.tableCell}>{String(row.party)}</Text></View>
-                    <View style={styles.colDetItem}><Text style={styles.tableCell}>{String(row.item)}</Text></View>
-                    <View style={styles.colDetQty}><Text style={styles.tableCell}>{String(row.qty)}</Text></View>
-                  </View>
-                ))}
+                {items.map((row, i) => {
+                  const data = getRowData(row, stageName);
+                  return (
+                    <View style={styles.tableRow} key={i} wrap={false}>
+                      {data.map((cell, j) => (
+                        <View key={j} style={[colStyles[j], { padding: 5, borderRightWidth: 1, borderColor: '#e5e7eb' }]} >
+                          <Text style={styles.tableCell}>{String(cell || "-")}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })}
               </View>
             </View>
             <Text style={styles.pageNumber} render={({ pageNumber, totalPages }) => (`Page ${pageNumber} of ${totalPages}`)} fixed />
