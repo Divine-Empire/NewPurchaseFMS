@@ -121,41 +121,43 @@ export function StageTable({
   );
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className={!title ? 'pt-0 md:pt-0' : 'p-4 md:p-6'}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <h2 className="text-2xl md:text-3xl font-bold text-foreground">
-          {title}
-        </h2>
-      </div>
+      {title && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+          <h2 className="text-2xl md:text-3xl font-bold text-foreground">
+            {title}
+          </h2>
+        </div>
+      )}
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Pending Section */}
         {showPending && (
-          <Card className="overflow-hidden">
-            <CardHeader className="pb-4 bg-primary/5">
-              <CardTitle className="text-lg font-semibold flex items-center justify-between">
-                <div className="flex items-center gap-2 text-black">
-                  <ClipboardList className="w-5 h-5 text-black" />
+          <Card className="overflow-hidden border-slate-200/60 shadow-none bg-transparent">
+            <CardHeader className="pb-4 bg-transparent border-b border-slate-100">
+              <CardTitle className="text-lg font-bold flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-900">
+                  <ClipboardList className="w-5 h-5 text-slate-900" />
                   Pending ({pending.length})
                 </div>
                 {pending.length > 5 && (
-                  <span className="text-xs font-normal text-muted-foreground animate-pulse">
+                  <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded">
                     Urgent tasks awaiting action
                   </span>
                 )}
               </CardTitle>
             </CardHeader>
 
-            <CardContent className="px-4 pb-4">
+            <CardContent className="p-0">
               {pending.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8">
+                <div className="text-center text-muted-foreground py-8 bg-white border border-slate-100 rounded-b-xl">
                   No pending records
                 </div>
               ) : (
-                <>
+                <div className="bg-white rounded-b-xl">
                   {/* Mobile */}
-                  <div className="block md:hidden space-y-3">
+                  <div className="block md:hidden space-y-3 p-4">
                     {pending.map((record) => (
                       <RecordCard
                         key={record.id}
@@ -171,19 +173,19 @@ export function StageTable({
                   <div className="hidden md:block overflow-x-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[100px]">Actions</TableHead>
+                        <TableRow className="hover:bg-transparent border-b border-slate-100">
+                          <TableHead className="w-[100px] font-bold text-slate-900">Actions</TableHead>
                           {/* Render first column (Indent #) */}
-                          <TableHead className="min-w-[120px]">
+                          <TableHead className="min-w-[120px] font-bold text-slate-900">
                             {columns[0]?.label}
                           </TableHead>
                           {/* Date column at index 2 */}
-                          <TableHead className="min-w-[120px]">
+                          <TableHead className="min-w-[120px] font-bold text-slate-900">
                             Date
                           </TableHead>
                           {/* Render remaining columns */}
                           {columns.slice(1).map((col) => (
-                            <TableHead key={col.key} className="min-w-[120px]">
+                            <TableHead key={col.key} className="min-w-[120px] font-bold text-slate-900">
                               {col.label}
                             </TableHead>
                           ))}
@@ -193,32 +195,33 @@ export function StageTable({
                         {pending.map((record) => (
                           <TableRow
                             key={record.id}
-                            className="odd:bg-white even:bg-slate-50/50 hover:bg-slate-100/50 transition-colors border-b border-slate-100 last:border-0"
+                            className="odd:bg-white even:bg-slate-50/30 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
                           >
                             <TableCell>
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => onSelectRecord(record)}
+                                className="h-8 border-slate-200 hover:bg-slate-900 hover:text-white transition-all"
                               >
                                 Edit
                               </Button>
                             </TableCell>
                             {/* Render first column cell (Indent #) */}
-                            <TableCell className="text-sm">
+                            <TableCell className="text-sm font-medium text-slate-900">
                               {String(record.data[columns[0]?.key] || "-")}
                             </TableCell>
                             {/* Date cell at index 2 */}
-                            <TableCell className="text-sm">
+                            <TableCell className="text-sm text-slate-600">
                               {getStageTimestamp(record)}
                             </TableCell>
                             {/* Render remaining column cells */}
                             {columns.slice(1).map((col) => (
-                              <TableCell key={col.key} className="text-sm">
+                              <TableCell key={col.key} className="text-sm text-slate-600">
                                 {col.key === "leadTime"
                                   ? `${record.data[col.key] || "-"} days`
                                   : col.key === "attachment" && record.data[col.key]
-                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline hover:text-blue-700">View</a>
+                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium underline-offset-4 hover:underline">View</a>
                                     : String(record.data[col.key] || "-")}
                               </TableCell>
                             ))}
@@ -227,7 +230,7 @@ export function StageTable({
                       </TableBody>
                     </Table>
                   </div>
-                </>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -235,23 +238,23 @@ export function StageTable({
 
         {/* History Section */}
         {!showPending && (
-          <Card className="overflow-hidden shadow-sm border-muted">
-            <CardHeader className="pb-4 bg-muted/30">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2 text-black">
-                <Clock className="w-5 h-5 text-black" />
+          <Card className="overflow-hidden border-slate-200 shadow-none bg-transparent">
+            <CardHeader className="pb-4 bg-transparent border-b border-slate-100">
+              <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
+                <Clock className="w-5 h-5 text-slate-900" />
                 History ({history.length})
               </CardTitle>
             </CardHeader>
 
-            <CardContent className="px-4 pb-4">
+            <CardContent className="p-0">
               {history.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8">
+                <div className="text-center text-muted-foreground py-8 bg-white border border-slate-100 rounded-b-xl">
                   No completed records
                 </div>
               ) : (
-                <>
+                <div className="bg-white rounded-b-xl">
                   {/* Mobile */}
-                  <div className="block md:hidden space-y-3">
+                  <div className="block md:hidden space-y-3 p-4">
                     {history.map((record) => (
                       <RecordCard
                         key={record.id}
@@ -267,17 +270,17 @@ export function StageTable({
                   <div className="hidden md:block overflow-x-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow>
+                        <TableRow className="hover:bg-transparent border-b border-slate-100">
                           {/* TIMESTAMP FIRST COLUMN */}
-                          <TableHead className="min-w-[180px] font-bold text-black border-b border-slate-200">
+                          <TableHead className="min-w-[180px] font-bold text-slate-900">
                             Timestamp
                           </TableHead>
                           {columns.map((col) => (
-                            <TableHead key={col.key} className="min-w-[120px]">
+                            <TableHead key={col.key} className="min-w-[120px] font-bold text-slate-900">
                               {col.label}
                             </TableHead>
                           ))}
-                          <TableHead className="w-[100px]">Status</TableHead>
+                          <TableHead className="w-[100px] font-bold text-slate-900">Status</TableHead>
                         </TableRow>
                       </TableHeader>
 
@@ -285,24 +288,24 @@ export function StageTable({
                         {history.map((record) => (
                           <TableRow
                             key={record.id}
-                            className="odd:bg-white even:bg-slate-50/50 hover:bg-green-50/30 transition-colors border-b border-slate-100 last:border-0"
+                            className="odd:bg-white even:bg-slate-50/30 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0"
                           >
                             {/* TIMESTAMP CELL FIRST */}
-                            <TableCell className="font-medium text-black whitespace-nowrap">
+                            <TableCell className="font-medium text-slate-900 whitespace-nowrap">
                               {getStageTimestamp(record)}
                             </TableCell>
 
                             {columns.map((col) => (
-                              <TableCell key={col.key} className="text-sm">
+                              <TableCell key={col.key} className="text-sm text-slate-600">
                                 {col.key === "leadTime"
                                   ? `${record.data[col.key] || "-"} days`
                                   : col.key === "attachment" && record.data[col.key]
-                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline hover:text-blue-700">View</a>
+                                    ? <a href={record.data[col.key]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium underline-offset-4 hover:underline">View</a>
                                     : String(record.data[col.key] || "-")}
                               </TableCell>
                             ))}
 
-                            <TableCell className="font-medium text-black">
+                            <TableCell className="font-medium text-green-600">
                               Completed
                             </TableCell>
                           </TableRow>
@@ -310,7 +313,7 @@ export function StageTable({
                       </TableBody>
                     </Table>
                   </div>
-                </>
+                </div>
               )}
             </CardContent>
           </Card>

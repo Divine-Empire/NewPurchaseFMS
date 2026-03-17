@@ -827,7 +827,7 @@ export default function Stage1() {
           <p className="text-lg animate-pulse text-black font-medium">Loading records...</p>
         </div>
       ) : (
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
           <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">
             <TabsTrigger
               value="pending"
