@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pdf } from "@react-pdf/renderer";
+import { pdf, renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { ReportDocument } from "@/components/report-pdf";
 
@@ -43,23 +43,30 @@ export async function GET(request: NextRequest) {
         // 3. Generate PDF Buffer
         console.log("Generating PDF document...");
         const doc = React.createElement(ReportDocument, { summaryData, detailedData }) as any;
-        const pdfStream = await pdf(doc).toBuffer();
-        const base64Pdf = (pdfStream as any).toString('base64');
+        const buffer = await renderToBuffer(doc);
+        console.log(`PDF Generated. Buffer size: ${buffer.length} bytes`);
+        
+        const base64Pdf = buffer.toString('base64');
+        console.log(`Base64 generated. Length: ${base64Pdf.length} chars. Starts with: ${base64Pdf.substring(0, 30)}...`);
 
         // 4. Upload to Google Drive & Log to Sheet via GAS
         console.log("Uploading to Drive via GAS...");
-        const uploadParams = new URLSearchParams();
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `Daily_Report_${timestamp}.pdf`;
+        const today = new Date().toISOString().split('T')[0];
+        const filename = `Daily_Report_${today}.pdf`;
 
-        uploadParams.append("action", "uploadReport");
-        uploadParams.append("base64Data", base64Pdf);
-        uploadParams.append("fileName", filename);
-        uploadParams.append("folderId", process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "");
+        const payload = {
+            action: "uploadReport",
+            base64Data: base64Pdf,
+            fileName: filename,
+            folderId: process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || ""
+        };
 
         const uploadRes = await fetch(API_URI, {
             method: "POST",
-            body: uploadParams
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload)
         });
         const uploadResult = await uploadRes.json();
 
