@@ -237,6 +237,9 @@ export default function PurchaseDashboard() {
           if (totalRows > 6) {
             for (let i = 6; i < totalRows; i++) {
               const row = result.data[i];
+              // Skip empty rows (Indent No is in Column B, index 1)
+              if (!row || !row[1]) continue;
+
               // Ensure row has enough columns just in case
               if (row.length > 51) {
                 const azValue = row[51];
@@ -327,7 +330,7 @@ export default function PurchaseDashboard() {
           if (totalRows > 6) {
             for (let i = 6; i < totalRows; i++) {
               const row = result.data[i];
-              if (!row) continue;
+              if (!row || !row[1]) continue;
 
               const has = (idx: number) => {
                 const val = row[idx];
@@ -338,19 +341,19 @@ export default function PurchaseDashboard() {
 
               const missing = (idx: number) => !has(idx);
 
-              const check = (name: string, start: number, actual: number, plan: number) => {
+              const check = (name: string, start: number, actual: number, delayIdx: number) => {
                 if (has(start) && missing(actual)) {
                   counts[name]++;
-                  if (has(plan)) overdueCounts[name]++;
+                  if (has(delayIdx)) overdueCounts[name]++;
                 }
               };
-
+    
               // Indices verified against stage components
               check("Indent Approval", 9, 10, 11);
               check("Update 3 Vendors", 18, 19, 20);
-              check("Negotiation", 45, 46, 45);
-              check("PO Entry", 51, 52, 51);
-              check("Follow-Up Vendor", 60, 61, 60);
+              check("Negotiation", 45, 46, 45); // Negotiation delay is same as start
+              check("PO Entry", 51, 52, 53);
+              check("Follow-Up Vendor", 60, 61, 62);
             }
           }
 
@@ -890,7 +893,7 @@ export default function PurchaseDashboard() {
         const checkStage = (name: string, start: number, actual: number, plan: number, delayIdx: number, mode: 'category' | 'vendor' | 'default' = 'default') => {
           if (fmsHas(r, start) && fmsMiss(r, actual)) {
             totalCounts[name]++;
-            if (fmsHas(r, plan)) {
+            if (fmsHas(r, delayIdx)) {
               overdueCounts[name]++;
 
               let party = "-";
@@ -985,6 +988,12 @@ export default function PurchaseDashboard() {
           responsible: respMap[s.name] || "-",
         }));
 
+      // Sort detailed data by stage sequence to match summary
+      detailed.sort((a, b) => {
+        const indexA = allowedStages.indexOf(a.stage);
+        const indexB = allowedStages.indexOf(b.stage);
+        return indexA - indexB;
+      });
 
       const blob = await pdf(<ReportDocument summaryData={summaryData} detailedData={detailed} />).toBlob();
       const url = URL.createObjectURL(blob);

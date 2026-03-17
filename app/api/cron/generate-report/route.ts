@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
             const checkStage = (name: string, start: number, actual: number, plan: number, delayIdx: number, mode: 'category' | 'vendor' | 'default' = 'default') => {
                 if (has(r, start) && missing(r, actual)) {
                     totalCounts[name]++;
-                    if (has(r, plan)) {
+                    if (has(r, delayIdx)) {
                         overdueCounts[name]++;
                         let party = "-";
                         if (name === "Indent Approval") {
@@ -149,6 +149,13 @@ export async function GET(request: NextRequest) {
                 pending: overdueCounts[name],
                 responsible: respMap[name] || "-",
             }));
+
+        // Sort detailed data by stage sequence to match summary
+        detailed.sort((a, b) => {
+            const indexA = allowedStages.indexOf(a.stage);
+            const indexB = allowedStages.indexOf(b.stage);
+            return indexA - indexB;
+        });
 
         // 4. Generate PDF Document
         console.log(`Generating Sync Report with ${detailed.length} items...`);

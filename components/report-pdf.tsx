@@ -53,10 +53,10 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
     if (heads.length === 6) {
       return [
         { width: '10%' }, // Indent
-        { width: '15%' }, // Item
-        { width: '15%' }, // Vendor
-        { width: '15%' }, // Transporter
-        { width: '15%' }, // Expected Date
+        { width: '20%' }, // Item
+        { width: '20%' }, // Vendor
+        { width: '20%' }, // Transporter
+        { width: '20%' }, // Expected Date
         { width: '10%' }, // Delay
       ];
     }
@@ -184,7 +184,7 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
         const colStyles = getColStyles(heads);
 
         return (
-          <Page key={idx} size="A4" style={styles.page} orientation="landscape">
+          <Page key={idx} size="A4" style={styles.page}>
             <Text style={styles.header}>Detailed Report: {String(stageName)} ({String(items.length)} Overdue)</Text>
             
             <View style={styles.section}>
