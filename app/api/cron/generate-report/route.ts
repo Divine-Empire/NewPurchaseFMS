@@ -3,6 +3,9 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import React from "react";
 import { ReportDocument } from "@/components/report-pdf";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 // We can set a secret to protect this endpoint from manual calls
 const CRON_SECRET = process.env.CRON_SECRET;
 
