@@ -885,6 +885,9 @@ export default function PurchaseDashboard() {
       const fmsHas = (r: any, idx: number) => r[idx] !== null && r[idx] !== undefined && String(r[idx]).trim() !== "" && String(r[idx]).trim() !== "-";
       const fmsMiss = (r: any, idx: number) => !fmsHas(r, idx);
 
+      // Track unique POs for Follow-Up Vendor
+      const followUpVendorPOs = new Set<string>();
+
       // FMS loop logic
       for (let i = 6; i < fmsRows.length; i++) {
         const r = fmsRows[i];
@@ -943,7 +946,39 @@ export default function PurchaseDashboard() {
 
         checkStage("Indent Approval", 9, 10, 11, 11, 'category');
         checkStage("PO Entry", 51, 52, 51, 53, 'vendor');
-        checkStage("Follow-Up Vendor", 60, 61, 60, 62, 'vendor');
+
+        // Follow-Up Vendor: unique PO deduplication logic
+        const fuvIsOverdue = fmsHas(r, 60) && fmsMiss(r, 61) && fmsHas(r, 62);
+        const fuvRawPo = String(r[54] || "").trim();
+        if (fuvIsOverdue && fuvRawPo && fuvRawPo !== "-") {
+          const poNumKey = fuvRawPo.toUpperCase().replace(/\s+/g, '');
+          totalCounts["Follow-Up Vendor"]++;
+          overdueCounts["Follow-Up Vendor"]++;
+          if (!followUpVendorPOs.has(poNumKey)) {
+            followUpVendorPOs.add(poNumKey);
+            let fuvParty = "-";
+            const awName = String(r[48] || "").trim();
+            const axName = String(r[49] || "").trim();
+            const avName = String(r[47] || "").trim();
+            const selectedId = avName.toLowerCase();
+            if (awName && awName !== "-") fuvParty = awName;
+            else if (selectedId.includes("vendor1") || selectedId === "1" || selectedId === "vendor 1") fuvParty = r[21] || "-";
+            else if (selectedId.includes("vendor2") || selectedId === "2" || selectedId === "vendor 2") fuvParty = r[29] || "-";
+            else if (selectedId.includes("vendor3") || selectedId === "3" || selectedId === "vendor 3") fuvParty = r[37] || "-";
+            else if (axName && axName !== "-" && isNaN(Date.parse(axName)) && isNaN(Number(axName))) fuvParty = axName;
+            else if (avName && avName !== "-" && isNaN(Date.parse(avName)) && isNaN(Number(avName))) fuvParty = avName;
+            else fuvParty = r[3] || "-";
+            detailed.push({
+              indent: r[1] || "-",
+              party: fuvParty,
+              item: r[4] || "-",
+              qty: r[14] || r[5] || "-",
+              stage: "Follow-Up Vendor",
+              delay: r[62] || "0",
+              poNumber: fuvRawPo
+            });
+          }
+        }
       }
 
       // RA loop logic

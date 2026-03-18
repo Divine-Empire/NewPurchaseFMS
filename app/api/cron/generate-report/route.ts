@@ -75,12 +75,56 @@ export async function GET(request: NextRequest) {
         const has = (r: any, idx: number) => r[idx] !== null && r[idx] !== undefined && String(r[idx]).trim() !== "" && String(r[idx]).trim() !== "-";
         const missing = (r: any, idx: number) => !has(r, idx);
 
+        const followUpVendorPOs = new Set<string>();
+
         // FMS Loop
         for (let i = 6; i < fmsRows.length; i++) {
             const r = fmsRows[i];
             if (!r || !r[1]) continue;
 
             const checkStage = (name: string, start: number, actual: number, plan: number, delayIdx: number, mode: 'category' | 'vendor' | 'default' = 'default') => {
+                // "Follow-Up Vendor" has unique logic: Planned (60) NOT NULL, Actual (61) NULL, Delay (62) NOT NULL, PO (54) NOT NULL + UNIQUE
+                if (name === "Follow-Up Vendor") {
+                    const isOverdue = has(r, 60) && missing(r, 61) && has(r, 62);
+                    const rawPo = String(r[54] || "").trim();
+
+                    if (isOverdue && rawPo && rawPo !== "-") {
+                        const poNumKey = rawPo.toUpperCase().replace(/\s+/g, '');
+                        const isUnique = !followUpVendorPOs.has(poNumKey);
+                        
+                        totalCounts[name]++;
+                        overdueCounts[name]++;
+
+                        if (isUnique) {
+                            followUpVendorPOs.add(poNumKey);
+
+                            let party = "-";
+                            const awName = String(r[48] || "").trim();
+                            const axName = String(r[49] || "").trim();
+                            const avName = String(r[47] || "").trim();
+                            const selectedId = avName.toLowerCase();
+                            if (awName && awName !== "-") party = awName;
+                            else if (selectedId.includes("vendor1") || selectedId === "1" || selectedId === "vendor 1") party = r[21] || "-";
+                            else if (selectedId.includes("vendor2") || selectedId === "2" || selectedId === "vendor 2") party = r[29] || "-";
+                            else if (selectedId.includes("vendor3") || selectedId === "3" || selectedId === "vendor 3") party = r[37] || "-";
+                            else if (axName && axName !== "-" && isNaN(Date.parse(axName)) && isNaN(Number(axName))) party = axName;
+                            else if (avName && avName !== "-" && isNaN(Date.parse(avName)) && isNaN(Number(avName))) party = avName;
+                            else party = r[3] || "-";
+
+                            detailed.push({
+                                indent: r[1] || "-",
+                                party,
+                                item: r[4] || "-",
+                                qty: r[14] || r[5] || "-",
+                                stage: name,
+                                delay: r[62] || "0",
+                                poNumber: rawPo // Keep original formatting for display
+                            });
+                        }
+                    }
+                    return;
+                }
+
                 if (has(r, start) && missing(r, actual)) {
                     totalCounts[name]++;
                     if (has(r, delayIdx)) {
@@ -108,7 +152,7 @@ export async function GET(request: NextRequest) {
                             indent: r[1] || "-",
                             party,
                             item: r[4] || "-",
-                            qty: (name === "PO Entry" || name === "Follow-Up Vendor") ? (r[14] || r[5] || "-") : (r[5] || "-"),
+                            qty: (name === "PO Entry") ? (r[14] || r[5] || "-") : (r[5] || "-"),
                             stage: name,
                             delay: r[delayIdx] || "0",
                             poNumber: r[54] || "-"
@@ -163,7 +207,7 @@ export async function GET(request: NextRequest) {
         });
 
         // 4. Generate PDF Document
-        console.log(`Generating Sync Report with ${detailed.length} items...`);
+        console.log(`Generating Sync Report with ${detailed.length} total items...`);
         const doc = React.createElement(ReportDocument, { summaryData, detailedData: detailed }) as any;
         const buffer = await renderToBuffer(doc);
         const base64Pdf = buffer.toString('base64');

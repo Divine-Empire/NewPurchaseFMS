@@ -41,7 +41,7 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
       return ["Indent No", "Item", "Vendor", "Qty", "Delay (Hours)"];
     }
     if (stageName === "Follow-Up Vendor") {
-      return ["Indent No", "Item", "Vendor", "Delay (Days)"];
+      return ["PO Number", "Vendor", "Delay (Days)"];
     }
     if (stageName === "Transporter Follow-Up") {
       return ["Indent No", "Item", "Vendor", "Transporter", "Expected Date", "Delay (Hours)"];
@@ -69,12 +69,11 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
         { width: '10%' }, // Delay
       ];
     }
-    if (heads.length === 4) {
+    if (heads.length === 3) {
       return [
-        { width: '15%' }, // Indent
-        { width: '30%' }, // Item
-        { width: '40%' }, // Vendor
-        { width: '15%' }, // Delay
+        { width: '25%' }, // PO Number
+        { width: '55%' }, // Vendor
+        { width: '20%' }, // Delay
       ];
     }
     // Default 4 columns
@@ -151,7 +150,7 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
       return [row.indent, row.item, row.party, row.qty, formatDelay(row.delay, stage)];
     }
     if (stage === "Follow-Up Vendor") {
-      return [row.indent, row.item, row.party, formatDelay(row.delay, stage)];
+      return [row.poNumber, row.party, formatDelay(row.delay, stage)];
     }
     if (stage === "Transporter Follow-Up") {
       return [row.indent, row.item, row.party, row.transporterName, row.expectedDate, formatDelay(row.delay, stage)];
@@ -191,8 +190,9 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
         
         let headerText = `Detailed Report: ${String(stageName)} (${String(items.length)} Overdue)`;
         if (stageName === "Follow-Up Vendor") {
-          const uniquePOs = new Set(items.map(it => String(it.poNumber || "").trim()).filter(Boolean)).size;
-          headerText += ` | Unique PO (${uniquePOs})`;
+          const summaryItem = summaryData.find(s => String(s.stage).trim() === String(stageName).trim());
+          const totalOverdue = summaryItem ? summaryItem.pending : items.length;
+          headerText = `Detailed Report: ${String(stageName)} (Total Overdue: ${totalOverdue} | Unique PO: ${items.length})`;
         }
 
         return (
