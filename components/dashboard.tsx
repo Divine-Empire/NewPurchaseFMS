@@ -347,7 +347,7 @@ export default function PurchaseDashboard() {
                   if (has(delayIdx)) overdueCounts[name]++;
                 }
               };
-    
+
               // Indices verified against stage components
               check("Indent Approval", 9, 10, 11);
               check("Update 3 Vendors", 18, 19, 20);
@@ -659,14 +659,14 @@ export default function PurchaseDashboard() {
 
   // Compute unique values for filters
   const allData = useMemo(() => [...inTransitItems, ...receivedItems, ...purchaseItems, ...warrantyItems], [inTransitItems, receivedItems, purchaseItems, warrantyItems]);
-  
-  const uniqueParties = useMemo(() => 
-    [...new Set(allData.map((item) => item.party))].filter(Boolean).sort()
-  , [allData]);
 
-  const uniqueMaterials = useMemo(() => 
+  const uniqueParties = useMemo(() =>
+    [...new Set(allData.map((item) => item.party))].filter(Boolean).sort()
+    , [allData]);
+
+  const uniqueMaterials = useMemo(() =>
     [...new Set(allData.map((item) => item.material))].filter(Boolean).sort()
-  , [allData]);
+    , [allData]);
 
   // Filtering function
   const applyFilters = (data: any[], dataType: string) => {
@@ -934,7 +934,8 @@ export default function PurchaseDashboard() {
                 item: r[4] || "-",
                 qty: qty,
                 stage: name,
-                delay: r[delayIdx] || "0"
+                delay: r[delayIdx] || "0",
+                poNumber: r[54] || "-"
               });
             }
           }
@@ -961,7 +962,8 @@ export default function PurchaseDashboard() {
                 item: r[itemIdx] || "-", 
                 qty: r[8] || "-", 
                 stage: name, 
-                delay: r[delayIdx] || "0"
+                delay: r[delayIdx] || "0",
+                poNumber: r[54] || "-"
               };
 
               if (name === "Transporter Follow-Up") {

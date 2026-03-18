@@ -35,16 +35,16 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
 
   const getHeaders = (stageName: string) => {
     if (stageName === "Indent Approval") {
-      return ["Indent No", "Created By", "Item", "Qty", "Delay (Days)"];
+      return ["Indent No", "Created By", "Item", "Qty", "Delay (Hours)"];
     }
     if (stageName === "PO Entry") {
-      return ["Indent No", "Item", "Vendor", "Qty", "Delay (Days)"];
+      return ["Indent No", "Item", "Vendor", "Qty", "Delay (Hours)"];
     }
     if (stageName === "Follow-Up Vendor") {
       return ["Indent No", "Item", "Vendor", "Delay (Days)"];
     }
     if (stageName === "Transporter Follow-Up") {
-      return ["Indent No", "Item", "Vendor", "Transporter", "Expected Date", "Delay (Days)"];
+      return ["Indent No", "Item", "Vendor", "Transporter", "Expected Date", "Delay (Hours)"];
     }
     return ["Indent No", "Party/Vendor", "Item", "Qty"];
   };
@@ -117,6 +117,12 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
     // 2. Format based on stage
     if (stage === "Follow-Up Vendor") {
       const days = totalHours / 24;
+      if (Math.abs(totalHours) < 12 && Math.abs(totalHours) > 0) {
+        const absHours = Math.abs(totalHours);
+        const h = Math.floor(absHours);
+        const m = Math.round((absHours % 1) * 60);
+        return `${h} hrs ${m} mins`;
+      }
       return Math.round(isNegative ? -days : days).toString();
     }
 
@@ -182,10 +188,16 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
         const items = itemsArray as any[];
         const heads = getHeaders(stageName);
         const colStyles = getColStyles(heads);
+        
+        let headerText = `Detailed Report: ${String(stageName)} (${String(items.length)} Overdue)`;
+        if (stageName === "Follow-Up Vendor") {
+          const uniquePOs = new Set(items.map(it => String(it.poNumber || "").trim()).filter(Boolean)).size;
+          headerText += ` | Unique PO (${uniquePOs})`;
+        }
 
         return (
           <Page key={idx} size="A4" style={styles.page}>
-            <Text style={styles.header}>Detailed Report: {String(stageName)} ({String(items.length)} Overdue)</Text>
+            <Text style={styles.header}>{headerText}</Text>
             
             <View style={styles.section}>
               <View style={styles.table}>

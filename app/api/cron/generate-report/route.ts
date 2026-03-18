@@ -107,7 +107,8 @@ export async function GET(request: NextRequest) {
                             item: r[4] || "-",
                             qty: (name === "PO Entry" || name === "Follow-Up Vendor") ? (r[14] || r[5] || "-") : (r[5] || "-"),
                             stage: name,
-                            delay: r[delayIdx] || "0"
+                            delay: r[delayIdx] || "0",
+                            poNumber: r[54] || "-"
                         });
                     }
                 }
@@ -136,7 +137,8 @@ export async function GET(request: NextRequest) {
                         stage: "Transporter Follow-Up",
                         delay: r[90] || "0",
                         expectedDate: transportMap.get(liftNo) || "-",
-                        transporterName: r[9] || "-"
+                        transporterName: r[9] || "-",
+                        poNumber: r[54] || "-"
                     });
                 }
             }
