@@ -70,14 +70,14 @@ const uploadFileToDrive = async (
 /* --------------------------------------------------------------- */
 const PENDING_COLUMNS = [
     { key: "indentNumber", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor Name" },
     { key: "poNumber", label: "PO Number" },
     { key: "nextFollowUpDate", label: "Next Follow-Up" },
     { key: "remarks", label: "Remarks" },
     { key: "itemName", label: "Item Name" },
-    { key: "liftingQty", label: "Lifting Qty" },
+    { key: "liftingQty", label: "Dispatch Qty" },
     { key: "transporterName", label: "Transporter" },
     { key: "vehicleNo", label: "Vehicle No" },
     { key: "contactNo", label: "Contact No" },
@@ -98,7 +98,7 @@ const HISTORY_COLUMNS = [
     ...PENDING_COLUMNS,
     { key: "actual6", label: "Actual 6" },
     { key: "invoiceType", label: "Invoice Type" },
-    { key: "receiptLiftNumber", label: "Receipt Lift #" },
+    { key: "receiptLiftNumber", label: "Receipt Unit Tracking No." },
     { key: "receivedQty", label: "Received Qty" },
     { key: "invoiceDate", label: "Invoice Date" },
     { key: "invoiceNumber", label: "Invoice #" },
@@ -232,13 +232,13 @@ export default function Stage7() {
                             data: {
                                 // RECEIVING-ACCOUNTS Columns (B-S)
                                 indentNumber: row[1] || "",     // B: Indent Number
-                                liftNo: row[2] || "",            // C: Lift No.
+                                liftNo: row[2] || "",            // C: Unit Tracking No.
                                 vendorName: row[3] || "",        // D: Vendor Name
                                 poNumber: row[4] || "",          // E: PO Number
                                 nextFollowUpDate: row[5] || "", // F: Next Follow-Up Date
                                 remarks: row[6] || "",           // G: Remarks
                                 itemName: row[7] || "",          // H: Item Name
-                                liftingQty: row[8] || "",        // I: Lifting Qty
+                                liftingQty: row[8] || "",        // I: Dispatch Qty
                                 transporterName: row[9] || "",  // J: Transporter Name
                                 vehicleNo: row[10] || "",        // K: Vehicle No
                                 contactNo: row[11] || "",        // L: Contact No
@@ -1399,7 +1399,7 @@ export default function Stage7() {
                         >
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <Label>Lift #</Label>
+                                    <Label>Unit Tracking No.</Label>
                                     <Input
                                         value={form.liftNumber}
                                         readOnly

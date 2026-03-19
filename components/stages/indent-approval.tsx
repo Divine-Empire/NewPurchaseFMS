@@ -65,6 +65,16 @@ import {
 import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 import { useMemo } from "react";
 
+const formatDateDash = (date: any) => {
+  if (!date || date === "-" || date === "—") return "-";
+  const d = date instanceof Date ? date : parseSheetDate(date);
+  if (!d || isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy}`;
+};
+
 export default function Stage2() {
   const [sheetRecords, setSheetRecords] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -124,9 +134,9 @@ export default function Stage2() {
             const hasActual1 = !!row[10] && String(row[10]).trim() !== "" && String(row[10]).trim() !== "-";
 
             let status = "not_ready";
-            if (hasPlan1 && !hasActual1) {
+            if (!hasActual1) {
               status = "pending";
-            } else if (hasPlan1 && hasActual1) {
+            } else if (hasActual1) {
               status = "completed";
             }
 
@@ -229,8 +239,8 @@ export default function Stage2() {
     { key: "warehouseLocation", label: "Warehouse", icon: Warehouse },
     { key: "itemCode", label: "Item Code", icon: Hash },
     { key: "leadTime", label: "Lead Time", icon: Calendar },
-    { key: "plannedDate", label: "Planned 1", icon: Calendar },
-    { key: "actualDate", label: "Actual 1", icon: Calendar },
+    { key: "plannedDate", label: "Planned", icon: Calendar },
+    { key: "actualDate", label: "Actual", icon: Calendar },
     { key: "delay", label: "Delay", icon: Clock },
     { key: "approvedBy", label: "AppBy", icon: UserCheck },
     { key: "status", label: "Status", icon: Tag },
@@ -561,7 +571,7 @@ export default function Stage2() {
                     </TableHead>
                     {columns
                       .filter((c) => selectedColumns.includes(c.key) &&
-                        !["plannedDate", "actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
+                        !["actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
                       .map((col) => (
                         <TableHead key={col.key}>
                           <div className="flex items-center gap-2">
@@ -589,11 +599,13 @@ export default function Stage2() {
 
                       {columns
                         .filter((c) => selectedColumns.includes(c.key) &&
-                          !["plannedDate", "actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
+                          !["actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
                         .map((col) => (
                           <TableCell key={col.key}>
                             {col.key === "leadTime"
                               ? `${record.data[col.key] ?? "-"} days`
+                              : col.key === "plannedDate" || col.key === "actualDate"
+                              ? formatDateDash(record.data[col.key])
                               : String(record.data[col.key] ?? "-")}
                           </TableCell>
                         ))}
@@ -623,7 +635,7 @@ export default function Stage2() {
                   <TableRow>
                     <TableHead className="w-12 text-center text-[10px] font-bold text-slate-400">#</TableHead>
                     {columns
-                      .filter((c) => selectedColumns.includes(c.key) && c.key !== "plannedDate" && c.key !== "actualDate" && c.key !== "delay")
+                      .filter((c) => selectedColumns.includes(c.key) && c.key !== "delay")
                       .map((col) => (
                         <TableHead key={col.key}>
                           <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
@@ -645,7 +657,7 @@ export default function Stage2() {
                         {record.rowIndex}
                       </TableCell>
                       {columns
-                        .filter((c) => selectedColumns.includes(c.key) && c.key !== "plannedDate" && c.key !== "actualDate" && c.key !== "delay")
+                        .filter((c) => selectedColumns.includes(c.key) && c.key !== "delay")
                         .map((col) => (
                           <TableCell
                             key={col.key}
@@ -653,6 +665,8 @@ export default function Stage2() {
                           >
                             {col.key === "leadTime"
                               ? `${record.data[col.key] ?? "-"} days`
+                              : col.key === "plannedDate" || col.key === "actualDate"
+                              ? formatDateDash(record.data[col.key])
                               : String(record.data[col.key] ?? "-")}
                           </TableCell>
                         ))}

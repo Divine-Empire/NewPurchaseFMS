@@ -114,7 +114,7 @@ export default function Stage10() {
               vendorDetails = { vendorName: fmsRow[37], rate: fmsRow[38], terms: fmsRow[39] };
             }
 
-            const liftNo = row[2]; // Column C (Lift No)
+            const liftNo = row[2]; // Column C (Unit Tracking No.)
             
             return {
               id: `${row[1]}_${row[2]}` || `row-${originalIndex}`,
@@ -140,7 +140,7 @@ export default function Stage10() {
                 invoiceDate: row[23], // X: Invoice Date (Receiving Accounts)
                 srnNumber: row[32],
                 receiptLiftNumber: row[28],
-                liftNo: row[2], // Column C
+                liftNo: row[2], // Column C (Unit Tracking No.)
 
                 // Stage 8 (40-49)
                 qcStatus: row[39], // AN: QC Status (Receiving Accounts)
@@ -216,7 +216,7 @@ export default function Stage10() {
 
   const pendingColumns = [
     { key: "indentNumber", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
     { key: "quantity", label: "Qty" },
@@ -239,7 +239,7 @@ export default function Stage10() {
 
   const historyColumns = [
     { key: "indentNumber", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     ...pendingColumns.filter(c => c.key !== "indentNumber" && c.key !== "liftNo"),
     { key: "handoverBy", label: "HardCopy Docs" },
     { key: "invoiceSubmissionDate", label: "Sub. Date" },

@@ -41,7 +41,7 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
       return ["Indent No", "Item", "Vendor", "Qty", "Delay (Hours)"];
     }
     if (stageName === "Follow-Up Vendor") {
-      return ["PO Number", "Vendor", "Delay (Days)"];
+      return ["PO Number", "Vendor", "Planned Date", "Delay (Days)"];
     }
     if (stageName === "Transporter Follow-Up") {
       return ["Indent No", "Item", "Vendor", "Transporter", "Expected Date", "Delay (Hours)"];
@@ -69,11 +69,12 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
         { width: '10%' }, // Delay
       ];
     }
-    if (heads.length === 3) {
+    if (heads.length === 4) {
       return [
-        { width: '25%' }, // PO Number
-        { width: '55%' }, // Vendor
-        { width: '20%' }, // Delay
+        { width: '30%' }, // PO Number
+        { width: '35%' }, // Vendor
+        { width: '20%' }, // Planned Date
+        { width: '15%' }, // Delay
       ];
     }
     // Default 4 columns
@@ -142,6 +143,16 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
     return formatted;
   };
 
+  const formatDateDisplay = (val: any) => {
+    if (!val || val === "-" || val === "0") return "-";
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}-${mm}-${yyyy}`;
+  };
+
   const getRowData = (row: any, stage: string) => {
     if (stage === "Indent Approval") {
       return [row.indent, row.party, row.item, row.qty, formatDelay(row.delay, stage)];
@@ -150,10 +161,10 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
       return [row.indent, row.item, row.party, row.qty, formatDelay(row.delay, stage)];
     }
     if (stage === "Follow-Up Vendor") {
-      return [row.poNumber, row.party, formatDelay(row.delay, stage)];
+      return [row.poNumber, row.party, formatDateDisplay(row.plannedDate), formatDelay(row.delay, stage)];
     }
     if (stage === "Transporter Follow-Up") {
-      return [row.indent, row.item, row.party, row.transporterName, row.expectedDate, formatDelay(row.delay, stage)];
+      return [row.indent, row.item, row.party, row.transporterName, formatDateDisplay(row.expectedDate), formatDelay(row.delay, stage)];
     }
     return [row.indent, row.party, row.item, row.qty];
   };
@@ -173,7 +184,13 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
             {summaryData.map((row, i) => (
               <View style={styles.tableRow} key={i} wrap={false}>
                 <View style={styles.colSumStage}><Text style={styles.tableCell}>{String(row.stage)}</Text></View>
-                <View style={styles.colSumPending}><Text style={styles.tableCell}>{String(row.pending)}</Text></View>
+                <View style={styles.colSumPending}>
+                  <Text style={styles.tableCell}>
+                    {row.stage === "Follow-Up Vendor" && row.uniquePoCount 
+                      ? `${row.pending} (${row.uniquePoCount} Unique)`
+                      : String(row.pending)}
+                  </Text>
+                </View>
                 <View style={styles.colSumResponsible}><Text style={styles.tableCell}>{String(row.responsible)}</Text></View>
               </View>
             ))}
@@ -184,7 +201,13 @@ export const ReportDocument = ({ summaryData, detailedData }: { summaryData: any
 
       {/* Detailed Report Pages - Separate page per stage allows headers to repeat correctly via 'fixed' */}
       {Object.entries(groupedDetailedData).map(([stageName, itemsArray], idx) => {
-        const items = itemsArray as any[];
+        let items = itemsArray as any[];
+        
+        // Alphabetical sort by vendor name for Follow-Up Vendor
+        if (stageName === "Follow-Up Vendor") {
+          items = [...items].sort((a, b) => String(a.party || "").localeCompare(String(b.party || "")));
+        }
+
         const heads = getHeaders(stageName);
         const colStyles = getColStyles(heads);
         

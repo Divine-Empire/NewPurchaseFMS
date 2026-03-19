@@ -118,7 +118,8 @@ export async function GET(request: NextRequest) {
                                 qty: r[14] || r[5] || "-",
                                 stage: name,
                                 delay: r[62] || "0",
-                                poNumber: rawPo // Keep original formatting for display
+                                poNumber: rawPo, // Keep original formatting for display
+                                plannedDate: r[60] || "-" // Column BI
                             });
                         }
                     }
@@ -197,6 +198,7 @@ export async function GET(request: NextRequest) {
                 stage: name,
                 pending: overdueCounts[name],
                 responsible: respMap[name] || "-",
+                uniquePoCount: name === "Follow-Up Vendor" ? followUpVendorPOs.size : undefined
             }));
 
         // Sort detailed data by stage sequence to match summary

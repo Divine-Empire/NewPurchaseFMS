@@ -73,21 +73,25 @@ export default function TransporterFollowUp() {
             // Fetch Transport Follow-Up Data for Expected Dates
             const resTransport = await fetch(`${SHEET_API_URL}?sheet=Transport Flw-Up&action=getAll`);
             const jsonTransport = await resTransport.json();
-            const transportMap = new Map<string, { status: string, remarks: string, expectedDate: string }>();
+            const transportMap = new Map<string, { status: string, remarks: string, expectedDate: string, followUpCount: number }>();
 
             if (jsonTransport.success && Array.isArray(jsonTransport.data)) {
                 // Skip header (row 1)
                 jsonTransport.data.slice(1).forEach((row: any) => {
-                    const liftNo = row[1]; // Column B
+                    const liftNo = row[1]; // Column B (Unit Tracking No.)
                     const status = row[2]; // Column C
                     const remarks = row[3]; // Column D
                     const exDate = row[4]; // Column E
 
                     if (liftNo) {
+                        const existing = transportMap.get(liftNo);
+                        const currentCount = (existing?.followUpCount || 0) + (status === "Intransit" ? 1 : 0);
+
                         transportMap.set(liftNo, {
                             status: status || "",
                             remarks: remarks || "",
-                            expectedDate: exDate || ""
+                            expectedDate: exDate || "",
+                            followUpCount: currentCount
                         });
                     }
                 });
@@ -120,13 +124,13 @@ export default function TransporterFollowUp() {
                             status = "history";
                         }
 
-                        const liftNo = row[2]; // Column C
+                        const liftNo = row[2]; // Column C (Unit Tracking No.)
                         const followUpData = transportMap.get(liftNo);
                         const expectedDate = followUpData?.expectedDate || "";
                         const latestRemarks = followUpData?.remarks || "";
 
                         return {
-                            id: `${liftNo}_${originalIndex}`, // Lift No + row index as unique ID
+                            id: `${liftNo}_${originalIndex}`, // Unit Tracking No. + row index as unique ID
                             rowIndex: originalIndex,
                             status,
                             rawRow: row,
@@ -146,6 +150,7 @@ export default function TransporterFollowUp() {
                                 actualDate: row[89],       // Column CL (Index 89)
                                 expectedDate: expectedDate, // From Transport Flw-Up
                                 remarks: latestRemarks,      // From Transport Flw-Up
+                                totalFollowUps: followUpData?.followUpCount || 0, // Count of Intransit statuses
                                 lrCopy: row[18],           // Column S (LR Copy)
                             }
                         };
@@ -230,13 +235,14 @@ export default function TransporterFollowUp() {
 
     const columns = [
         { key: "indentNumber", label: "Indent No" },
-        { key: "itemName", label: "Item Name" }, // Added to columns
-        { key: "expectedDate", label: "Expected Date" },
+        { key: "itemName", label: "Item Name" }, 
+        { key: "totalFollowUps", label: "Total Follow-Ups" },
+        { key: "expectedDate", label: "Last Follow-Up Date" },
         { key: "remarks", label: "Remarks" }, // Added for latest follow-up remarks
-        { key: "liftNo", label: "Lift No" },
+        { key: "liftNo", label: "Unit Tracking No." },
         { key: "vendorName", label: "Vendor Name" },
         { key: "poNumber", label: "PO Number" },
-        { key: "liftingQty", label: "Lifting Qty" },
+        { key: "liftingQty", label: "Dispatch Qty" },
         { key: "transporterName", label: "Transporter Name" },
         { key: "freightAmt", label: "Freight Amt" },
         { key: "vehicleNo", label: "Vehicle No" },
@@ -321,7 +327,7 @@ export default function TransporterFollowUp() {
 
         // Validate Expected Date when status is Intransit
         if (formData.status === "Intransit" && !formData.expectedDate) {
-            toast.error("Expected Date is required when status is Intransit");
+            toast.error("Last Follow-Up Date is required when status is Intransit");
             return;
         }
 
@@ -460,7 +466,7 @@ export default function TransporterFollowUp() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="indentNumber">Indent No</SelectItem>
-                                        <SelectItem value="expectedDate">Expected Date</SelectItem>
+                                        <SelectItem value="expectedDate">Last Follow-Up Date</SelectItem>
                                     </SelectContent>
                                 </Select>
                             )}
@@ -499,9 +505,9 @@ export default function TransporterFollowUp() {
                                                     onCheckedChange={toggleAll}
                                                 />
                                             </TableHead>
-                                            <TableHead className="w-[100px] sticky left-0 z-20 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Actions</TableHead>
+                                            <TableHead className="w-[100px] sticky left-0 z-20 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center">Actions</TableHead>
                                             {columns.map(c => (
-                                                <TableHead key={c.key}>{c.label}</TableHead>
+                                                <TableHead key={c.key} className="text-center">{c.label}</TableHead>
                                             ))}
                                         </TableRow>
                                     </TableHeader>
@@ -514,7 +520,7 @@ export default function TransporterFollowUp() {
                                                         onCheckedChange={() => toggleRow(rec.id)}
                                                     />
                                                 </TableCell>
-                                                <TableCell className="sticky left-0 z-20 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                                                <TableCell className="sticky left-0 z-20 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center">
                                                     <Button size="sm" onClick={() => handleOpenForm(rec)} className="bg-blue-600 hover:bg-blue-700">
                                                         Follow-Up
                                                     </Button>
@@ -525,7 +531,7 @@ export default function TransporterFollowUp() {
                                                     // LR Copy Logic
                                                     if (c.key === "lrCopy") {
                                                         return (
-                                                            <TableCell key={c.key}>
+                                                            <TableCell key={c.key} className="text-center">
                                                                 {val && val.trim() !== "" ? (
                                                                     <a
                                                                         href={val}
@@ -553,11 +559,11 @@ export default function TransporterFollowUp() {
                                                                 });
                                                             }
                                                         }
-                                                        return <TableCell key={c.key}>{displayDate}</TableCell>;
+                                                        return <TableCell key={c.key} className="text-center">{displayDate}</TableCell>;
                                                     }
 
                                                     // Default Logic
-                                                    return <TableCell key={c.key}>{safeValue(val)}</TableCell>;
+                                                    return <TableCell key={c.key} className="text-center">{safeValue(val)}</TableCell>;
                                                 })}
                                             </TableRow>
                                         ))}
@@ -575,13 +581,13 @@ export default function TransporterFollowUp() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead className="w-[50px]">
+                                            <TableHead className="w-[50px] text-center">
                                                 <Checkbox
                                                     checked={selectedRows.size === completed.length && completed.length > 0}
                                                     onCheckedChange={toggleAll}
                                                 />
                                             </TableHead>
-                                            {columns.map(c => <TableHead key={c.key}>{c.label}</TableHead>)}
+                                            {columns.map(c => <TableHead key={c.key} className="text-center">{c.label}</TableHead>)}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -599,7 +605,7 @@ export default function TransporterFollowUp() {
                                                     // LR Copy Logic
                                                     if (c.key === "lrCopy") {
                                                         return (
-                                                            <TableCell key={c.key}>
+                                                            <TableCell key={c.key} className="text-center">
                                                                 {val && val.trim() !== "" ? (
                                                                     <a
                                                                         href={val}
@@ -627,11 +633,11 @@ export default function TransporterFollowUp() {
                                                                 });
                                                             }
                                                         }
-                                                        return <TableCell key={c.key}>{displayDate}</TableCell>;
+                                                        return <TableCell key={c.key} className="text-center">{displayDate}</TableCell>;
                                                     }
 
                                                     // Default Logic
-                                                    return <TableCell key={c.key}>{safeValue(val)}</TableCell>;
+                                                    return <TableCell key={c.key} className="text-center">{safeValue(val)}</TableCell>;
                                                 })}
                                             </TableRow>
                                         ))}
@@ -672,7 +678,7 @@ export default function TransporterFollowUp() {
                                             <thead>
                                                 <tr className="text-left text-gray-500 border-b">
                                                     <th className="pb-1 font-medium">Indent No</th>
-                                                    <th className="pb-1 font-medium">Lift No</th>
+                                                    <th className="pb-1 font-medium">Unit Tracking No.</th>
                                                     <th className="pb-1 font-medium">Transporter</th>
                                                     <th className="pb-1 font-medium">Vehicle</th>
                                                 </tr>
@@ -719,7 +725,7 @@ export default function TransporterFollowUp() {
                                         </div>
                                     </div>
                                     <div>
-                                        <Label className="text-xs text-gray-500">Lift No</Label>
+                                        <Label className="text-xs text-gray-500">Unit Tracking No.</Label>
                                         <div className="p-2 bg-gray-50 rounded text-sm font-medium">
                                             {selectedRecord?.data.liftNo || "-"}
                                         </div>
@@ -755,7 +761,7 @@ export default function TransporterFollowUp() {
                                 {/* Expected Date - Only show when Status is Intransit */}
                                 {formData.status === "Intransit" && (
                                     <div>
-                                        <Label className="text-xs mb-1 block">Expected Date <span className="text-red-500">*</span></Label>
+                                        <Label className="text-xs mb-1 block">Last Follow-Up Date <span className="text-red-500">*</span></Label>
                                         <Input
                                             type="date"
                                             value={formData.expectedDate}

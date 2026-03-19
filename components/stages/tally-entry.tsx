@@ -376,7 +376,7 @@ export default function Stage9() {
     { key: "basicValue", label: "Basic Value" },
     { key: "totalWithTax", label: "Total w/Tax" },
     { key: "poCopy", label: "PO Copy" },
-    { key: "receiptLiftNumber", label: "Lift #" },
+    { key: "receiptLiftNumber", label: "Unit Tracking No." },
     { key: "receivedQty", label: "Rec. Qty" },
     { key: "invoiceNumber", label: "Invoice #" },
     { key: "invoiceDate", label: "Invoice Date" },

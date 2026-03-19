@@ -195,8 +195,8 @@ export default function Stage6() {
     { key: "indentNumber", label: "Indent #", icon: null },
     { key: "itemName", label: "Item", icon: null },
     { key: "quantity", label: "Qty", icon: null },
-    { key: "totalLifted", label: "Total Lifted", icon: null },
-    { key: "pendingLifted", label: "Pending Lifted", icon: null },
+    { key: "totalLifted", label: "Total Dispatch Qty", icon: null },
+    { key: "pendingLifted", label: "Pending Dispatch Qty", icon: null },
   ];
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
@@ -230,7 +230,7 @@ export default function Stage6() {
           .map((row: any, i: number) => ({
             id: `receiving-${i}`,
             indentNumber: row[1] || "",     // B: Indent Number
-            liftNo: row[2] || "",            // C: Lift No.
+            liftNo: row[2] || "",            // C: Unit Tracking No.
             vendorName: row[3] || "",        // D: Vendor Name
             poNumber: row[4] || "",          // E: PO Number
             nextFollowUpDate: row[5] || "", // F: Next Follow-Up Date
@@ -729,7 +729,7 @@ export default function Stage6() {
           receivingAccountRow = new Array(76).fill(""); // Extended to cover BX (Index 75)
           receivingAccountRow[0] = currentTimestamp;                        // A: Timestamp (M/D/YYYY HH:MM:SS)
           receivingAccountRow[1] = sheetRecord.data.indentNumber || "";   // B: Indent Number
-          receivingAccountRow[2] = "";                                     // C: Lift No.
+          receivingAccountRow[2] = "";                                     // C: Unit Tracking No.
           receivingAccountRow[3] = v.name || "";                          // D: Vendor Name
           receivingAccountRow[4] = v.poNumber || "";                      // E: PO Number
           receivingAccountRow[5] = followUpDateFormatted;                 // F: Next Follow-Up Date (YYYY-MM-DD)
@@ -746,7 +746,7 @@ export default function Stage6() {
 
           receivingAccountRow[0] = currentTimestamp;                            // 0/A: Timestamp (M/D/YYYY HH:MM:SS)
           receivingAccountRow[1] = sheetRecord.data.indentNumber || "";       // 1/B: Indent Number
-          receivingAccountRow[2] = lift.liftNumber || "";                     // 2/C: Lift No.
+          receivingAccountRow[2] = lift.liftNumber || "";                     // 2/C: Unit Tracking No.
           receivingAccountRow[3] = v.name || "";                              // 3/D: Vendor Name
           receivingAccountRow[4] = v.poNumber || "";                          // 4/E: PO Number
           receivingAccountRow[5] = followUpDateFormatted;                     // 5/F: Next Flw-Up Date (YYYY-MM-DD)
@@ -1064,7 +1064,7 @@ export default function Stage6() {
                       {baseColumns
                         .filter((c) => selectedColumns.includes(c.key))
                         .map((col) => (
-                          <TableHead key={col.key}>{col.label}</TableHead>
+                          <TableHead key={col.key} className={cn((col.key === "totalLifted" || col.key === "pendingLifted") && "text-center")}>{col.label}</TableHead>
                         ))}
                       <TableHead>Vendor</TableHead>
                       <TableHead>Rate/Qty</TableHead>
@@ -1105,7 +1105,7 @@ export default function Stage6() {
                           {baseColumns
                             .filter((c) => selectedColumns.includes(c.key))
                             .map((col) => (
-                              <TableCell key={col.key}>
+                              <TableCell key={col.key} className={cn((col.key === "totalLifted" || col.key === "pendingLifted") && "text-center")}>
                                 {record.data[col.key] || "-"}
                               </TableCell>
                             ))}
@@ -1203,7 +1203,7 @@ export default function Stage6() {
                 <TableHeader className="bg-gray-100 sticky top-0">
                   <TableRow className="border-b-2">
                     <TableHead>Indent #</TableHead>
-                    <TableHead>Lift No.</TableHead>
+                    <TableHead>Unit Tracking No.</TableHead>
                     <TableHead>Vendor Name</TableHead>
                     <TableHead>PO Number</TableHead>
                     <TableHead>Next Follow-Up</TableHead>
@@ -1604,9 +1604,6 @@ export default function Stage6() {
                     <div className="space-y-4">
                       {/* Always Show Lift Material Form */}
                       <div className="space-y-4">
-
-
-
 
                         <div className="space-y-4">
                           <div className="flex justify-between items-center">

@@ -975,7 +975,8 @@ export default function PurchaseDashboard() {
               qty: r[14] || r[5] || "-",
               stage: "Follow-Up Vendor",
               delay: r[62] || "0",
-              poNumber: fuvRawPo
+              poNumber: fuvRawPo,
+              plannedDate: r[60] || "-" // Column BI
             });
           }
         }
@@ -1023,6 +1024,7 @@ export default function PurchaseDashboard() {
           stage: s.name,
           pending: overdueCounts[s.name],
           responsible: respMap[s.name] || "-",
+          uniquePoCount: s.name === "Follow-Up Vendor" ? followUpVendorPOs.size : undefined
         }));
 
       // Sort detailed data by stage sequence to match summary
@@ -2016,7 +2018,7 @@ export default function PurchaseDashboard() {
                   <DropdownMenuSeparator />
                   {[
                     { id: "indentNo", label: "Indent No." },
-                    { id: "liftNo", label: "Lift No." },
+                    { id: "liftNo", label: "Unit Tracking No." },
                     { id: "serialNo", label: "Serial No." },
                     { id: "vendorName", label: "Vendor Name" },
                     { id: "itemName", label: "Item-Name" },
@@ -2088,7 +2090,7 @@ export default function PurchaseDashboard() {
                           (warrantySort.direction === "asc" ? "↑" : "↓")}
                       </TableHead>
                     )}
-                    {warrantyVisibleColumns.includes("liftNo") && <TableHead className="text-xs">Lift No.</TableHead>}
+                    {warrantyVisibleColumns.includes("liftNo") && <TableHead className="text-xs">Unit Tracking No.</TableHead>}
                     {warrantyVisibleColumns.includes("serialNo") && (
                       <TableHead
                         className="text-xs cursor-pointer hover:bg-gray-50"

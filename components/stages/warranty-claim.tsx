@@ -17,13 +17,13 @@ import { Loader2, Search, ShieldAlert } from "lucide-react";
 import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 
 // ─── WARRANTY sheet column map (0-based, data from row 7) ──────
-// A(0): Indent No.  B(1): Lift No.  C(2): Serial Code  D(3): Serial No.
+// A(0): Indent No.  B(1): Unit Tracking No.  C(2): Serial Code  D(3): Serial No.
 // E(4): Vendor Name  F(5): Item-Name  G(6): Invoice Date  H(7): Warranty End
 // I(8): Planned      J(9): Actual
 
 const PENDING_COLUMNS = [
     { key: "indentNo", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
     { key: "invoiceDate", label: "Invoice Date" },
@@ -33,7 +33,7 @@ const PENDING_COLUMNS = [
 
 const HISTORY_COLUMNS = [
     { key: "indentNo", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
     { key: "invoiceDate", label: "Invoice Date" },

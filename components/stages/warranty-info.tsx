@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/popover";
 
 // ─── RECEIVING-ACCOUNTS column map (0-based) ──────────────────────────────────
-// B(1): Indent No.  C(2): Lift No.  D(3): Vendor Name  E(4): PO No.
+// B(1): Indent No.  C(2): Unit Tracking No.  D(3): Vendor Name  E(4): PO No.
 // H(7): Item Name   I(8): Lifting Qty  X(23): Invoice Date  Y(24): Invoice No.
 // Z(25): Received Qty  DA(104): Warranty Claim  DB(105): Duration
 // DC(106): Warranty Expiry  DD(107): Product Expiry
@@ -40,14 +40,14 @@ import {
 // B(1): Indent No.  BG(58): PO Copy
 
 // ─── WARRANTY sheet column map (0-based, headers row 5, data from row 7) ──────
-// A(0): Indent No.  B(1): Lift No.  C(2): Vendor Name  D(3): Invoice No.
+// A(0): Indent No.  B(1): Unit Tracking No.  C(2): Vendor Name  D(3): Invoice No.
 // E(4): Invoice Date  F(5): Invoice Copy  G(6): PO Number  H(7): PO Copy
 // I(8): Qty  J(9): Item-Name  K(10): Serial No
 // L(11): Start Date  M(12): End Date
 
 const PENDING_COLUMNS = [
     { key: "indentNo", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
     { key: "invoiceNo", label: "Invoice No." },
@@ -61,7 +61,7 @@ const PENDING_COLUMNS = [
 
 const HISTORY_COLUMNS = [
     { key: "indentNo", label: "Indent #" },
-    { key: "liftNo", label: "Lift No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
     { key: "invoiceNo", label: "Invoice No." },
@@ -426,7 +426,7 @@ export default function WarrantyInfo() {
                 }
 
                 warrantyRow[0] = selectedRecord.data.indentNo;    // A: Indent No.
-                warrantyRow[1] = selectedRecord.data.liftNo;      // B: Lift No.
+                warrantyRow[1] = selectedRecord.data.liftNo;      // B: Unit Tracking No.
                 warrantyRow[2] = uploadResults[idx] || "";        // C: Serial Code (Drive Link)
                 warrantyRow[3] = entry.serialNo;                  // D: Serial No.
                 warrantyRow[4] = selectedRecord.data.vendorName;  // E: Vendor Name
