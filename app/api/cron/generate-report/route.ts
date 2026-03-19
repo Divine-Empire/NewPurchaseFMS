@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
 
             if (has(r, 88) && missing(r, 89)) {
                 totalCounts["Transporter Follow-Up"]++;
-                if (has(r, 88)) {
+                if (has(r, 90)) {
                     overdueCounts["Transporter Follow-Up"]++;
                     const liftNo = String(r[2] || "").trim();
                     const expectedFromCP = r[93]; // Column CP

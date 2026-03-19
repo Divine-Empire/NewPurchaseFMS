@@ -990,7 +990,7 @@ export default function PurchaseDashboard() {
         const checkStageRA = (name: string, start: number, actual: number, plan: number, delayIdx: number, itemIdx = 7) => {
           if (fmsHas(r, start) && fmsMiss(r, actual)) {
             totalCounts[name]++;
-            if (fmsHas(r, plan)) {
+            if (fmsHas(r, delayIdx)) {
               overdueCounts[name]++;
               const detail: any = {
                 indent: r[1] || "-", 
