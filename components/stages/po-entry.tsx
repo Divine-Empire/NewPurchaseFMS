@@ -41,6 +41,16 @@ import {
 import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 import { useMemo } from "react";
 
+const formatDateDash = (date: any) => {
+  if (!date || date === "-" || date === "—") return "-";
+  const d = date instanceof Date ? date : parseSheetDate(date);
+  if (!d || isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy}`;
+};
+
 export default function Stage5() {
   const { moveToNextStage, updateRecord } = useWorkflow();
   const [open, setOpen] = useState(false);
@@ -91,7 +101,7 @@ export default function Stage5() {
             // Stage 4 completion check: Selected Vendor (Index 47 / Col AV)
             const isStage4Done = !!row[47] && String(row[47]).trim() !== "" && String(row[47]).trim() !== "-";
 
-            // Stage 5 completion check: PO Number (Index 52 / Col BA)
+            // Stage 5 completion check: Actual 4 (Index 52 / Col BA)
             const isStage5Done = !!row[52] && String(row[52]).trim() !== "" && String(row[52]).trim() !== "-";
 
 
@@ -100,11 +110,15 @@ export default function Stage5() {
             const hasPlan4 = !!row[51] && String(row[51]).trim() !== "" && String(row[51]).trim() !== "-";
             const hasActual4 = !!row[52] && String(row[52]).trim() !== "" && String(row[52]).trim() !== "-";
 
+            if (originalIndex < 20) {
+              console.log(`DEBUG Stage 5 [${row[1]}] is4Done=${isStage4Done} is5Done=${isStage5Done}: row[45]=${row[45]}, row[46]=${row[46]}, row[51]=${row[51]}, row[52]=${row[52]}`);
+            }
+
             return {
               id: row[1] || `row-${originalIndex}`,
               rowIndex: originalIndex,
               stage: 5,
-              status: (hasPlan4 && hasActual4) ? "completed" : (hasPlan4 && !hasActual4 ? "pending" : "not_ready"),
+              status: isStage5Done ? "completed" : (isStage4Done ? "pending" : "not_ready"),
               createdAt: parseSheetDate(row[0]),
               history: (hasPlan4 && hasActual4) ? [{ stage: 5, date: parseSheetDate(row[51] || row[50] || row[0]), data: {} }] : [],
               data: {
@@ -231,6 +245,7 @@ export default function Stage5() {
     { key: "indentNumber", label: "Indent #", icon: null },
     { key: "itemName", label: "Item", icon: null },
     { key: "quantity", label: "Qty", icon: null },
+    { key: "planned4", label: "Planned", icon: null },
   ];
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
@@ -501,9 +516,9 @@ export default function Stage5() {
   );
 
   return (
-    <div className="p-6">
+    <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
@@ -541,38 +556,49 @@ export default function Stage5() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">
-          <TabsTrigger
-            value="pending"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <ClipboardList className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">Pending</span>
-              <span className="text-[10px] opacity-70">Awaiting processing</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {pending.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger
-            value="history"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <History className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">History</span>
-              <span className="text-[10px] opacity-70">Completed</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {completed.length}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
+        <div className="shrink-0 mb-6 flex items-center justify-between">
+          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-[400px]">
+            <TabsTrigger
+              value="pending"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <ClipboardList className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">Pending</span>
+                <span className="text-[10px] opacity-70">Awaiting processing</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {pending.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <History className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">History</span>
+                <span className="text-[10px] opacity-70">Completed</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {completed.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          {selectedRecordIds.length > 0 && activeTab === "pending" && (
+            <Button
+              onClick={handleOpenBulkForm}
+              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
+            >
+              Create PO ({selectedRecordIds.length})
+            </Button>
+          )}
+        </div>
 
         {/* PENDING */}
-        <TabsContent value="pending" className="mt-6">
+        <TabsContent value="pending" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -585,41 +611,31 @@ export default function Stage5() {
             </div>
           ) : (
             <>
-              <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  {selectedRecordIds.length} item{selectedRecordIds.length !== 1 ? "s" : ""} selected
-                </p>
-                <Button
-                  onClick={handleOpenBulkForm}
-                  disabled={selectedRecordIds.length === 0}
-                  size="sm"
-                >
-                  Create PO for Selected
-                </Button>
-              </div>
 
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedRecordIds.length === pending.length && pending.length > 0}
-                          onCheckedChange={toggleSelectAll}
-                        />
+              <div className="border rounded-lg flex-1 overflow-auto shadow-sm relative h-full">
+                <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
+                  <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                    <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                      <TableHead className="w-12 sticky top-0 z-20 bg-slate-50 border-none pl-4 py-3">
+                        <div className="flex items-center justify-start h-full">
+                          <Checkbox
+                            checked={selectedRecordIds.length === pending.length && pending.length > 0}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                        </div>
                       </TableHead>
                       {baseColumns
                         .filter((c) => selectedColumns.includes(c.key))
                         .map((col) => (
-                          <TableHead key={col.key}>{col.label}</TableHead>
+                          <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">{col.label}</TableHead>
                         ))}
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Rate/Qty</TableHead>
-                      <TableHead>Payment Terms</TableHead>
-                      <TableHead>Exp. Delivery</TableHead>
-                      <TableHead>Warranty</TableHead>
-                      <TableHead>Attachment</TableHead>
-                      <TableHead>Approved By</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Vendor</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Rate</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Payment Terms</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Exp. Delivery</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Warranty</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Attachment</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -640,7 +656,11 @@ export default function Stage5() {
                           {baseColumns
                             .filter((c) => selectedColumns.includes(c.key))
                             .map((col) => (
-                              <TableCell key={col.key}>{record.data[col.key] || "-"}</TableCell>
+                              <TableCell key={col.key} className="px-4 whitespace-nowrap">
+                                {col.key === "planned4" 
+                                  ? formatDateDash(record.data[col.key]) 
+                                  : (record.data[col.key] || "-")}
+                              </TableCell>
                             ))}
                           <TableCell className="font-medium">{v.name}</TableCell>
                           <TableCell>₹{v.rate || "-"}</TableCell>
@@ -686,14 +706,14 @@ export default function Stage5() {
                       );
                     })}
                   </TableBody>
-                </Table>
+                </table>
               </div>
             </>
           )}
         </TabsContent>
 
         {/* HISTORY */}
-        <TabsContent value="history" className="mt-6">
+        <TabsContent value="history" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -705,17 +725,19 @@ export default function Stage5() {
               <p className="text-lg">No completed POs</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item Details</TableHead>
-                    <TableHead>Vendor Info</TableHead>
-                    <TableHead>Terms & Delivery</TableHead>
-                    <TableHead>Warranty/Quot.</TableHead>
-                    <TableHead>Approved By</TableHead>
-                    <TableHead>PO Details</TableHead>
-                    <TableHead>Financials (₹)</TableHead>
+            <div className="border rounded-lg flex-1 overflow-auto shadow-sm relative h-full">
+              <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
+                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Item Details</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Planned</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Actual</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Vendor Info</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Terms & Delivery</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Warranty/Quot.</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">PO Details</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Financials (₹)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -723,14 +745,19 @@ export default function Stage5() {
                     const v = getVendorData(record);
                     return (
                       <TableRow key={record.id} className="bg-green-50/50 hover:bg-green-100/50">
-                        <TableCell className="max-w-[200px]">
+                        <TableCell className="max-w-[200px] px-4">
                           <div className="space-y-1">
-                            <div className="font-semibold text-blue-900">#{record.data.indentNumber || "-"}</div>
+                            <div className="font-semibold text-blue-900">{record.data.indentNumber || "-"}</div>
                             <div className="text-sm font-medium truncate" title={record.data.itemName}>{record.data.itemName}</div>
                             <div className="text-xs text-gray-500">Qty: {record.data.quantity}</div>
                           </div>
                         </TableCell>
-
+                        <TableCell className="px-4 text-slate-700 whitespace-nowrap">
+                          {formatDateDash(record.data.planned4)}
+                        </TableCell>
+                        <TableCell className="px-4 text-slate-700 whitespace-nowrap">
+                          {formatDateDash(record.data.actual4)}
+                        </TableCell>
                         <TableCell>
                           <div className="space-y-1">
                             <div className="font-medium text-gray-900">{v.name}</div>
@@ -823,7 +850,7 @@ export default function Stage5() {
                     );
                   })}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
         </TabsContent>
@@ -1056,9 +1083,9 @@ export default function Stage5() {
                     <div className="mt-2 p-2 bg-white border rounded flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4" />
-                        <span>{commonPOCopy.name}</span>
+                        <span>{commonPOCopy?.name}</span>
                         <span className="text-gray-500">
-                          ({(commonPOCopy.size / 1024).toFixed(1)} KB)
+                          ({commonPOCopy ? (commonPOCopy.size / 1024).toFixed(1) : 0} KB)
                         </span>
                       </div>
                       <button
@@ -1103,6 +1130,6 @@ export default function Stage5() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div >
+    </div>
   );
 }

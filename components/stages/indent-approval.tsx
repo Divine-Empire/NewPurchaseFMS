@@ -62,7 +62,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { cn, formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 import { useMemo } from "react";
 
 const formatDateDash = (date: any) => {
@@ -83,10 +83,7 @@ export default function Stage2() {
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [approverOptions, setApproverOptions] = useState<string[]>([]);
-
   const [approvalForm, setApprovalForm] = useState({
-    approvedBy: "",
     status: "",
     approvedQty: "",
     vendorType: "",
@@ -161,7 +158,6 @@ export default function Stage2() {
                 plannedDate: row[9],
                 actualDate: row[10],
                 delay: row[11],
-                approvedBy: row[12],
                 status: row[13],
                 approvedQty: row[14],
                 vendorType: row[15],
@@ -180,26 +176,6 @@ export default function Stage2() {
 
   useEffect(() => {
     fetchData();
-
-    // Fetch Approvers from Dropdown Sheet (Col F -> Index 5)
-    const fetchApprovers = async () => {
-      const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
-      if (!SHEET_API_URL) return;
-      try {
-        const res = await fetch(`${SHEET_API_URL}?sheet=Dropdown&action=getAll`);
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          const opts = json.data.slice(1)
-            .map((r: any) => r[5])
-            .filter((x: any) => x && String(x).trim() !== "");
-          setApproverOptions(opts);
-        }
-      } catch (e) {
-        console.error("Error fetching approvers:", e);
-      }
-    };
-    fetchApprovers();
-    fetchApprovers();
   }, []);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -238,11 +214,10 @@ export default function Stage2() {
     { key: "approvedQty", label: "Approved Qty", icon: Package },
     { key: "warehouseLocation", label: "Warehouse", icon: Warehouse },
     { key: "itemCode", label: "Item Code", icon: Hash },
-    { key: "leadTime", label: "Lead Time", icon: Calendar },
+    { key: "leadTime", label: "Lead Time", icon: Clock },
     { key: "plannedDate", label: "Planned", icon: Calendar },
     { key: "actualDate", label: "Actual", icon: Calendar },
     { key: "delay", label: "Delay", icon: Clock },
-    { key: "approvedBy", label: "AppBy", icon: UserCheck },
     { key: "status", label: "Status", icon: Tag },
     { key: "remarks", label: "Remarks", icon: FileText },
   ] as const;
@@ -280,7 +255,12 @@ export default function Stage2() {
     }
   }, [selectedRecords, sheetRecords]);
 
-
+  const updateLineItem = (id: string, field: string, value: string) => {
+    setLineItemsData(prev => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }));
+  };
 
   const submitToSheet = async (recordsToSubmit: any[], approvalData: any) => {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
@@ -340,7 +320,6 @@ export default function Stage2() {
         const rowArray: any[] = [];
 
         const actualDate = getFmsTimestamp();
-        // Send dates as JavaScript Date objects (not strings) - Actually now sending standardized string
         // Column K (index 10): Actual 1 Date
         rowArray[10] = actualDate; 
 
@@ -349,7 +328,6 @@ export default function Stage2() {
         const finalQty = itemData?.approvedQty || approvalData.approvedQty || record.data.quantity;
         const finalVendorType = itemData?.vendorType || approvalData.vendorType || "regular";
 
-        rowArray[12] = approvalData.approvedBy; // M: Approved By
         rowArray[13] = finalStatus; // N: Status
         rowArray[14] = finalQty; // O: Approved Qty
         rowArray[15] = finalVendorType; // P: Vendor Type
@@ -394,7 +372,6 @@ export default function Stage2() {
 
     setSelectedRecords([]);
     setApprovalForm({
-      approvedBy: "",
       status: "",
       approvedQty: "",
       vendorType: "",
@@ -466,9 +443,9 @@ export default function Stage2() {
   /* ------------------------------ Render ------------------------------- */
   /* --------------------------------------------------------------------- */
   return (
-    <div className="p-6">
+    <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header Card */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
@@ -501,9 +478,9 @@ export default function Stage2() {
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as any)}
-        className="w-full"
+        className="w-full flex-1 flex flex-col overflow-hidden"
       >
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-4 shrink-0">
           <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-full md:max-w-md">
             <TabsTrigger
               value="pending"
@@ -545,7 +522,7 @@ export default function Stage2() {
         </div>
 
         {/* ---------- PENDING ---------- */}
-        <TabsContent value="pending" className="mt-6">
+        <TabsContent value="pending" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -556,11 +533,11 @@ export default function Stage2() {
               <p className="text-lg">No records found</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
+            <div className="border rounded-lg overflow-auto flex-1 shadow-sm relative h-full">
+              <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
+                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm">
+                  <TableRow className="bg-slate-50 hover:bg-slate-50">
+                    <TableHead className="w-12 sticky top-0 z-20 bg-slate-50 shadow-sm border-none">
                       <Checkbox
                         checked={
                           pending.length > 0 &&
@@ -571,9 +548,9 @@ export default function Stage2() {
                     </TableHead>
                     {columns
                       .filter((c) => selectedColumns.includes(c.key) &&
-                        !["actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
+                        !["actualDate", "delay", "status", "remarks", "approvedQty"].includes(c.key))
                       .map((col) => (
-                        <TableHead key={col.key}>
+                        <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-50 shadow-sm border-none">
                           <div className="flex items-center gap-2">
                             {col.icon && <col.icon className="w-4 h-4" />}
                             {col.label}
@@ -582,42 +559,54 @@ export default function Stage2() {
                       ))}
                   </TableRow>
                 </TableHeader>
-
                 <TableBody>
-                  {pending.map((record) => (
-                    <TableRow
-                      key={record.id}
-                      className="cursor-pointer hover:bg-slate-300/50 transition-colors odd:bg-white even:bg-slate-50/50 border-b border-slate-100/80"
-                      onClick={() => toggleRecord(record.id)}
-                    >
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedRecords.includes(record.id)}
-                          onCheckedChange={() => toggleRecord(record.id)}
-                        />
+                  {pending.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={selectedColumns.length + 1} className="h-24 text-center">
+                        No records found.
                       </TableCell>
-
-                      {columns
-                        .filter((c) => selectedColumns.includes(c.key) &&
-                          !["actualDate", "delay", "approvedBy", "status", "remarks", "approvedQty"].includes(c.key))
-                        .map((col) => (
-                          <TableCell key={col.key}>
-                            {col.key === "leadTime"
-                              ? `${record.data[col.key] ?? "-"} days`
-                              : col.key === "plannedDate" || col.key === "actualDate"
-                              ? formatDateDash(record.data[col.key])
-                              : String(record.data[col.key] ?? "-")}
-                          </TableCell>
-                        ))}
                     </TableRow>
-                  ))}
+                  ) : (
+                    pending.map((record) => {
+                      const isSelected = selectedRecords.includes(record.id);
+                      return (
+                        <TableRow
+                          key={record.id}
+                          className={cn(
+                            "cursor-pointer transition-colors duration-150",
+                            isSelected ? "bg-slate-50" : "hover:bg-slate-50/50"
+                          )}
+                          onClick={() => toggleRecord(record.id)}
+                        >
+                          <TableCell className="w-12" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleRecord(record.id)}
+                            />
+                          </TableCell>
+                          {columns
+                            .filter((c) => selectedColumns.includes(c.key) &&
+                              !["actualDate", "delay", "status", "remarks", "approvedQty"].includes(c.key))
+                            .map((col) => (
+                              <TableCell key={col.key}>
+                                {col.key === "leadTime"
+                                  ? `${record.data[col.key] || 0} days`
+                                  : col.key === "plannedDate"
+                                    ? formatDateDash(record.data[col.key])
+                                    : record.data[col.key] || "-"}
+                              </TableCell>
+                            ))}
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="history" className="mt-6">
+        <TabsContent value="history" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -629,16 +618,16 @@ export default function Stage2() {
               <p className="text-lg">No completed records found</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden shadow-sm">
-              <Table>
-                <TableHeader className="bg-slate-50">
-                  <TableRow>
-                    <TableHead className="w-12 text-center text-[10px] font-bold text-slate-400">#</TableHead>
+            <div className="border rounded-lg overflow-auto flex-1 shadow-sm relative h-full">
+              <table className="w-full caption-bottom text-sm border-collapse">
+                <TableHeader className="bg-slate-50 sticky top-0 z-30 shadow-sm border-none">
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                    <TableHead className="w-12 text-center text-sm font-bold text-slate-400 sticky top-0 z-20 bg-slate-50 border-none">#</TableHead>
                     {columns
                       .filter((c) => selectedColumns.includes(c.key) && c.key !== "delay")
                       .map((col) => (
-                        <TableHead key={col.key}>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                        <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-50 border-none">
+                          <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
                             {col.icon && <col.icon className="w-4 h-4" />}
                             {col.label}
                           </div>
@@ -646,34 +635,27 @@ export default function Stage2() {
                       ))}
                   </TableRow>
                 </TableHeader>
-
                 <TableBody>
-                  {history.map((record) => (
-                    <TableRow
-                      key={record.id}
-                      className="transition-colors odd:bg-white even:bg-slate-50/50 hover:bg-slate-300/30 font-medium"
-                    >
-                      <TableCell className="w-12 text-center text-xs text-slate-400">
-                        {record.rowIndex}
+                  {history.map((record, index) => (
+                    <TableRow key={record.id} className="hover:bg-slate-50/50 transition-colors">
+                      <TableCell className="text-center font-medium text-slate-500 text-sm">
+                        {index + 1}
                       </TableCell>
                       {columns
                         .filter((c) => selectedColumns.includes(c.key) && c.key !== "delay")
                         .map((col) => (
-                          <TableCell
-                            key={col.key}
-                            className={`text-sm ${col.key === "approvedQty" ? "text-center" : ""}`}
-                          >
+                          <TableCell key={col.key} className="text-sm text-slate-700">
                             {col.key === "leadTime"
-                              ? `${record.data[col.key] ?? "-"} days`
-                              : col.key === "plannedDate" || col.key === "actualDate"
-                              ? formatDateDash(record.data[col.key])
-                              : String(record.data[col.key] ?? "-")}
+                              ? `${record.data[col.key] || 0} days`
+                              : (col.key === "plannedDate" || col.key === "actualDate")
+                                ? formatDateDash(record.data[col.key])
+                                : record.data[col.key] || "-"}
                           </TableCell>
                         ))}
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
         </TabsContent>
@@ -748,25 +730,33 @@ export default function Stage2() {
                               />
                             </div>
                           </TableCell>
-                          <TableCell className="py-2 px-4 text-center">
-                            <Select
-                              value={lineItemsData[item.id]?.status || ""}
-                              onValueChange={(v) => setLineItemsData(prev => ({
-                                ...prev,
-                                [item.id]: { ...prev[item.id], status: v }
-                              }))}
-                            >
-                              <SelectTrigger className={`h-8 w-28 text-[10px] font-bold border-none shadow-sm capitalize ${lineItemsData[item.id]?.status === 'approved'
-                                ? "bg-emerald-500 text-white"
-                                : "bg-rose-500 text-white"
-                                }`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="approved" className="text-[10px] font-bold">Approved</SelectItem>
-                                <SelectItem value="rejected" className="text-[10px] font-bold text-rose-600">Rejected</SelectItem>
-                              </SelectContent>
-                            </Select>
+                          <TableCell className="p-2">
+                            <div className="flex bg-slate-50 rounded-lg p-0.5 border border-slate-200">
+                              <button
+                                type="button"
+                                onClick={() => updateLineItem(item.id, "status", "approved")}
+                                className={cn(
+                                  "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                                  lineItemsData[item.id]?.status === "approved"
+                                    ? "bg-white text-emerald-600 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700"
+                                )}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateLineItem(item.id, "status", "rejected")}
+                                className={cn(
+                                  "flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                                  lineItemsData[item.id]?.status === "rejected"
+                                    ? "bg-white text-rose-600 shadow-sm"
+                                    : "text-slate-500 hover:text-slate-700"
+                                )}
+                              >
+                                Reject
+                              </button>
+                            </div>
                           </TableCell>
                           <TableCell className="py-2 px-4 text-center">
                             <Select

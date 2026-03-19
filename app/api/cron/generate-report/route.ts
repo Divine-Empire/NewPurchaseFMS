@@ -177,6 +177,11 @@ export async function GET(request: NextRequest) {
                 if (has(r, 88)) {
                     overdueCounts["Transporter Follow-Up"]++;
                     const liftNo = String(r[2] || "").trim();
+                    const expectedFromCP = r[93]; // Column CP
+                    const hasCP = expectedFromCP && String(expectedFromCP).trim() !== "" && String(expectedFromCP).trim() !== "-";
+                    const expectedFromTransport = transportMap.get(liftNo);
+                    const plannedDate = r[88]; // Column CK
+
                     detailed.push({
                         indent: r[1] || "-",
                         party: r[3] || "-",
@@ -184,7 +189,7 @@ export async function GET(request: NextRequest) {
                         qty: r[8] || "-",
                         stage: "Transporter Follow-Up",
                         delay: r[90] || "0",
-                        expectedDate: transportMap.get(liftNo) || "-",
+                        expectedDate: hasCP ? expectedFromCP : (expectedFromTransport || plannedDate || "-"),
                         transporterName: r[9] || "-",
                         poNumber: r[54] || "-"
                     });

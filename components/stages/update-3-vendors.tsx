@@ -48,13 +48,28 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { cn, parseSheetDate, formatDate, getFmsTimestamp } from "@/lib/utils";
+import {
+  formatDate,
+  parseSheetDate,
+  cn,
+  getFmsTimestamp
+} from "@/lib/utils";
 import { Check, ChevronsUpDown } from "lucide-react";
 
 // ─── Pure utilities (defined outside component to avoid re-creation) ─────────
 
 
 const formatDateTime = (date?: Date | string | null): string => formatDate(date as any);
+
+const formatDateDash = (date: any) => {
+  if (!date || date === "-" || date === "—") return "-";
+  const d = date instanceof Date ? date : parseSheetDate(date);
+  if (!d || isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy}`;
+};
 
 const fuzzyFilter = (list: string[], search: string): string[] => {
   if (!search.trim()) return list.slice(0, 50);
@@ -216,19 +231,8 @@ export default function Stage3() {
                 warehouseLocation: row[6],
                 itemCode: row[7],
                 leadTime: row[8],
-                planned1: row[9] ? formatDate(row[9]) : "",
-                actual1: row[10] ? formatDate(row[10]) : "",
-                delay1: row[11],
-                approvedBy: row[12],
-                status: row[13],
-                approvedQty: row[14],
-                vendorType: row[15],
-                remarks: row[16],
-                img: row[17], // Column R contains Stage 2 Attachment for pending items
-
-                // Stage 2 Dates (Now shifted to start at S / Index 18)
-                planned2: row[18],
-                actual2: row[19],
+                planned2: row[18] || "",
+                actual2: row[19] || "",
                 delay2: row[20],
 
                 // Vendor 1 (Starts at U / Index 21)
@@ -302,16 +306,17 @@ export default function Stage3() {
 
 
   const baseColumns = [
-    { header: "Indent #", accessorKey: "indentNumber" },
+    { header: "Indent", accessorKey: "indentNumber" },
     { header: "Created By", accessorKey: "createdBy" },
     { header: "Category", accessorKey: "category" },
-    { header: "Item Name", accessorKey: "itemName" },
+    { header: "Item", accessorKey: "itemName" },
     { header: "Qty", accessorKey: "quantity" },
     { header: "Warehouse", accessorKey: "warehouseLocation" },
     { header: "Item Code", accessorKey: "itemCode" },
     { header: "Lead Time", accessorKey: "leadTime" },
+    { header: "Planned", accessorKey: "planned2" },
+    { header: "Actual", accessorKey: "actual2" },
 
-    { header: "Approved By", accessorKey: "approvedBy" },
     { header: "Status", accessorKey: "status" },
     { header: "Approved Qty", accessorKey: "approvedQty" },
     { header: "Vendor Type", accessorKey: "vendorType" },
@@ -650,9 +655,9 @@ export default function Stage3() {
   );
 
   return (
-    <div className="p-6">
+    <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
@@ -681,52 +686,49 @@ export default function Stage3() {
         </div>
       </div>
 
-      <div className="flex justify-end mb-4">
-        {selectedIds.size > 0 && activeTab === "pending" && (
-          <Button
-            onClick={handleBulkUpdate}
-            className="animate-in fade-in zoom-in duration-200"
-          >
-            Update Vendor ({selectedIds.size})
-          </Button>
-        )}
-      </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
+        <div className="shrink-0 mb-6 flex items-center justify-between">
+          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-[400px]">
+            <TabsTrigger
+              value="pending"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <ClipboardList className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">Pending</span>
+                <span className="text-[10px] opacity-70">Awaiting processing</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {pending.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <History className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">History</span>
+                <span className="text-[10px] opacity-70">Completed</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {completed.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
 
-
-
-
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">
-          <TabsTrigger
-            value="pending"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <ClipboardList className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">Pending</span>
-              <span className="text-[10px] opacity-70">Awaiting processing</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {pending.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger
-            value="history"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <History className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">History</span>
-              <span className="text-[10px] opacity-70">Completed</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {completed.length}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
+          {selectedIds.size > 0 && activeTab === "pending" && (
+            <Button
+              onClick={handleBulkUpdate}
+              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
+            >
+              Update Vendor ({selectedIds.size})
+            </Button>
+          )}
+        </div>
 
         {/* PENDING */}
-        <TabsContent value="pending" className="mt-6">
+        <TabsContent value="pending" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -737,21 +739,21 @@ export default function Stage3() {
               <p className="text-lg">No records found</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[50px] sticky left-0 bg-white z-10">
+            <div className="border rounded-lg overflow-auto flex-1 shadow-sm relative h-full">
+              <table className="w-full caption-bottom text-sm border-collapse">
+                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                    <TableHead className="w-[50px] sticky top-0 z-20 bg-slate-50 border-none">
                       <Checkbox
                         checked={pending.length > 0 && pending.every(r => selectedIds.has(r.id))}
                         onCheckedChange={toggleSelectAll}
                       />
                     </TableHead>
                     {baseColumns
-                      .filter((c) => selectedColumns.includes(c.accessorKey))
+                      .filter((c) => ["indentNumber", "createdBy", "category", "itemName", "quantity", "warehouseLocation", "itemCode", "leadTime", "planned2"].includes(c.accessorKey) || (c.accessorKey !== "actual2" && selectedColumns.includes(c.accessorKey)))
                       .map((col) => (
-                        <TableHead key={col.accessorKey}>
-                          <div className="flex items-center gap-2">
+                        <TableHead key={col.accessorKey} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3">
+                          <div className="flex items-center gap-2 font-bold text-slate-600 truncate uppercase text-[11px] tracking-wider">
                             {col.header}
                           </div>
                         </TableHead>
@@ -759,32 +761,35 @@ export default function Stage3() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-
                   {pending.map((record) => (
                     <TableRow key={record.id} className="hover:bg-muted/50 odd:bg-white even:bg-slate-50/80 group">
-                      <TableCell className="w-[50px] sticky left-0 bg-white group-even:bg-slate-50/80 z-10">
+                      <TableCell className="w-[50px]">
                         <Checkbox
                           checked={selectedIds.has(record.id)}
                           onCheckedChange={() => toggleSelection(record.id)}
                         />
                       </TableCell>
                       {baseColumns
-                        .filter((c) => selectedColumns.includes(c.accessorKey))
+                        .filter((c) => ["indentNumber", "createdBy", "category", "itemName", "quantity", "warehouseLocation", "itemCode", "leadTime", "planned2"].includes(c.accessorKey) || (c.accessorKey !== "actual2" && selectedColumns.includes(c.accessorKey)))
                         .map((col) => (
-                          <TableCell key={col.accessorKey}>
-                            {col.cell ? col.cell({ getValue: () => record.data[col.accessorKey] }) : String(record.data[col.accessorKey] ?? "-")}
+                          <TableCell key={col.accessorKey} className="text-sm text-slate-700 px-4">
+                            {col.accessorKey === "leadTime"
+                              ? `${record.data[col.accessorKey] || 0} days`
+                              : (col.accessorKey === "planned2" || col.accessorKey === "actual2")
+                                ? formatDateDash(record.data[col.accessorKey])
+                                : (col.cell ? col.cell({ getValue: () => record.data[col.accessorKey] }) : String(record.data[col.accessorKey] ?? "-"))}
                           </TableCell>
                         ))}
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
         </TabsContent>
 
         {/* HISTORY – FULL VENDOR DATA */}
-        <TabsContent value="history" className="mt-6">
+        <TabsContent value="history" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -792,26 +797,30 @@ export default function Stage3() {
               <p className="text-sm text-gray-500 mt-1">Fetching completed records</p>
             </div>
           ) : completed.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-gray-500 bg-white border rounded-lg">
               <p className="text-lg">No completed records</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[150px]">Completion Date</TableHead>
+            <div className="border rounded-lg overflow-auto flex-1 shadow-sm relative h-full">
+              <table className="w-full caption-bottom text-sm border-collapse">
+                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                    <TableHead className="w-12 text-center text-sm font-bold text-slate-400 sticky top-0 z-20 bg-slate-50 border-none">#</TableHead>
                     {baseColumns
                       .filter((c) => selectedColumns.includes(c.accessorKey))
                       .map((col) => (
-                        <TableHead key={col.accessorKey}>{col.header}</TableHead>
+                        <TableHead key={col.accessorKey} className="sticky top-0 z-20 bg-slate-50 border-none">
+                          <div className="flex items-center gap-2 font-bold text-slate-600 truncate">
+                            {col.header}
+                          </div>
+                        </TableHead>
                       ))}
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Rate/Qty</TableHead>
-                    <TableHead>Payment Terms</TableHead>
-                    <TableHead>Exp. Delivery</TableHead>
-                    <TableHead>Warranty/Guarantee</TableHead>
-                    <TableHead>Attachment</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none font-bold text-slate-600 whitespace-nowrap">Vendor</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none font-bold text-slate-600 whitespace-nowrap">Rate/Qty</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none font-bold text-slate-600 whitespace-nowrap">Payment Terms</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none font-bold text-slate-600 whitespace-nowrap">Exp. Delivery</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none font-bold text-slate-600 whitespace-nowrap">Warranty/Guarantee</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none font-bold text-slate-600 whitespace-nowrap">Attachment</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -834,49 +843,50 @@ export default function Stage3() {
                       }
                     }
 
+                    if (vendors.length === 0) return null;
+
                     return vendors.map((v, idx) => (
-                      <TableRow key={`${record.id}-v${idx + 1}`} className={`${rowBg} hover:bg-slate-100/50 transition-colors`}>
+                      <TableRow key={`${record.id}-v${idx + 1}`} className={cn(rowBg, "hover:bg-slate-100/50 transition-colors")}>
                         {idx === 0 && (
                           <>
-                            <TableCell rowSpan={vendors.length} className="font-medium whitespace-nowrap">
-                              {record.data.actual2 ? formatDateTime(parseSheetDate(record.data.actual2)) : "-"}
+                            <TableCell rowSpan={vendors.length} className="text-center font-medium text-slate-500 text-sm">
+                              {recordIdx + 1}
                             </TableCell>
                             {baseColumns
                               .filter((c) => selectedColumns.includes(c.accessorKey))
                               .map((col) => (
-                                <TableCell key={col.accessorKey} rowSpan={vendors.length}>
-                                  {col.cell
-                                    ? col.cell({ getValue: () => record.data[col.accessorKey] })
-                                    : String(record.data[col.accessorKey] ?? "-")}
+                                <TableCell key={col.accessorKey} rowSpan={vendors.length} className="text-sm text-slate-700">
+                                  {col.accessorKey === "leadTime"
+                                    ? `${record.data[col.accessorKey] || 0} days`
+                                    : (col.accessorKey === "planned2" || col.accessorKey === "actual2")
+                                      ? formatDateDash(record.data[col.accessorKey])
+                                      : (col.cell ? col.cell({ getValue: () => record.data[col.accessorKey] }) : String(record.data[col.accessorKey] ?? "-"))}
                                 </TableCell>
                               ))}
                           </>
                         )}
-                        <TableCell>{v.name}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-sm text-slate-700 whitespace-nowrap">{v.name}</TableCell>
+                        <TableCell className="text-sm text-slate-700 whitespace-nowrap">
                           {v.rate ? `₹${parseFloat(v.rate).toFixed(2)}` : "-"}
                         </TableCell>
-                        <TableCell>
-                          {v.terms || "-"}
+                        <TableCell className="text-sm text-slate-700">{v.terms || "-"}</TableCell>
+                        <TableCell className="text-sm text-slate-700 whitespace-nowrap">
+                          {v.delivery ? formatDateDash(v.delivery) : "-"}
                         </TableCell>
-                        <TableCell>
-                          {v.delivery ? formatDate(v.delivery) : "-"}
-                        </TableCell>
-                        <TableCell>
+                        <TableCell className="text-sm text-slate-700">
                           {v.warrantyType ? (
-                            <div className="flex flex-col text-xs">
+                            <div className="flex flex-col text-xs min-w-[120px]">
                               <div className="flex items-center gap-1">
                                 {v.warrantyType === "warranty" ? (
                                   <Shield className="w-3.5 h-3.5 text-blue-600" />
                                 ) : (
                                   <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
-                                ) /* FIXED ICON */}
+                                )}
                                 <span className="font-medium capitalize">{v.warrantyType}</span>
                               </div>
                               {v.warrantyFrom && v.warrantyTo && (
                                 <span className="text-gray-500">
-                                  {formatDate(v.warrantyFrom)} –{" "}
-                                  {formatDate(v.warrantyTo)}
+                                  {formatDateDash(v.warrantyFrom)} – {formatDateDash(v.warrantyTo)}
                                 </span>
                               )}
                             </div>
@@ -884,7 +894,7 @@ export default function Stage3() {
                             "-"
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-sm text-slate-700">
                           {v.attachment ? (
                             <a
                               href={v.attachment}
@@ -903,7 +913,7 @@ export default function Stage3() {
                     ));
                   })}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
         </TabsContent>
@@ -989,7 +999,7 @@ export default function Stage3() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor={`vendor${num}Name`}>
-                        Vendor Name
+                        Vendor Name <span className="text-red-500">*</span>
                       </Label>
                       <div className="relative">
                         <Input
@@ -1015,6 +1025,7 @@ export default function Stage3() {
                             }, 200);
                           }}
                           autoComplete="off"
+                          required
                         />
                         {getVendorSearchState(num).show && (
                           <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">

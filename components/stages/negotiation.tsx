@@ -31,14 +31,28 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, FileText, Image, Shield, ShieldCheck, Loader2, Users, ClipboardList, History, Square, CheckSquare, Search } from "lucide-react";
+import { CheckCircle2, FileText, Shield, ShieldCheck, Loader2, Users, Search, ClipboardList, History as HistoryIcon } from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
+
+const formatDateDash = (dateStr: string) => {
+  if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    const d = date.getDate().toString().padStart(2, '0');
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
+  } catch {
+    return dateStr;
+  }
+};
 
 export default function Stage4() {
   const { moveToNextStage, updateRecord } = useWorkflow();
@@ -91,7 +105,7 @@ export default function Stage4() {
             const hasActual3 = !!row[46] && String(row[46]).trim() !== "" && String(row[46]).trim() !== "-";
 
             return {
-              id: row[1] || `row-${originalIndex}`, // CHECK COL B (Index 1)
+              id: `${row[1]}_${originalIndex}`, // ENSURE UNIQUE ID
               rowIndex: originalIndex,
               stage: 4,
               status: (hasPlan3 && hasActual3) ? "completed" : (hasPlan3 && !hasActual3 ? "pending" : "not_ready"),
@@ -227,9 +241,11 @@ export default function Stage4() {
     }), [sheetRecords, searchTerm]);
 
   const baseColumns = [
-    { key: "indentNumber", label: "Indent #", icon: null },
-    { key: "itemName", label: "Item", icon: null },
-    { key: "quantity", label: "Qty", icon: null },
+    { key: "indentNumber", label: "Indent" },
+    { key: "itemName", label: "Item" },
+    { key: "quantity", label: "Qty" },
+    { key: "planned3", label: "Planned" },
+    { key: "actual3", label: "Actual" },
   ];
 
   const [selectedColumns, setSelectedColumns] = useState<string[]>(
@@ -293,8 +309,6 @@ export default function Stage4() {
 
       params.append("rowData", JSON.stringify(rowArray));
 
-      console.log("Submitting Stage 4 (Full Row Merge):", Object.fromEntries(params.entries()));
-
       const response = await fetch(SHEET_API_URL, {
         method: "POST",
         body: params,
@@ -350,6 +364,14 @@ export default function Stage4() {
         ? prev.filter(id => id !== indentId)
         : [...prev, indentId]
     );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIndents.length === pending.length) {
+      setSelectedIndents([]);
+    } else {
+      setSelectedIndents(pending.map(r => r.id));
+    }
   };
 
   const getCommonVendors = (records: any[]) => {
@@ -508,9 +530,9 @@ export default function Stage4() {
   const vendors = currentRecord ? getVendors(currentRecord) : [];
 
   return (
-    <div className="p-6">
+    <div className="h-[calc(100vh-2rem)] flex flex-col overflow-hidden p-6 bg-slate-50/30">
       {/* Header */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="shrink-0 mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
@@ -533,7 +555,7 @@ export default function Stage4() {
             <div className="h-8 w-px bg-slate-200 mx-2" />
             <div className="flex items-center gap-4">
               {isLoading && <Loader2 className="w-5 h-5 animate-spin text-black" />}
-              <Label className="text-sm font-medium">Show Columns:</Label>
+              <Label className="text-sm font-medium whitespace-nowrap">Show Columns:</Label>
               <ColumnSelector />
             </div>
           </div>
@@ -541,43 +563,54 @@ export default function Stage4() {
       </div>
 
       {submitError && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg flex items-center gap-2">
+        <div className="shrink-0 mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg flex items-center gap-2">
           <span className="font-medium">Error:</span> {submitError}
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">
-          <TabsTrigger
-            value="pending"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <ClipboardList className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">Pending</span>
-              <span className="text-[10px] opacity-70">Awaiting processing</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {pending.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger
-            value="history"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <History className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">History</span>
-              <span className="text-[10px] opacity-70">Completed</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {completed.length}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
+        <div className="shrink-0 mb-6 flex items-center justify-between">
+          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-[400px]">
+            <TabsTrigger
+              value="pending"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <ClipboardList className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">Pending</span>
+                <span className="text-[10px] opacity-70">Awaiting processing</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {pending.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <HistoryIcon className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">History</span>
+                <span className="text-[10px] opacity-70">Completed</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {completed.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          {selectedIndents.length >= 2 && activeTab === "pending" && (
+            <Button
+              onClick={handleOpenBulkModal}
+              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
+            >
+              Bulk Negotiate ({selectedIndents.length})
+            </Button>
+          )}
+        </div>
 
         {/* PENDING */}
-        <TabsContent value="pending" className="mt-6">
+        <TabsContent value="pending" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -589,68 +622,89 @@ export default function Stage4() {
               <p className="text-sm mt-1">All caught up!</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              {/* Bulk Negotiate Button - appears when >= 2 selected */}
-              {selectedIndents.length >= 2 && (
-                <div className="flex items-center justify-between p-3 bg-blue-50 border-b">
-                  <span className="text-sm font-medium text-blue-800">
-                    {selectedIndents.length} items selected
-                  </span>
-                  <Button
-                    onClick={handleOpenBulkModal}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    Bulk Negotiate
-                  </Button>
-                </div>
-              )}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[50px] text-center">Select</TableHead>
-                    <TableHead className="sticky left-0 bg-white z-10 w-[120px]">Actions</TableHead>
+            <div className="flex-1 overflow-auto border rounded-xl bg-white shadow-sm scrollbar-thin scrollbar-thumb-slate-200">
+              <table className="w-full caption-bottom text-sm border-collapse">
+                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                    <TableHead className="w-[50px] sticky top-0 z-30 bg-slate-50 border-none px-4">
+                      <Checkbox
+                        checked={pending.length > 0 && selectedIndents.length === pending.length}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Actions
+                      </div>
+                    </TableHead>
                     {baseColumns
-                      .filter((c) => selectedColumns.includes(c.key))
+                      .filter((c) => ["indentNumber", "itemName", "quantity", "planned3"].includes(c.key) || (c.key !== "actual3" && selectedColumns.includes(c.key)))
                       .map((col) => (
-                        <TableHead key={col.key}>{col.label}</TableHead>
+                        <TableHead key={col.key} className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                          <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                            {col.label}
+                          </div>
+                        </TableHead>
                       ))}
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Rate/Qty</TableHead>
-                    <TableHead>Payment Terms</TableHead>
-                    <TableHead>Exp. Delivery</TableHead>
-                    <TableHead>Warranty</TableHead>
-                    <TableHead>Attachment</TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Vendor
+                      </div>
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Rate
+                      </div>
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Terms
+                      </div>
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Exp. Delivery
+                      </div>
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Warranty
+                      </div>
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Attachment
+                      </div>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {pending.map((record) => {
                     const vendors = getVendors(record);
                     const isSelected = selectedIndents.includes(record.id);
-                    return vendors.map((v, idx) => {
-                      if (!v) return null;
+                    const displayVendors = vendors.length > 0 ? vendors : [null];
+                    const vCount = displayVendors.length;
+
+                    return displayVendors.map((v, idx) => {
                       return (
-                        <TableRow key={`${record.id}-v${idx + 1}`} className={isSelected ? "bg-blue-50" : ""}>
+                        <TableRow key={`${record.id}-v${idx + 1}`} className={`hover:bg-muted/50 odd:bg-white even:bg-slate-50/80 group ${isSelected ? "bg-blue-50" : ""}`}>
                           {idx === 0 && (
-                            <TableCell rowSpan={vendors.length} className="text-center w-[50px]">
-                              <button
-                                type="button"
-                                onClick={() => toggleIndentSelection(record.id)}
-                                className="p-1 hover:bg-gray-100 rounded transition-colors"
-                              >
-                                {isSelected ? (
-                                  <CheckSquare className="w-5 h-5 text-blue-600" />
-                                ) : (
-                                  <Square className="w-5 h-5 text-gray-400" />
-                                )}
-                              </button>
+                            <TableCell rowSpan={vCount} className="px-4">
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleIndentSelection(record.id)}
+                                />
+                              </div>
                             </TableCell>
                           )}
                           {idx === 0 && (
-                            <TableCell rowSpan={vendors.length} className="sticky left-0 bg-white z-10 w-[120px]">
+                            <TableCell rowSpan={vCount} className="px-4">
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleOpenForm(record.id)}
+                                className="h-8 text-xs font-semibold px-3 border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-colors"
                               >
                                 Negotiate
                               </Button>
@@ -659,66 +713,65 @@ export default function Stage4() {
                           {idx === 0 && (
                             <>
                               {baseColumns
-                                .filter((c) => selectedColumns.includes(c.key))
+                                .filter((c) => ["indentNumber", "itemName", "quantity", "planned3"].includes(c.key) || (c.key !== "actual3" && selectedColumns.includes(c.key)))
                                 .map((col) => (
-                                  <TableCell key={col.key} rowSpan={vendors.length}>
-                                    {record.data[col.key] || "-"}
+                                  <TableCell key={col.key} rowSpan={vCount} className="text-sm text-slate-700 px-4">
+                                    {col.key === "planned3" || col.key === "actual3"
+                                      ? formatDateDash(record.data[col.key])
+                                      : String(record.data[col.key] ?? "-")}
                                   </TableCell>
                                 ))}
                             </>
                           )}
-                          <TableCell>{v.name}</TableCell>
-                          <TableCell>₹{v.rate || "-"}</TableCell>
-                          <TableCell>
-                            {paymentTerms.find((t) => t.value === v.terms)?.label || v.terms || "-"}
+                          <TableCell className="text-sm text-slate-700 px-4 font-medium">{v?.name || "-"}</TableCell>
+                          <TableCell className="text-sm text-slate-700 px-4">{v?.rate ? `₹${v.rate}` : "-"}</TableCell>
+                          <TableCell className="text-sm text-slate-700 px-4">
+                            {v ? (paymentTerms.find((t) => t.value === v.terms)?.label || v.terms || "-") : "-"}
                           </TableCell>
-                          <TableCell>
-                            {v.delivery ? new Date(v.delivery).toLocaleDateString("en-IN") : "-"}
+                          <TableCell className="text-sm text-slate-700 px-4">
+                            {v?.delivery ? formatDateDash(v.delivery) : "-"}
                           </TableCell>
-                          <TableCell>
-                            {v.warrantyType ? (
-                              <div className="flex items-center gap-1 text-xs">
+                          <TableCell className="px-4">
+                            {v?.warrantyType ? (
+                              <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-100/50 px-2 py-1 rounded-full w-fit">
                                 {v.warrantyType === "warranty" ? (
                                   <Shield className="w-3.5 h-3.5 text-blue-600" />
                                 ) : (
                                   <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
                                 )}
-                                <span className="capitalize">{v.warrantyType}</span>
+                                <span className="capitalize font-medium">{v.warrantyType}</span>
                               </div>
                             ) : (
-                              "-"
+                              <span className="text-slate-400">-</span>
                             )}
                           </TableCell>
-                          <TableCell>
-                            {v.attachment ? (
+                          <TableCell className="px-4">
+                            {v?.attachment ? (
                               <a
                                 href={typeof v.attachment === 'string' ? v.attachment : undefined}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                                className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 hover:underline text-xs font-medium"
                               >
                                 <FileText className="w-3.5 h-3.5" />
-                                <span className="truncate max-w-24">
-                                  {typeof v.attachment === 'string' ? "View Attachment" : (v.attachment as any).name}
-                                </span>
+                                <span>View File</span>
                               </a>
                             ) : (
-                              "-"
+                              <span className="text-slate-400">-</span>
                             )}
                           </TableCell>
-
                         </TableRow>
                       );
                     });
                   })}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
         </TabsContent>
 
         {/* HISTORY */}
-        <TabsContent value="history" className="mt-6">
+        <TabsContent value="history" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -730,22 +783,34 @@ export default function Stage4() {
               <p className="text-lg">No completed negotiations</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
+            <div className="flex-1 overflow-auto border rounded-xl bg-white shadow-sm scrollbar-thin scrollbar-thumb-slate-200">
+              <table className="w-full caption-bottom text-sm border-collapse">
+                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
                     {baseColumns
                       .filter((c) => selectedColumns.includes(c.key))
                       .map((col) => (
-                        <TableHead key={col.key}>{col.label}</TableHead>
+                        <TableHead key={col.key} className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                          <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                            {col.label}
+                          </div>
+                        </TableHead>
                       ))}
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Rate/Qty</TableHead>
-                    <TableHead>Payment Terms</TableHead>
-                    <TableHead>Exp. Delivery</TableHead>
-                    <TableHead>Warranty</TableHead>
-                    <TableHead>Attachment</TableHead>
-                    <TableHead>Approved By</TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Vendor
+                      </div>
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Rate
+                      </div>
+                    </TableHead>
+                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                      <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
+                        Approved By
+                      </div>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -769,60 +834,35 @@ export default function Stage4() {
                     };
 
                     return (
-                      <TableRow key={record.id} className="bg-green-50">
+                      <TableRow key={record.id} className="hover:bg-muted/50 odd:bg-white even:bg-slate-50/80 group">
                         {baseColumns
                           .filter((c) => selectedColumns.includes(c.key))
                           .map((col) => (
-                            <TableCell key={col.key}>{record.data[col.key] || "-"}</TableCell>
+                            <TableCell key={col.key} className="text-sm text-slate-700 px-4">
+                              {col.key === "planned3" || col.key === "actual3"
+                                ? formatDateDash(record.data[col.key])
+                                : String(record.data[col.key] ?? "-")}
+                            </TableCell>
                           ))}
-                        <TableCell className="font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4 text-green-600" />
-                          {v.name}
-                        </TableCell>
-                        <TableCell>₹{v.rate || "-"}</TableCell>
-                        <TableCell>
-                          {paymentTerms.find((t) => t.value === v.terms)?.label || v.terms || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {v.delivery ? new Date(v.delivery).toLocaleDateString("en-IN") : "-"}
-                        </TableCell>
-                        <TableCell>
-                          {v.warrantyType ? (
-                            <div className="flex items-center gap-1 text-xs">
-                              {v.warrantyType === "warranty" ? (
-                                <Shield className="w-3.5 h-3.5 text-blue-600" />
-                              ) : (
-                                <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
-                              )}
-                              <span className="capitalize">{v.warrantyType}</span>
+                        <TableCell className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 shrink-0">
+                              <CheckCircle2 className="w-4 h-4" />
                             </div>
-                          ) : (
-                            "-"
-                          )}
+                            <span className="text-sm font-medium text-slate-900">{v.name}</span>
+                          </div>
                         </TableCell>
-                        <TableCell>
-                          {v.attachment ? (
-                            <a
-                              href={typeof v.attachment === 'string' ? v.attachment : undefined}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              <span className="truncate max-w-24">
-                                {typeof v.attachment === 'string' ? "View Attachment" : (v.attachment as any).name}
-                              </span>
-                            </a>
-                          ) : (
-                            "-"
-                          )}
+                        <TableCell className="text-sm text-slate-700 px-4 font-medium">₹{v.rate || "-"}</TableCell>
+                        <TableCell className="px-4">
+                          <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 font-medium">
+                            {v.approvedBy}
+                          </Badge>
                         </TableCell>
-                        <TableCell className="font-medium">{v.approvedBy}</TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
-              </Table>
+              </table>
             </div>
           )}
         </TabsContent>
@@ -917,7 +957,7 @@ export default function Stage4() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Vendor Name</TableHead>
-                      <TableHead>Rate/Qty</TableHead>
+                      <TableHead>Rate</TableHead>
                       <TableHead>Payment Terms</TableHead>
                       <TableHead>Exp. Delivery</TableHead>
                       <TableHead>Warranty</TableHead>
@@ -1128,7 +1168,7 @@ export default function Stage4() {
                     <TableRow>
                       <TableHead>Indent #</TableHead>
                       <TableHead>Vendor Name</TableHead>
-                      <TableHead>Rate/Qty</TableHead>
+                      <TableHead>Rate</TableHead>
                       <TableHead>Payment Terms</TableHead>
                       <TableHead>Exp. Delivery</TableHead>
                       <TableHead>Attachment</TableHead>

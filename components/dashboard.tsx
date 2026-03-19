@@ -1004,7 +1004,11 @@ export default function PurchaseDashboard() {
 
               if (name === "Transporter Follow-Up") {
                 const liftNo = String(r[2] || "").trim();
-                detail.expectedDate = transportMap.get(liftNo) || "-";
+                const expectedFromCP = r[93]; // Column CP
+                const hasCP = expectedFromCP && String(expectedFromCP).trim() !== "" && String(expectedFromCP).trim() !== "-";
+                const plannedDate = r[88]; // Column CK
+
+                detail.expectedDate = hasCP ? expectedFromCP : (transportMap.get(liftNo) || plannedDate || "-");
                 detail.transporterName = r[9] || "-";
               }
               
