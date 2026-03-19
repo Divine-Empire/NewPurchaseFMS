@@ -999,7 +999,7 @@ export default function Stage3() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor={`vendor${num}Name`}>
-                        Vendor Name <span className="text-red-500">*</span>
+                        Vendor Name {num === 1 && <span className="text-red-500">*</span>}
                       </Label>
                       <div className="relative">
                         <Input
@@ -1025,7 +1025,7 @@ export default function Stage3() {
                             }, 200);
                           }}
                           autoComplete="off"
-                          required
+                          required={num === 1}
                         />
                         {getVendorSearchState(num).show && (
                           <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">

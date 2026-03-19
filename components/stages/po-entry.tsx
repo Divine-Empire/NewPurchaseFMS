@@ -98,53 +98,32 @@ export default function Stage5() {
           .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
           .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "") // Skip empty rows
           .map(({ row, originalIndex }: any) => {
-            // Stage 4 completion check: Selected Vendor (Index 47 / Col AV)
-            const isStage4Done = !!row[47] && String(row[47]).trim() !== "" && String(row[47]).trim() !== "-";
-
-            // Stage 5 completion check: Actual 4 (Index 52 / Col BA)
-            const isStage5Done = !!row[52] && String(row[52]).trim() !== "" && String(row[52]).trim() !== "-";
-
-
-            // Stage 5 completion check based on User Request
-            // Plan 4 (Index 51) and Actual 4 (Index 52)
             const hasPlan4 = !!row[51] && String(row[51]).trim() !== "" && String(row[51]).trim() !== "-";
             const hasActual4 = !!row[52] && String(row[52]).trim() !== "" && String(row[52]).trim() !== "-";
 
-            if (originalIndex < 20) {
-              console.log(`DEBUG Stage 5 [${row[1]}] is4Done=${isStage4Done} is5Done=${isStage5Done}: row[45]=${row[45]}, row[46]=${row[46]}, row[51]=${row[51]}, row[52]=${row[52]}`);
+            let status = "not_ready";
+            if (hasActual4) {
+              status = "completed";
+            } else if (hasPlan4) {
+              status = "pending";
             }
 
             return {
               id: row[1] || `row-${originalIndex}`,
               rowIndex: originalIndex,
               stage: 5,
-              status: isStage5Done ? "completed" : (isStage4Done ? "pending" : "not_ready"),
+              status: status,
               createdAt: parseSheetDate(row[0]),
-              history: (hasPlan4 && hasActual4) ? [{ stage: 5, date: parseSheetDate(row[51] || row[50] || row[0]), data: {} }] : [],
+              history: (status === "completed") ? [{ stage: 5, date: parseSheetDate(row[52] || row[51] || row[0]), data: {} }] : [],
               data: {
                 timestamp: row[0],
                 indentNumber: row[1],
-                createdBy: row[2],
-                category: row[3],
                 itemName: row[4],
                 quantity: row[14],
-                warehouseLocation: row[6],
-                deliveryDate: row[7] ? formatDate(row[7]) : "",
-                leadTime: row[8],
                 planned1: row[9] ? formatDate(row[9]) : "",
                 actual1: row[10] ? formatDate(row[10]) : "",
-                delay1: row[11],
                 approvedBy: row[12],
-                status: row[13],
-                approvedQty: row[14],
-                vendorType: row[15],
-                remarks: row[16],
-                img: row[17],
 
-                // Stage 2 Dates
-                planned2: row[18],
-                actual2: row[19],
-                delay2: row[20],
 
                 // Vendor 1
                 vendor1Name: row[21],
@@ -179,22 +158,21 @@ export default function Stage5() {
                 // Stage 4 Data (Negotiation)
                 planned3: row[45],           // AT
                 actual3: row[46],            // AU
-                selectedVendor: row[47],     // AV
-                selectedVendorName: row[48], // AW
+                delay3: row[47],             // AV
+                selectedVendor: row[48],     // AW
                 finalApprovedBy: row[49],    // AX
                 negotiationRemarks: row[50], // AY
-                delay3: row[51],             // AZ
 
-                // Stage 5 Data (PO) - USER Mapping
+                // Stage 5 Data (PO)
                 planned4: row[51],      // AZ (Index 51)
                 actual4: row[52],       // BA (Index 52)
+                delay4: row[53],        // BB (Index 53)
                 poNumber: row[54],      // BC (Index 54)
                 basicValue: row[55],    // BD (Index 55)
                 totalWithTax: row[56],  // BE (Index 56)
-                paymentTerms: row[57],  // BF (Index 57)
+                hsn: row[57],           // BF (Index 57)
                 poCopy: row[58],        // BG (Index 58)
-                poRemarks: row[59],     // BH (Index 59)
-                // BG (Index 58)
+                gst: row[59],           // BH (Index 59)
               }
             };
           });
@@ -657,8 +635,8 @@ export default function Stage5() {
                             .filter((c) => selectedColumns.includes(c.key))
                             .map((col) => (
                               <TableCell key={col.key} className="px-4 whitespace-nowrap">
-                                {col.key === "planned4" 
-                                  ? formatDateDash(record.data[col.key]) 
+                                {col.key === "planned4"
+                                  ? formatDateDash(record.data[col.key])
                                   : (record.data[col.key] || "-")}
                               </TableCell>
                             ))}
@@ -736,8 +714,8 @@ export default function Stage5() {
                     <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Terms & Delivery</TableHead>
                     <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Warranty/Quot.</TableHead>
                     <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">PO Details</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Financials (₹)</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">PO Details (Incl. HSN)</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Financials (Incl. GST%)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -820,6 +798,7 @@ export default function Stage5() {
                         <TableCell className="bg-white/50">
                           <div className="space-y-1">
                             <div className="font-mono text-sm font-bold text-green-700">{record.data.poNumber || "-"}</div>
+                            <div className="text-[11px] text-gray-500">HSN: {record.data.hsn || "-"}</div>
                             {record.data.poCopy && (
                               <a
                                 href={typeof record.data.poCopy === 'string' ? record.data.poCopy : undefined}
@@ -841,8 +820,8 @@ export default function Stage5() {
                               <span className="font-medium">₹{record.data.basicValue || "-"}</span>
                             </div>
                             <div className="flex justify-between gap-4 border-t pt-1">
-                              <span className="text-xs text-gray-500 font-semibold">Total:</span>
-                              <span className="font-bold text-green-800">₹{record.data.totalWithTax || "-"}</span>
+                              <span className="text-xs text-gray-500 font-semibold text-green-700">GST: {record.data.gst || "-"}</span>
+                              <span className="font-bold text-green-800">Total: ₹{record.data.totalWithTax || "-"}</span>
                             </div>
                           </div>
                         </TableCell>
