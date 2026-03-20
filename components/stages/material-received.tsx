@@ -33,6 +33,16 @@ import { FileText, Upload, X, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { parseSheetDate, formatDate, getFmsTimestamp } from "@/lib/utils";
 
+const formatDateDash = (date: any) => {
+    if (!date || date === "-" || date === "—") return "-";
+    const d = date instanceof Date ? date : parseSheetDate(date);
+    if (!d || isNaN(d.getTime())) return typeof date === "string" ? date : "-";
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${dd}-${mm}-${yyyy}`;
+};
+
 // ─── Module-level helpers (stable references, no re-creation on render) ────
 const GST_RATES: Record<string, number> = {
     "5%": 0.05,
@@ -69,11 +79,12 @@ const uploadFileToDrive = async (
 /*  COLUMNS FOR PENDING TAB (Same as Follow-Up Vendor History)     */
 /* --------------------------------------------------------------- */
 const PENDING_COLUMNS = [
-    { key: "indentNumber", label: "Indent #" },
+    { key: "indentNumber", label: "Indent No." },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor Name" },
     { key: "poNumber", label: "PO Number" },
+    { key: "planned6", label: "Planned" },
     { key: "nextFollowUpDate", label: "Next Follow-Up" },
     { key: "remarks", label: "Remarks" },
     { key: "itemName", label: "Item Name" },
@@ -95,8 +106,9 @@ const PENDING_COLUMNS = [
 /*  COLUMNS FOR HISTORY TAB (SHOW ALL)                             */
 /* --------------------------------------------------------------- */
 const HISTORY_COLUMNS = [
-    ...PENDING_COLUMNS,
-    { key: "actual6", label: "Actual 6" },
+    ...PENDING_COLUMNS.slice(0, 6),
+    { key: "actual6", label: "Actual" },
+    ...PENDING_COLUMNS.slice(6),
     { key: "invoiceType", label: "Invoice Type" },
     { key: "receiptLiftNumber", label: "Receipt Unit Tracking No." },
     { key: "receivedQty", label: "Received Qty" },
@@ -185,7 +197,7 @@ export default function Stage7() {
             const liftJson = await liftRes.json();
             const fmsJson = await fmsRes.json();
 
-            // Create FMS Map (Indent # -> Row)
+            // Create FMS Map (Indent No. -> Row)
             const fmsMap = new Map<string, any[]>();
             if (fmsJson.success && Array.isArray(fmsJson.data)) {
                 // FMS data usually starts after header rows, typically slice(7) based on other stages
@@ -254,9 +266,21 @@ export default function Stage7() {
                                 invoiceNumber: row[24] || "",    // Y: Invoice Number
                                 qcRequirement: row[28] || "",    // AC: QC Required
 
-                                // Columns T and U for status determination
-                                columnT: row[19] || "",          // T: Planned
-                                columnU: row[20] || "",          // U: Actual
+                                // Columns T and U for status determination & data
+                                planned6: row[19] || "",          // T: Planned
+                                actual6: row[20] || "",           // U: Actual
+
+                                // History fields (not in data but in HISTORY_COLUMNS)
+                                invoiceType: row[22] || "",       // W
+                                receivedQty: row[25] || "",       // Z
+                                invoiceDate: row[23] || "",       // X
+                                srnNumber: row[27] || "",         // AB
+                                receivedItemImage: row[26] || "", // AA
+                                billAttachment: row[29] || "",    // AD
+                                paymentAmountHydra: row[30] || "",// AE
+                                paymentAmountLabour: row[31] || "",// AF
+                                paymentAmountHamali: row[32] || "",// AG
+                                receiptLiftNumber: row[2] || "",  // C: Reuse Lift No
                             }
                         };
                     });
@@ -577,155 +601,169 @@ export default function Stage7() {
     }, [sheetRecords, searchTerm, warehouseFilter]);
 
     return (
-        <div className="p-6">
-            {/* ==================== HEADER ==================== */}
-            <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-2xl font-bold">Stage 8: Material Receipt</h2>
-                    </div>
+        <div className="p-6 min-h-screen bg-[#f8fafc]">
+            <Tabs
+                value={activeTab}
+                onValueChange={(v) => setActiveTab(v as any)}
+                className="w-full"
+            >
+                {/* Sticky Header and Tabs Container */}
+                <div className="sticky top-0 z-50 bg-[#f8fafc] -mx-6 px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
+                    {/* ==================== HEADER ==================== */}
+                    <div className="p-6 bg-white border rounded-lg shadow-sm mb-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-2xl font-bold text-slate-900">Stage 8: Material Receipt</h2>
+                            </div>
 
-                    <div className="flex items-center gap-4">
-                        {/* Bulk Button */}
-                        {activeTab === "pending" && selectedRecordIds.length > 1 && (
-                            <Button onClick={handleBulkOpen}>
-                                Bulk Record ({selectedRecordIds.length})
-                            </Button>
-                        )}
+                            <div className="flex items-center gap-4">
+                                {/* Bulk Button */}
+                                {activeTab === "pending" && selectedRecordIds.length > 1 && (
+                                    <Button 
+                                        onClick={handleBulkOpen}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+                                    >
+                                        Bulk Record ({selectedRecordIds.length})
+                                    </Button>
+                                )}
 
-                        <Label className="text-sm font-medium">Show Columns:</Label>
-                        <Select value="" onValueChange={() => { }}>
-                            <SelectTrigger className="w-40">
-                                <SelectValue
-                                    placeholder={
-                                        activeTab === "pending"
-                                            ? `${selectedPendingColumns.length} selected`
-                                            : `${selectedHistoryColumns.length} selected`
-                                    }
-                                />
-                            </SelectTrigger>
-                            <SelectContent className="w-40">
-                                <div className="p-2">
-                                    <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
-                                        <Checkbox
-                                            checked={
+                                <Label className="text-sm font-medium text-slate-600">Show Columns:</Label>
+                                <Select value="" onValueChange={() => { }}>
+                                    <SelectTrigger className="w-40 bg-white border-slate-200">
+                                        <SelectValue
+                                            placeholder={
                                                 activeTab === "pending"
-                                                    ? selectedPendingColumns.length ===
-                                                    PENDING_COLUMNS.length
-                                                    : selectedHistoryColumns.length ===
-                                                    HISTORY_COLUMNS.length
+                                                    ? `${selectedPendingColumns.length} selected`
+                                                    : `${selectedHistoryColumns.length} selected`
                                             }
-                                            onCheckedChange={(c) => {
-                                                if (activeTab === "pending") {
-                                                    setSelectedPendingColumns(
-                                                        c ? PENDING_COLUMNS.map((col) => col.key) : []
-                                                    );
-                                                } else {
-                                                    setSelectedHistoryColumns(
-                                                        c ? HISTORY_COLUMNS.map((col) => col.key) : []
-                                                    );
-                                                }
-                                            }}
                                         />
-                                        <Label className="text-sm font-medium">All Columns</Label>
-                                    </div>
-                                    {(activeTab === "pending"
-                                        ? PENDING_COLUMNS
-                                        : HISTORY_COLUMNS
-                                    ).map((col) => (
-                                        <div
-                                            key={col.key}
-                                            className="flex items-center space-x-2 py-1"
-                                        >
-                                            <Checkbox
-                                                checked={
-                                                    activeTab === "pending"
-                                                        ? selectedPendingColumns.includes(col.key)
-                                                        : selectedHistoryColumns.includes(col.key)
-                                                }
-                                                onCheckedChange={(checked) => {
-                                                    if (activeTab === "pending") {
-                                                        setSelectedPendingColumns((prev) =>
-                                                            checked
-                                                                ? [...prev, col.key]
-                                                                : prev.filter((c) => c !== col.key)
-                                                        );
-                                                    } else {
-                                                        setSelectedHistoryColumns((prev) =>
-                                                            checked
-                                                                ? [...prev, col.key]
-                                                                : prev.filter((c) => c !== col.key)
-                                                        );
+                                    </SelectTrigger>
+                                    <SelectContent className="w-40 bg-white">
+                                        <div className="p-2">
+                                            <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
+                                                <Checkbox
+                                                    checked={
+                                                        activeTab === "pending"
+                                                            ? selectedPendingColumns.length ===
+                                                            PENDING_COLUMNS.length
+                                                            : selectedHistoryColumns.length ===
+                                                            HISTORY_COLUMNS.length
                                                     }
-                                                }}
-                                            />
-                                            <Label className="text-sm">{col.label}</Label>
+                                                    onCheckedChange={(c) => {
+                                                        if (activeTab === "pending") {
+                                                            setSelectedPendingColumns(
+                                                                c ? PENDING_COLUMNS.map((col) => col.key) : []
+                                                            );
+                                                        } else {
+                                                            setSelectedHistoryColumns(
+                                                                c ? HISTORY_COLUMNS.map((col) => col.key) : []
+                                                            );
+                                                        }
+                                                    }}
+                                                />
+                                                <Label className="text-sm font-medium">All Columns</Label>
+                                            </div>
+                                            {(activeTab === "pending"
+                                                ? PENDING_COLUMNS
+                                                : HISTORY_COLUMNS
+                                            ).map((col) => (
+                                                <div
+                                                    key={col.key}
+                                                    className="flex items-center space-x-2 py-1"
+                                                >
+                                                    <Checkbox
+                                                        checked={
+                                                            activeTab === "pending"
+                                                                ? selectedPendingColumns.includes(col.key)
+                                                                : selectedHistoryColumns.includes(col.key)
+                                                        }
+                                                        onCheckedChange={(checked) => {
+                                                            if (activeTab === "pending") {
+                                                                setSelectedPendingColumns((prev) =>
+                                                                    checked
+                                                                        ? [...prev, col.key]
+                                                                        : prev.filter((c) => c !== col.key)
+                                                                );
+                                                            } else {
+                                                                setSelectedHistoryColumns((prev) =>
+                                                                    checked
+                                                                        ? [...prev, col.key]
+                                                                        : prev.filter((c) => c !== col.key)
+                                                                );
+                                                            }
+                                                        }}
+                                                    />
+                                                    <Label className="text-sm">{col.label}</Label>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
-                                </div>
-                            </SelectContent>
-                        </Select>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        {/* Search Filter */}
+                        <div className="mt-4 flex flex-wrap items-center gap-4">
+                            <div className="relative flex-1 max-w-sm">
+                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                                <Input
+                                    placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-9 bg-white border-slate-200 focus:ring-amber-500 focus:border-amber-500"
+                                />
+                            </div>
+
+                            {/* Warehouse Filter */}
+                            <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                                <SelectTrigger className="w-[150px] bg-white border-slate-200">
+                                    <SelectValue placeholder="Select warehouse" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-white">
+                                    <SelectItem value="All">All Warehouses</SelectItem>
+                                    <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+                                    <SelectItem value="Others">Others</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
-                </div>
 
-                {/* Search Filter */}
-                <div className="mt-4 flex flex-wrap items-center gap-4">
-                    <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                        <Input
-                            placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-9 bg-white"
-                        />
-                    </div>
-
-                    {/* Warehouse Filter */}
-                    <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-                        <SelectTrigger className="w-[150px] bg-white">
-                            <SelectValue placeholder="Select warehouse" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white">
-                            <SelectItem value="All">All Warehouses</SelectItem>
-                            <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
-                            <SelectItem value="Others">Others</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-            </div>
-
-            {/* ==================== TABS ==================== */}
-            {isLoading ? (
-                <div className="flex flex-col items-center justify-center py-24 text-gray-500">
-                    <Loader2 className="w-8 h-8 animate-spin mb-4 text-black" />
-                    <p className="text-lg animate-pulse text-black font-medium">Loading records...</p>
-                </div>
-            ) : (
-                <Tabs
-                    value={activeTab}
-                    onValueChange={(v) => setActiveTab(v as any)}
-                    className="w-full"
-                >
-                    <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-                        <TabsTrigger value="history">
+                    <TabsList className="grid w-full grid-cols-2 h-12 bg-slate-100/50 p-1 rounded-lg">
+                        <TabsTrigger 
+                            value="pending"
+                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                        >
+                            Pending ({pending.length})
+                        </TabsTrigger>
+                        <TabsTrigger 
+                            value="history"
+                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                        >
                             History ({completed.length})
                         </TabsTrigger>
                     </TabsList>
+                </div>
 
-                    {/* ---------- PENDING ---------- */}
-                    <TabsContent value="pending" className="mt-6">
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+                        <Loader2 className="w-8 h-8 animate-spin mb-4 text-black" />
+                        <p className="text-lg animate-pulse text-black font-medium">Loading records...</p>
+                    </div>
+                ) : (
+                    <>
+                        {/* ---------- PENDING ---------- */}
+                        <TabsContent value="pending" className="mt-0 outline-none">
                         {pending.length === 0 ? (
                             <div className="text-center py-12 text-gray-500">
                                 <p className="text-lg">No pending receipts</p>
                             </div>
                         ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
+                            <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
+                                <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                        <TableRow className="hover:bg-transparent border-none">
                                             {activeTab === "pending" && (
-                                                <TableHead>
+                                                <TableHead className="sticky left-0 z-40 bg-slate-50 w-[50px] border-b text-center">
                                                     <Checkbox
                                                         checked={
                                                             pending.length > 0 &&
@@ -741,19 +779,19 @@ export default function Stage7() {
                                                     />
                                                 </TableHead>
                                             )}
-                                            <TableHead>Actions</TableHead>
+                                            <TableHead className="sticky left-[50px] z-40 bg-slate-50 w-[150px] border-b text-center whitespace-nowrap px-4">Actions</TableHead>
                                             {PENDING_COLUMNS.filter((c) =>
                                                 selectedPendingColumns.includes(c.key)
                                             ).map((c) => (
-                                                <TableHead key={c.key}>{c.label}</TableHead>
+                                                <TableHead key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{c.label}</TableHead>
                                             ))}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {pending.map((rec) => (
-                                            <TableRow key={rec.id} className="hover:bg-gray-50">
+                                            <TableRow key={rec.id} className="hover:bg-gray-50 group">
                                                 {activeTab === "pending" && (
-                                                    <TableCell>
+                                                    <TableCell className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b text-center">
                                                         <Checkbox
                                                             checked={selectedRecordIds.includes(rec.id)}
                                                             onCheckedChange={(checked) => {
@@ -766,11 +804,12 @@ export default function Stage7() {
                                                         />
                                                     </TableCell>
                                                 )}
-                                                <TableCell>
+                                                <TableCell className="sticky left-[50px] z-20 bg-white group-hover:bg-gray-50 border-b text-center px-4 py-2">
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
                                                         onClick={() => openModal(rec.id)}
+                                                        className="h-8 px-3 text-xs font-medium border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-colors"
                                                     >
                                                         Record Receipt
                                                     </Button>
@@ -779,6 +818,8 @@ export default function Stage7() {
                                                 {PENDING_COLUMNS.filter((c) =>
                                                     selectedPendingColumns.includes(c.key)
                                                 ).map((col) => {
+                                                    const val = rec.data[col.key];
+
                                                     // Handle Bilty Copy as a link
                                                     if (col.key === "biltyCopy") {
                                                         const biltyRaw = rec.data.biltyCopy;
@@ -788,13 +829,13 @@ export default function Stage7() {
                                                             if (m?.[1]) biltyUrl = `https://drive.google.com/file/d/${m[1]}/view`;
                                                         }
                                                         return (
-                                                            <TableCell key={col.key}>
+                                                            <TableCell key={col.key} className="border-b px-4 py-2 text-center">
                                                                 {biltyUrl ? (
                                                                     <a
                                                                         href={biltyUrl}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="flex items-center gap-1 text-xs text-green-600 hover:underline"
+                                                                        className="flex items-center justify-center gap-1 text-xs text-green-600 hover:underline"
                                                                     >
                                                                         <FileText className="w-3.5 h-3.5" />
                                                                         <span>View Bilty</span>
@@ -813,13 +854,13 @@ export default function Stage7() {
                                                             if (m?.[1]) poUrl = `https://drive.google.com/file/d/${m[1]}/view`;
                                                         }
                                                         return (
-                                                            <TableCell key={col.key}>
+                                                            <TableCell key={col.key} className="border-b px-4 py-2 text-center">
                                                                 {poUrl ? (
                                                                     <a
                                                                         href={poUrl}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                                                        className="flex items-center justify-center gap-1 text-xs text-blue-600 hover:underline"
                                                                     >
                                                                         <FileText className="w-3.5 h-3.5" />
                                                                         <span>View PO</span>
@@ -829,11 +870,11 @@ export default function Stage7() {
                                                         );
                                                     }
 
-                                                    // Handle date columns - format as date only (no timestamp)
-                                                    if (col.key === "nextFollowUpDate" || col.key === "dispatchDate" || col.key === "paymentDate") {
+                                                    // Handle date columns - format as DD-MM-YYYY
+                                                    if (col.key === "nextFollowUpDate" || col.key === "dispatchDate" || col.key === "paymentDate" || col.key === "planned6") {
                                                         return (
-                                                            <TableCell key={col.key}>
-                                                                {rec.data[col.key] ? formatDate(rec.data[col.key]) : "-"}
+                                                            <TableCell key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                                {val ? formatDateDash(val) : "-"}
                                                             </TableCell>
                                                         );
                                                     }
@@ -841,23 +882,23 @@ export default function Stage7() {
                                                     // Handle currency columns
                                                     if (col.key === "freightAmount" || col.key === "advanceAmount") {
                                                         return (
-                                                            <TableCell key={col.key}>
-                                                                {rec.data[col.key] ? `₹${rec.data[col.key]}` : "-"}
+                                                            <TableCell key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                                {val ? `₹${val}` : "-"}
                                                             </TableCell>
                                                         );
                                                     }
 
                                                     // Default rendering
                                                     return (
-                                                        <TableCell key={col.key}>
-                                                            {rec.data[col.key] || "-"}
+                                                        <TableCell key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                            {val || "-"}
                                                         </TableCell>
                                                     );
                                                 })}
                                             </TableRow>
                                         ))}
                                     </TableBody>
-                                </Table>
+                                </table>
                             </div>
                         )}
                     </TabsContent>
@@ -869,14 +910,14 @@ export default function Stage7() {
                                 <p className="text-lg">No completed receipts</p>
                             </div>
                         ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader className="bg-gray-100 sticky top-0">
-                                        <TableRow className="border-b-2">
+                            <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
+                                <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                        <TableRow className="hover:bg-transparent border-none">
                                             {HISTORY_COLUMNS.filter((c) =>
                                                 selectedHistoryColumns.includes(c.key)
                                             ).map((c) => (
-                                                <TableHead key={c.key} className="font-semibold">
+                                                <TableHead key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
                                                     {c.label}
                                                 </TableHead>
                                             ))}
@@ -887,31 +928,26 @@ export default function Stage7() {
                                             const historyData = record.data;
 
                                             return (
-                                                <TableRow key={record.id} className="bg-green-50">
+                                                <TableRow key={record.id} className="bg-green-50 hover:bg-green-100 transition-colors">
                                                     {HISTORY_COLUMNS.filter((c) =>
                                                         selectedHistoryColumns.includes(c.key)
                                                     ).map((col) => {
+                                                        const val = (historyData[col.key] !== undefined && historyData[col.key] !== "")
+                                                            ? historyData[col.key]
+                                                            : record.data[col.key];
+
                                                         // Handle date fields (dispatchDate, paymentDate, etc.)
                                                         if (
                                                             col.key === "dispatchDate" ||
                                                             col.key === "paymentDate" ||
                                                             col.key === "nextFollowUpDate" ||
                                                             col.key === "invoiceDate" ||
-                                                            col.key === "actual6"
+                                                            col.key === "actual6" ||
+                                                            col.key === "planned6"
                                                         ) {
-                                                            const dateVal = historyData[col.key];
-                                                            let formattedDate = "-";
-                                                            if (dateVal) {
-                                                                const d = new Date(dateVal);
-                                                                if (!isNaN(d.getTime())) {
-                                                                    formattedDate = `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}/${d.getFullYear()}`;
-                                                                } else {
-                                                                    formattedDate = String(dateVal);
-                                                                }
-                                                            }
                                                             return (
-                                                                <TableCell key={col.key}>
-                                                                    {formattedDate}
+                                                                <TableCell key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                                    {formatDateDash(val)}
                                                                 </TableCell>
                                                             );
                                                         }
@@ -925,13 +961,13 @@ export default function Stage7() {
                                                                 if (m?.[1]) biltyUrl = `https://drive.google.com/file/d/${m[1]}/view`;
                                                             }
                                                             return (
-                                                                <TableCell key={col.key}>
+                                                                <TableCell key={col.key} className="border-b px-4 py-2 text-center">
                                                                     {biltyUrl ? (
                                                                         <a
                                                                             href={biltyUrl}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
-                                                                            className="flex items-center gap-1 text-xs text-green-600 hover:underline"
+                                                                            className="flex items-center justify-center gap-1 text-xs text-green-600 hover:underline"
                                                                         >
                                                                             <FileText className="w-3.5 h-3.5" />
                                                                             <span>View Bilty</span>
@@ -950,13 +986,13 @@ export default function Stage7() {
                                                                 if (m?.[1]) poUrl = `https://drive.google.com/file/d/${m[1]}/view`;
                                                             }
                                                             return (
-                                                                <TableCell key={col.key}>
+                                                                <TableCell key={col.key} className="border-b px-4 py-2 text-center">
                                                                     {poUrl ? (
                                                                         <a
                                                                             href={poUrl}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
-                                                                            className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                                                            className="flex items-center justify-center gap-1 text-xs text-blue-600 hover:underline"
                                                                         >
                                                                             <FileText className="w-3.5 h-3.5" />
                                                                             <span>View PO</span>
@@ -977,13 +1013,13 @@ export default function Stage7() {
                                                                 if (m?.[1]) fileUrl = `https://drive.google.com/file/d/${m[1]}/view`;
                                                             }
                                                             return (
-                                                                <TableCell key={col.key}>
+                                                                <TableCell key={col.key} className="border-b px-4 py-2 text-center">
                                                                     {fileUrl ? (
                                                                         <a
                                                                             href={fileUrl}
                                                                             target="_blank"
                                                                             rel="noopener noreferrer"
-                                                                            className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                                                            className="flex items-center justify-center gap-1 text-xs text-blue-600 hover:underline"
                                                                         >
                                                                             <FileText className="w-3.5 h-3.5" />
                                                                             <span className="truncate max-w-20">
@@ -1006,20 +1042,15 @@ export default function Stage7() {
                                                             col.key === "paymentAmountHamali"
                                                         ) {
                                                             return (
-                                                                <TableCell key={col.key}>
-                                                                    {historyData[col.key]
-                                                                        ? `₹${historyData[col.key]}`
-                                                                        : "-"}
+                                                                <TableCell key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                                    {val ? `₹${val}` : "-"}
                                                                 </TableCell>
                                                             );
                                                         }
 
                                                         // Default: show from historyData
-                                                        const val = (historyData[col.key] !== undefined && historyData[col.key] !== "")
-                                                            ? historyData[col.key]
-                                                            : record.data[col.key];
                                                         return (
-                                                            <TableCell key={col.key}>
+                                                            <TableCell key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
                                                                 {val ? String(val) : "-"}
                                                             </TableCell>
                                                         );
@@ -1028,12 +1059,13 @@ export default function Stage7() {
                                             );
                                         })}
                                     </TableBody>
-                                </Table>
+                                </table>
                             </div>
                         )}
                     </TabsContent>
-                </Tabs>
+                </>
             )}
+        </Tabs>
 
             {/* ==================== MODAL ==================== */}
             <Dialog open={open} onOpenChange={setOpen}>

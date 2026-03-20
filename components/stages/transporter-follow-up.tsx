@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, ArrowUpDown, Search, Truck } from "lucide-react";
+import { Loader2, RefreshCw, Search, Truck } from "lucide-react";
 import {
     Table,
     TableBody,
@@ -34,6 +34,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { getFmsTimestamp } from "@/lib/utils";
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+
+const formatDateDash = (date: any) => {
+  if (!date || date === "-" || date === "—") return "-";
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${dd}-${mm}-${yyyy}`;
+  } catch (e) {
+    return typeof date === 'string' ? date : "-";
+  }
+};
 
 export default function TransporterFollowUp() {
     const [records, setRecords] = useState<any[]>([]);
@@ -73,7 +87,7 @@ export default function TransporterFollowUp() {
             // Fetch Transport Follow-Up Data for Expected Dates
             const resTransport = await fetch(`${SHEET_API_URL}?sheet=Transport Flw-Up&action=getAll`);
             const jsonTransport = await resTransport.json();
-            const transportMap = new Map<string, { status: string, remarks: string, expectedDate: string, followUpCount: number }>();
+            const transportMap = new Map<string, { remarks: string, expectedDate: string, followUpCount: number }>();
 
             if (jsonTransport.success && Array.isArray(jsonTransport.data)) {
                 // Skip header (row 1)
@@ -81,16 +95,15 @@ export default function TransporterFollowUp() {
                     const liftNo = row[1]; // Column B (Unit Tracking No.)
                     const status = row[2]; // Column C
                     const remarks = row[3]; // Column D
-                    const exDate = row[4]; // Column E
+                    const timestamp = row[0]; // Column A (Timestamp)
 
                     if (liftNo) {
                         const existing = transportMap.get(liftNo);
                         const currentCount = (existing?.followUpCount || 0) + (status === "Intransit" ? 1 : 0);
 
                         transportMap.set(liftNo, {
-                            status: status || "",
                             remarks: remarks || "",
-                            expectedDate: exDate || "",
+                            expectedDate: timestamp || "",
                             followUpCount: currentCount
                         });
                     }
@@ -133,7 +146,6 @@ export default function TransporterFollowUp() {
                             id: `${liftNo}_${originalIndex}`, // Unit Tracking No. + row index as unique ID
                             rowIndex: originalIndex,
                             status,
-                            rawRow: row,
                             data: {
                                 indentNumber: row[1],      // Column B
                                 liftNo: liftNo,            // Column C
@@ -181,14 +193,13 @@ export default function TransporterFollowUp() {
     };
 
     const sortedPending = React.useMemo(() => {
+        const searchLower = searchTerm.toLowerCase();
         const pendingItems = records
             .filter(r => r.status === "pending")
             .filter((r) => {
-                const searchLower = searchTerm.toLowerCase();
                 return (
                     r.data.indentNumber?.toLowerCase().includes(searchLower) ||
                     r.data.itemName?.toLowerCase().includes(searchLower) ||
-                    r.data.vendorName?.toLowerCase().includes(searchLower) ||
                     r.data.vendorName?.toLowerCase().includes(searchLower) ||
                     String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
                     String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower) ||
@@ -218,27 +229,48 @@ export default function TransporterFollowUp() {
         });
     }, [records, sortConfig, searchTerm]);
 
-    const completed = records.filter(r => {
-        if (r.status !== "history") return false;
-        if (!searchTerm) return true;
+    const completed = React.useMemo(() => {
         const searchLower = searchTerm.toLowerCase();
-        return (
-            r.data.indentNumber?.toLowerCase().includes(searchLower) ||
-            r.data.itemName?.toLowerCase().includes(searchLower) ||
-            r.data.vendorName?.toLowerCase().includes(searchLower) ||
-            String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
-            String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower) ||
-            r.data.lrCopy?.toLowerCase().includes(searchLower)
-        );
-    });
+        return records.filter(r => {
+            if (r.status !== "history") return false;
+            return (
+                r.data.indentNumber?.toLowerCase().includes(searchLower) ||
+                r.data.itemName?.toLowerCase().includes(searchLower) ||
+                r.data.vendorName?.toLowerCase().includes(searchLower) ||
+                String(r.data.poNumber || "").toLowerCase().includes(searchLower) ||
+                String(r.data.invoiceNumber || "").toLowerCase().includes(searchLower) ||
+                String(r.data.lrCopy || "").toLowerCase().includes(searchLower)
+            );
+        });
+    }, [records, searchTerm]);
     const pending = sortedPending; // Use sorted list for display
 
-    const columns = [
+    const pendingColumns = [
         { key: "indentNumber", label: "Indent No" },
-        { key: "itemName", label: "Item Name" }, 
+        { key: "itemName", label: "Item Name" },
+        { key: "plannedDate", label: "Planned" },
         { key: "totalFollowUps", label: "Total Follow-Ups" },
         { key: "expectedDate", label: "Last Follow-Up Date" },
-        { key: "remarks", label: "Remarks" }, // Added for latest follow-up remarks
+        { key: "remarks", label: "Remarks" },
+        { key: "liftNo", label: "Unit Tracking No." },
+        { key: "vendorName", label: "Vendor Name" },
+        { key: "poNumber", label: "PO Number" },
+        { key: "liftingQty", label: "Dispatch Qty" },
+        { key: "transporterName", label: "Transporter Name" },
+        { key: "freightAmt", label: "Freight Amt" },
+        { key: "vehicleNo", label: "Vehicle No" },
+        { key: "contactNo", label: "Contact Number" },
+        { key: "lrCopy", label: "LR Copy" },
+    ];
+
+    const historyColumns = [
+        { key: "indentNumber", label: "Indent No" },
+        { key: "itemName", label: "Item Name" },
+        { key: "plannedDate", label: "Planned" },
+        { key: "actualDate", label: "Actual" },
+        { key: "totalFollowUps", label: "Total Follow-Ups" },
+        { key: "expectedDate", label: "Last Follow-Up Date" },
+        { key: "remarks", label: "Remarks" },
         { key: "liftNo", label: "Unit Tracking No." },
         { key: "vendorName", label: "Vendor Name" },
         { key: "poNumber", label: "PO Number" },
@@ -419,8 +451,8 @@ export default function TransporterFollowUp() {
     };
 
     return (
-        <div className="p-6">
-            <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+        <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+            <div className="mb-6 p-6 bg-linear-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                         <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
@@ -485,53 +517,52 @@ export default function TransporterFollowUp() {
                     <span className="ml-2 text-gray-500">Loading transport records...</span>
                 </div>
             ) : (
-                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-                    <TabsList className="grid w-full grid-cols-2">
+                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
+                    <TabsList className="grid w-full grid-cols-2 shrink-0">
                         <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
                         <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="pending" className="mt-6">
+                    <TabsContent value="pending" className="mt-0 flex-1 flex flex-col overflow-hidden">
                         {pending.length === 0 ? (
                             <div className="text-center py-12 text-gray-500">No pending transporter follow-ups</div>
-                        ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead className="w-[50px]">
+                        ) : (                            <div className="border rounded-lg flex-1 overflow-auto shadow-sm relative h-full">
+                                <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                        <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                                            <TableHead className="w-[50px] sticky top-0 left-0 z-40 bg-slate-50 border-none pl-4 py-3">
                                                 <Checkbox
                                                     checked={selectedRows.size === pending.length && pending.length > 0}
                                                     onCheckedChange={toggleAll}
                                                 />
                                             </TableHead>
-                                            <TableHead className="w-[100px] sticky left-0 z-20 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center">Actions</TableHead>
-                                            {columns.map(c => (
-                                                <TableHead key={c.key} className="text-center">{c.label}</TableHead>
+                                            <TableHead className="w-[120px] sticky top-0 left-[50px] z-40 bg-slate-50 border-none px-4 py-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center font-bold text-slate-700 uppercase">Actions</TableHead>
+                                            {pendingColumns.map(c => (
+                                                <TableHead key={c.key} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-center font-bold text-slate-700 uppercase whitespace-nowrap">{c.label}</TableHead>
                                             ))}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {pending.map(rec => (
                                             <TableRow key={rec.id}>
-                                                <TableCell>
+                                                <TableCell className="sticky left-0 z-10 bg-white border-b border-r px-4 py-2">
                                                     <Checkbox
                                                         checked={selectedRows.has(rec.id)}
                                                         onCheckedChange={() => toggleRow(rec.id)}
                                                     />
                                                 </TableCell>
-                                                <TableCell className="sticky left-0 z-20 bg-white shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center">
+                                                <TableCell className="sticky left-[50px] z-10 bg-white border-b border-r px-4 py-2 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center">
                                                     <Button size="sm" onClick={() => handleOpenForm(rec)} className="bg-blue-600 hover:bg-blue-700">
                                                         Follow-Up
                                                     </Button>
                                                 </TableCell>
-                                                {columns.map((c) => {
+                                                {pendingColumns.map((c) => {
                                                     const val = rec.data[c.key];
 
                                                     // LR Copy Logic
                                                     if (c.key === "lrCopy") {
                                                         return (
-                                                            <TableCell key={c.key} className="text-center">
+                                                            <TableCell key={c.key} className="text-center border-b px-4 py-2">
                                                                 {val && val.trim() !== "" ? (
                                                                     <a
                                                                         href={val}
@@ -546,66 +577,45 @@ export default function TransporterFollowUp() {
                                                         );
                                                     }
 
-                                                    // Expected Date Logic
-                                                    if (c.key === "expectedDate") {
-                                                        let displayDate = safeValue(val);
-                                                        if (displayDate !== "-") {
-                                                            const dateObj = new Date(val);
-                                                            if (!isNaN(dateObj.getTime())) {
-                                                                displayDate = dateObj.toLocaleDateString("en-GB", {
-                                                                    day: "2-digit",
-                                                                    month: "short",
-                                                                    year: "numeric"
-                                                                });
-                                                            }
-                                                        }
-                                                        return <TableCell key={c.key} className="text-center">{displayDate}</TableCell>;
+                                                    // Planned & Expected Date Logic
+                                                    if (c.key === "plannedDate" || c.key === "expectedDate") {
+                                                        return <TableCell key={c.key} className="text-center border-b px-4 py-2 text-slate-700">{formatDateDash(val)}</TableCell>;
                                                     }
 
                                                     // Default Logic
-                                                    return <TableCell key={c.key} className="text-center">{safeValue(val)}</TableCell>;
+                                                    return <TableCell key={c.key} className="text-center border-b px-4 py-2 text-slate-700">{safeValue(val)}</TableCell>;
                                                 })}
                                             </TableRow>
                                         ))}
                                     </TableBody>
-                                </Table>
+                                </table>
                             </div>
+
                         )}
                     </TabsContent>
 
-                    <TabsContent value="history" className="mt-6">
+                    <TabsContent value="history" className="mt-0 flex-1 flex flex-col overflow-hidden">
                         {completed.length === 0 ? (
                             <div className="text-center py-12 text-gray-500">No follow-up history</div>
-                        ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead className="w-[50px] text-center">
-                                                <Checkbox
-                                                    checked={selectedRows.size === completed.length && completed.length > 0}
-                                                    onCheckedChange={toggleAll}
-                                                />
-                                            </TableHead>
-                                            {columns.map(c => <TableHead key={c.key} className="text-center">{c.label}</TableHead>)}
+                        ) : (                            <div className="border rounded-lg overflow-auto shadow-sm flex-1 relative h-full">
+                                <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                        <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                                            {historyColumns.map(c => (
+                                                <TableHead key={c.key} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-center font-bold text-slate-700 uppercase whitespace-nowrap">{c.label}</TableHead>
+                                            ))}
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {completed.map(rec => (
                                             <TableRow key={rec.id}>
-                                                <TableCell>
-                                                    <Checkbox
-                                                        checked={selectedRows.has(rec.id)}
-                                                        onCheckedChange={() => toggleRow(rec.id)}
-                                                    />
-                                                </TableCell>
-                                                {columns.map((c) => {
+                                                {historyColumns.map((c) => {
                                                     const val = rec.data[c.key];
 
                                                     // LR Copy Logic
                                                     if (c.key === "lrCopy") {
                                                         return (
-                                                            <TableCell key={c.key} className="text-center">
+                                                            <TableCell key={c.key} className="text-center border-b px-4 py-2">
                                                                 {val && val.trim() !== "" ? (
                                                                     <a
                                                                         href={val}
@@ -620,30 +630,20 @@ export default function TransporterFollowUp() {
                                                         );
                                                     }
 
-                                                    // Expected Date Logic
-                                                    if (c.key === "expectedDate") {
-                                                        let displayDate = safeValue(val);
-                                                        if (displayDate !== "-") {
-                                                            const dateObj = new Date(val);
-                                                            if (!isNaN(dateObj.getTime())) {
-                                                                displayDate = dateObj.toLocaleDateString("en-GB", {
-                                                                    day: "2-digit",
-                                                                    month: "short",
-                                                                    year: "numeric"
-                                                                });
-                                                            }
-                                                        }
-                                                        return <TableCell key={c.key} className="text-center">{displayDate}</TableCell>;
+                                                    // Planned, Actual & Expected Date Logic
+                                                    if (c.key === "plannedDate" || c.key === "actualDate" || c.key === "expectedDate") {
+                                                        return <TableCell key={c.key} className="text-center border-b px-4 py-2 text-slate-700">{formatDateDash(val)}</TableCell>;
                                                     }
 
                                                     // Default Logic
-                                                    return <TableCell key={c.key} className="text-center">{safeValue(val)}</TableCell>;
+                                                    return <TableCell key={c.key} className="text-center border-b px-4 py-2 text-slate-700">{safeValue(val)}</TableCell>;
                                                 })}
                                             </TableRow>
                                         ))}
                                     </TableBody>
-                                </Table>
+                                </table>
                             </div>
+
                         )}
                     </TabsContent>
                 </Tabs>

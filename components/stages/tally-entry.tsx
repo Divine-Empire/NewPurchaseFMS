@@ -107,7 +107,7 @@ export default function Stage9() {
     setIsSubmitting(true);
     try {
       const timestamp = getFmsTimestamp();
-      
+
       const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
 
       // Process sequentially
@@ -365,7 +365,7 @@ export default function Stage9() {
 
   // Pending columns
   const pendingColumns = [
-    { key: "indentNumber", label: "Indent #" },
+    { key: "indentNumber", label: "Indent No." },
     { key: "createdBy", label: "Created By" },
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
@@ -378,19 +378,19 @@ export default function Stage9() {
     { key: "poCopy", label: "PO Copy" },
     { key: "receiptLiftNumber", label: "Unit Tracking No." },
     { key: "receivedQty", label: "Rec. Qty" },
-    { key: "invoiceNumber", label: "Invoice #" },
+    { key: "invoiceNumber", label: "Invoice No." },
     { key: "invoiceDate", label: "Invoice Date" },
-    { key: "srnNumber", label: "SRN #" },
+    { key: "srnNumber", label: "SRN No." },
     { key: "qcRequirement", label: "QC Required" },
     { key: "receivedItemImage", label: "Rec. Item Img" },
     { key: "billAttachment", label: "Bill Attach" },
+    { key: "plan8", label: "Planned" },
   ];
 
   // History columns
   const historyColumns = [
     ...pendingColumns,
-    { key: "plan8", label: "Plan 8" },
-    { key: "actual8", label: "Actual 8" },
+    { key: "actual8", label: "Actual" },
     { key: "doneBy", label: "Tally Done By" },
     { key: "doneDate", label: "Tally Date" },
     { key: "tallyStatus", label: "Tally Status" },
@@ -434,6 +434,16 @@ export default function Stage9() {
       rate: data.rate || "-",
       terms: data.terms || "-",
     };
+  };
+
+  const formatDateDash = (dateStr: any) => {
+    if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
+    const d = parseSheetDate(dateStr);
+    if (!d || isNaN(d.getTime())) return dateStr;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${day}-${month}-${year}`;
   };
 
   // Safe value getter with lifting data support
@@ -499,7 +509,7 @@ export default function Stage9() {
 
       const lowKey = key.toLowerCase();
       if ((lowKey.includes("date") || lowKey.includes("plan") || lowKey.includes("actual"))) {
-        return formatDate(val);
+        return formatDateDash(val);
       }
 
       return String(val);
@@ -510,141 +520,15 @@ export default function Stage9() {
 
   if (isLoading && sheetRecords.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <Loader2 className="w-8 h-8 animate-spin text-black" />
-        <p className="text-gray-500 animate-pulse">Fetching records from sheet...</p>
+      <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+        <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-600" />
+        <p className="text-lg animate-pulse text-indigo-900 font-medium">Fetching records from sheet...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold">Stage 9: Tally Entry</h2>
-          </div>
-          <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Show Columns:</Label>
-            <Select value="" onValueChange={() => { }}>
-              <SelectTrigger className="w-40">
-                <SelectValue
-                  placeholder={
-                    activeTab === "pending"
-                      ? `${selectedPendingColumns.length} selected`
-                      : `${selectedHistoryColumns.length} selected`
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent className="w-40 max-h-96 overflow-y-auto">
-                <div className="p-2">
-                  <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
-                    <Checkbox
-                      checked={
-                        activeTab === "pending"
-                          ? selectedPendingColumns.length === pendingColumns.length
-                          : selectedHistoryColumns.length === historyColumns.length
-                      }
-                      onCheckedChange={(checked) => {
-                        if (activeTab === "pending") {
-                          setSelectedPendingColumns(
-                            checked ? pendingColumns.map((c) => c.key) : []
-                          );
-                        } else {
-                          setSelectedHistoryColumns(
-                            checked ? historyColumns.map((c) => c.key) : []
-                          );
-                        }
-                      }}
-                    />
-                    <Label className="text-sm font-medium">All</Label>
-                  </div>
-                  {(activeTab === "pending" ? pendingColumns : historyColumns).map(
-                    (col) => (
-                      <div
-                        key={col.key}
-                        className="flex items-center space-x-2 py-1"
-                      >
-                        <Checkbox
-                          checked={
-                            activeTab === "pending"
-                              ? selectedPendingColumns.includes(col.key)
-                              : selectedHistoryColumns.includes(col.key)
-                          }
-                          onCheckedChange={(checked) => {
-                            if (activeTab === "pending") {
-                              setSelectedPendingColumns(
-                                checked
-                                  ? [...selectedPendingColumns, col.key]
-                                  : selectedPendingColumns.filter(
-                                    (c) => c !== col.key
-                                  )
-                              );
-                            } else {
-                              setSelectedHistoryColumns(
-                                checked
-                                  ? [...selectedHistoryColumns, col.key]
-                                  : selectedHistoryColumns.filter(
-                                    (c) => c !== col.key
-                                  )
-                              );
-                            }
-                          }}
-                        />
-                        <Label className="text-sm">{col.label}</Label>
-                      </div>
-                    )
-                  )}
-                </div>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
-
-      {/* Search Filter */}
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white"
-          />
-        </div>
-
-        {/* Warehouse Filter */}
-        <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-          <SelectTrigger className="w-[150px] bg-white">
-            <SelectValue placeholder="Select warehouse" />
-          </SelectTrigger>
-          <SelectContent className="bg-white">
-            <SelectItem value="All">All Warehouses</SelectItem>
-            <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
-            <SelectItem value="Others">Others</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4" />
-          )}
-        </Button>
-
-        {/* Bulk Action Button - Moved Here */}
-        {selectedRows.size >= 1 && (
-          <div className="ml-auto flex items-center gap-4">
-            <Button onClick={handleOpenModal} className="bg-blue-600 hover:bg-blue-700 text-white">
-              Tally Entry ({selectedRows.size})
-            </Button>
-          </div>
-        )}
-      </div>
-
+    <div className="p-6 min-h-screen bg-[#f8fafc]">
       {/* Modal Form */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-md">
@@ -659,7 +543,6 @@ export default function Stage9() {
           )}
 
           <div className="grid gap-4 py-4">
-
             {/* Done By */}
             <div className="grid gap-2">
               <Label>Done By *</Label>
@@ -734,7 +617,6 @@ export default function Stage9() {
                 </Select>
               </div>
             )}
-
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
@@ -749,60 +631,249 @@ export default function Stage9() {
         </DialogContent>
       </Dialog>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-          <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
-        </TabsList>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as any)}
+        className="w-full"
+      >
+        {/* Sticky Header and Tabs Container */}
+        <div className="sticky top-0 z-50 bg-[#f8fafc] -mx-6 px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
+          {/* Header Card */}
+          <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
+            <div className="flex items-start justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <FileText className="w-7 h-7 text-indigo-600" />
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">
+                    Stage 9: Tally Entry
+                  </h2>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 flex-1 justify-end flex-wrap">
+                {/* Column Selection */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-slate-600">
+                    Columns:
+                  </Label>
+                  <Select value="" onValueChange={() => { }}>
+                    <SelectTrigger className="w-40 bg-white border-slate-200 h-9 text-slate-900">
+                      <SelectValue
+                        placeholder={
+                          activeTab === "pending"
+                            ? `${selectedPendingColumns.length} selected`
+                            : `${selectedHistoryColumns.length} selected`
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="w-56 max-h-96 overflow-y-auto">
+                      <div className="p-2">
+                        <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
+                          <Checkbox
+                            id="select-all-columns"
+                            checked={
+                              activeTab === "pending"
+                                ? selectedPendingColumns.length ===
+                                pendingColumns.length
+                                : selectedHistoryColumns.length ===
+                                historyColumns.length
+                            }
+                            onCheckedChange={(checked) => {
+                              if (activeTab === "pending") {
+                                setSelectedPendingColumns(
+                                  checked ? pendingColumns.map((c) => c.key) : []
+                                );
+                              } else {
+                                setSelectedHistoryColumns(
+                                  checked ? historyColumns.map((c) => c.key) : []
+                                );
+                              }
+                            }}
+                          />
+                          <Label
+                            htmlFor="select-all-columns"
+                            className="text-sm font-semibold text-slate-900 cursor-pointer"
+                          >
+                            Select All
+                          </Label>
+                        </div>
+                        {(activeTab === "pending"
+                          ? pendingColumns
+                          : historyColumns
+                        ).map((col) => (
+                          <div
+                            key={col.key}
+                            className="flex items-center space-x-2 py-1.5 hover:bg-slate-50 px-1 rounded transition-colors"
+                          >
+                            <Checkbox
+                              id={`col-${col.key}`}
+                              checked={
+                                activeTab === "pending"
+                                  ? selectedPendingColumns.includes(col.key)
+                                  : selectedHistoryColumns.includes(col.key)
+                              }
+                              onCheckedChange={(checked) => {
+                                if (activeTab === "pending") {
+                                  setSelectedPendingColumns(
+                                    checked
+                                      ? [...selectedPendingColumns, col.key]
+                                      : selectedPendingColumns.filter(
+                                        (c) => c !== col.key
+                                      )
+                                  );
+                                } else {
+                                  setSelectedHistoryColumns(
+                                    checked
+                                      ? [...selectedHistoryColumns, col.key]
+                                      : selectedHistoryColumns.filter(
+                                        (c) => c !== col.key
+                                      )
+                                  );
+                                }
+                              }}
+                            />
+                            <Label
+                              htmlFor={`col-${col.key}`}
+                              className="text-sm cursor-pointer flex-1 text-slate-700"
+                            >
+                              {col.label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Warehouse Filter */}
+                <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                  <SelectTrigger className="w-[160px] bg-white border-slate-200 h-9 text-slate-900">
+                    <SelectValue placeholder="Warehouse" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    <SelectItem value="All">All Warehouses</SelectItem>
+                    <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+                    <SelectItem value="Others">Others</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Search */}
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                  <input
+                    placeholder="Search records..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-9 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                </div>
+
+                {/* Refresh */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={fetchData}
+                  disabled={isLoading}
+                  className="h-9 w-9 border-slate-200"
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 text-slate-600" />
+                  )}
+                </Button>
+
+                {/* Bulk Action */}
+                {selectedRows.size >= 1 && activeTab === "pending" && (
+                  <Button
+                    onClick={handleOpenModal}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 shadow-sm whitespace-nowrap"
+                  >
+                    Tally Entry ({selectedRows.size})
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <TabsList className="grid w-full grid-cols-2 h-12 bg-slate-100/50 p-1 rounded-lg">
+            <TabsTrigger
+              value="pending"
+              className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+            >
+              Pending ({pending.length})
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+            >
+              History ({completed.length})
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
 
         {/* Pending Tab */}
-        <TabsContent value="pending" className="mt-6">
+        <TabsContent value="pending" className="mt-0 outline-none">
           {pending.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <p className="text-lg">No pending Tally entries</p>
+            <div className="text-center py-12 text-gray-500 bg-white border rounded-lg shadow-sm">
+              <FileText className="w-12 h-12 mx-auto mb-3 text-slate-200" />
+              <p className="text-lg text-slate-600 font-medium">No pending Tally entries</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12 sticky left-0 bg-white z-20">
+            <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm overflow-y-auto">
+              <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                  <tr className="hover:bg-transparent border-none">
+                    <th className="sticky left-0 z-40 bg-slate-50 w-12 border-b text-center px-4 py-3">
                       <Checkbox
                         checked={
-                          selectedRows.size === pending.length && pending.length > 0
+                          selectedRows.size === pending.length &&
+                          pending.length > 0
                         }
                         onCheckedChange={toggleAll}
+                        className="translate-y-[2px]"
                       />
-                    </TableHead>
-                    {/* Reverted sticky ID column to fix overlap issue */}
+                    </th>
                     {pendingColumns
                       .filter((c) => selectedPendingColumns.includes(c.key))
                       .map((col) => (
-                        <TableHead key={col.key}>{col.label}</TableHead>
+                        <th
+                          key={col.key}
+                          className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                        >
+                          {col.label}
+                        </th>
                       ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
                   {pending.map((record: any) => (
-                    <TableRow key={record.id}>
-                      <TableCell className="w-12 sticky left-0 bg-white z-10">
+                    <tr
+                      key={record.id}
+                      className="hover:bg-gray-50 transition-colors group"
+                    >
+                      <td className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b text-center px-4 py-2">
                         <Checkbox
                           checked={selectedRows.has(record.id)}
                           onCheckedChange={() => toggleRow(record.id)}
+                          className="translate-y-[2px]"
                         />
-                      </TableCell>
-                      {/* Reverted sticky ID column to fix overlap issue */}
+                      </td>
                       {pendingColumns
                         .filter((c) => selectedPendingColumns.includes(c.key))
                         .map((col) => (
-                          <TableCell key={col.key}>
+                          <td
+                            key={col.key}
+                            className="border-b px-4 py-2 text-center text-slate-700"
+                          >
                             {safeValue(record, col.key)}
-                          </TableCell>
+                          </td>
                         ))}
-                    </TableRow>
+                    </tr>
                   ))}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
           )}
         </TabsContent>
@@ -814,31 +885,42 @@ export default function Stage9() {
               <p className="text-lg">No Tally history</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
+            <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm overflow-y-auto">
+              <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                  <tr className="hover:bg-transparent border-none">
                     {historyColumns
                       .filter((c) => selectedHistoryColumns.includes(c.key))
                       .map((col) => (
-                        <TableHead key={col.key}>{col.label}</TableHead>
+                        <th
+                          key={col.key}
+                          className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                        >
+                          {col.label}
+                        </th>
                       ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+                  </tr>
+                </thead>
+                <tbody className="bg-white">
                   {completed.map((record: any) => (
-                    <TableRow key={record.id}>
+                    <tr
+                      key={record.id}
+                      className="hover:bg-indigo-50/50 transition-colors"
+                    >
                       {historyColumns
                         .filter((c) => selectedHistoryColumns.includes(c.key))
                         .map((col) => (
-                          <TableCell key={col.key}>
+                          <td
+                            key={col.key}
+                            className="border-b px-4 py-2 text-center text-slate-700"
+                          >
                             {safeValue(record, col.key)}
-                          </TableCell>
+                          </td>
                         ))}
-                    </TableRow>
+                    </tr>
                   ))}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
           )}
         </TabsContent>

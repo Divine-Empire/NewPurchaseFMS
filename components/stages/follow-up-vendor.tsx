@@ -89,6 +89,16 @@ interface RecordLifting {
   indentNumber: string;
 }
 
+const formatDateDash = (date: any) => {
+  if (!date || date === "-" || date === "—") return "-";
+  const d = date instanceof Date ? date : parseSheetDate(date);
+  if (!d || isNaN(d.getTime())) return typeof date === 'string' ? date : "-";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy}`;
+};
+
 const TransporterCombobox = ({
   value,
   onChange,
@@ -192,9 +202,10 @@ export default function Stage6() {
   const [unifiedLiftingQtys, setUnifiedLiftingQtys] = useState<Record<string, string>>({});
 
   const baseColumns = [
-    { key: "indentNumber", label: "Indent #", icon: null },
+    { key: "indentNumber", label: "Indent No.", icon: null },
     { key: "itemName", label: "Item", icon: null },
     { key: "quantity", label: "Qty", icon: null },
+    { key: "planned5", label: "Planned", icon: null },
     { key: "totalLifted", label: "Total Dispatch Qty", icon: null },
     { key: "pendingLifted", label: "Pending Dispatch Qty", icon: null },
   ];
@@ -360,15 +371,15 @@ export default function Stage6() {
                 poCopy: row[58],
                 poRemarks: row[59],
 
-                // Stage 6 Data (Dispatch) - Correct Indices (BG=58, BH=59, BI=60, BJ=61, BK=62, BL=63)
-                planned5: row[60],       // BG
-                actual5: row[61],        // BH
-                status: row[60],         // BI
-                poNo: row[61],           // BJ
-                nextFollow: row[62],     // BK
-                remarks: row[63],        // BL
-                totalLifted: row[63],    // BL
-                pendingLifted: row[64],  // BM
+                // Stage 6 Data (Dispatch) - Indices: BI=60, BJ=61, BK=62, BL=63
+                planned5: row[60],       // BI: Planned Stage 6 Date
+                actual5: row[61],        // BJ: Actual Stage 6 Date (per user requirement)
+                status: row[62],         // BK
+                poNo: row[63],           // BL
+                nextFollow: row[64],     // BM
+                remarks: row[65],        // BN
+                totalLifted: row[66],    // BO
+                pendingLifted: row[67],  // BP
                 finalVendorName: row[48] || "", // AW: Final Vendor Name
 
                 // Lifting Data (Indices 64-72)
@@ -440,6 +451,20 @@ export default function Stage6() {
         );
       });
   }, [sheetRecords, searchTerm]);
+
+  const filteredHistoryData = useMemo(() => {
+    return receivingAccountsData.filter((row) => {
+      const searchLower = searchTerm.toLowerCase();
+      if (!searchLower) return true;
+      return (
+        row.indentNumber?.toLowerCase().includes(searchLower) ||
+        row.itemName?.toLowerCase().includes(searchLower) ||
+        row.vendorName?.toLowerCase().includes(searchLower) ||
+        String(row.poNumber || "").toLowerCase().includes(searchLower) ||
+        row.liftNo?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [receivingAccountsData, searchTerm]);
 
   const getLiftCounter = useCallback(() => {
     const liftedCount = sheetRecords.reduce((acc, r) => {
@@ -918,9 +943,9 @@ export default function Stage6() {
   })();
 
   return (
-    <div className="p-6">
+    <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="mb-6 p-6 bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
@@ -990,8 +1015,9 @@ export default function Stage6() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full flex-1 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between shrink-0 mb-4">
+          <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">
           <TabsTrigger
             value="pending"
             className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
@@ -1020,8 +1046,20 @@ export default function Stage6() {
           </TabsTrigger>
         </TabsList>
 
+        {selectedRecordIds.length > 0 && activeTab === "pending" && (
+          <Button
+            onClick={handleBulkOpen}
+            disabled={selectedRecordIds.length === 0}
+            size="sm"
+            className="bg-slate-900 hover:bg-slate-800 text-white"
+          >
+            Follow-Up Selected
+          </Button>
+        )}
+        </div>
+
         {/* PENDING */}
-        <TabsContent value="pending" className="mt-6">
+        <TabsContent value="pending" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -1033,23 +1071,9 @@ export default function Stage6() {
             </div>
           ) : (
             <>
-              {/* Top action bar - like PO Entry module */}
-              <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm text-gray-600">
-                  {selectedRecordIds.length} item{selectedRecordIds.length !== 1 ? "s" : ""} selected
-                </p>
-                <Button
-                  onClick={handleBulkOpen}
-                  disabled={selectedRecordIds.length === 0}
-                  size="sm"
-                >
-                  Follow-Up Selected
-                </Button>
-              </div>
-
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-lg overflow-auto flex-1 flex flex-col">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="bg-gray-100 sticky top-0 z-10">
                     <TableRow>
                       <TableHead className="w-12">
                         <Checkbox
@@ -1060,18 +1084,18 @@ export default function Stage6() {
                           onCheckedChange={selectAll}
                         />
                       </TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
                       {baseColumns
                         .filter((c) => selectedColumns.includes(c.key))
                         .map((col) => (
                           <TableHead key={col.key} className={cn((col.key === "totalLifted" || col.key === "pendingLifted") && "text-center")}>{col.label}</TableHead>
                         ))}
                       <TableHead>Vendor</TableHead>
-                      <TableHead>Rate/Qty</TableHead>
-                      <TableHead>Payment Terms</TableHead>
-                      <TableHead>Exp. Delivery</TableHead>
+                      <TableHead>Rate</TableHead>
+                      <TableHead>Terms</TableHead>
+                      <TableHead>Delivery Date</TableHead>
                       <TableHead>Warranty</TableHead>
-                      <TableHead>Attachment</TableHead>
+                      <TableHead>Warranty Attach</TableHead>
                       <TableHead>Approved By</TableHead>
                       <TableHead>PO Number</TableHead>
                       <TableHead>Basic Value</TableHead>
@@ -1106,7 +1130,9 @@ export default function Stage6() {
                             .filter((c) => selectedColumns.includes(c.key))
                             .map((col) => (
                               <TableCell key={col.key} className={cn((col.key === "totalLifted" || col.key === "pendingLifted") && "text-center")}>
-                                {record.data[col.key] || "-"}
+                                {col.key === "planned5"
+                                  ? formatDateDash(record.data[col.key])
+                                  : record.data[col.key] || "-"}
                               </TableCell>
                             ))}
                           <TableCell className="font-medium">{v.name}</TableCell>
@@ -1186,7 +1212,7 @@ export default function Stage6() {
         </TabsContent>
 
         {/* HISTORY - Displays data from RECEIVING-ACCOUNTS sheet */}
-        <TabsContent value="history" className="mt-6">
+        <TabsContent value="history" className="mt-0 flex-1 flex flex-col overflow-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg shadow-sm">
               <Loader2 className="w-12 h-12 animate-spin text-black mb-4" />
@@ -1198,32 +1224,34 @@ export default function Stage6() {
               <p className="text-lg">No records found</p>
             </div>
           ) : (
-            <div className="border rounded-lg overflow-x-auto">
+            <div className="border rounded-lg overflow-auto flex-1 flex flex-col">
               <Table>
-                <TableHeader className="bg-gray-100 sticky top-0">
+                <TableHeader className="bg-gray-100 sticky top-0 z-10">
                   <TableRow className="border-b-2">
-                    <TableHead>Indent #</TableHead>
-                    <TableHead>Unit Tracking No.</TableHead>
-                    <TableHead>Vendor Name</TableHead>
-                    <TableHead>PO Number</TableHead>
-                    <TableHead>Next Follow-Up</TableHead>
+                    <TableHead>Indent No.</TableHead>
+                    <TableHead>Planned</TableHead>
+                    <TableHead>Actual</TableHead>
+                    <TableHead>Lift No.</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>PO No.</TableHead>
+                    <TableHead>Follow-Up Date</TableHead>
                     <TableHead>Remarks</TableHead>
-                    <TableHead>Item Name</TableHead>
-                    <TableHead>Lifting Qty</TableHead>
+                    <TableHead>Item</TableHead>
+                    <TableHead>Qty Lifted</TableHead>
                     <TableHead>Transporter</TableHead>
-                    <TableHead>Vehicle No</TableHead>
-                    <TableHead>Contact No</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead>Contact</TableHead>
                     <TableHead>LR No</TableHead>
                     <TableHead>Dispatch Date</TableHead>
-                    <TableHead>Freight Amt</TableHead>
-                    <TableHead>Advance Amt</TableHead>
+                    <TableHead>Freight</TableHead>
+                    <TableHead>Advance</TableHead>
                     <TableHead>Payment Date</TableHead>
-                    <TableHead>Payment Status</TableHead>
-                    <TableHead>Bilty Copy</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Bilty</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {receivingAccountsData.map((row) => {
+                  {filteredHistoryData.map((row) => {
                     const formatDisplayDate = (d: any) => {
                       if (!d || d === "" || d === "-") return "-";
                       const date = new Date(d);
@@ -1231,13 +1259,21 @@ export default function Stage6() {
                       return date.toLocaleDateString("en-IN");
                     };
 
+                    // Fetch matching INDENT-LIFT record to get planned5 and actual5
+                    const indentRecord = sheetRecords.find((r) => 
+                      String(r.data.indentNumber).trim().toLowerCase() === 
+                      String(row.indentNumber).trim().toLowerCase()
+                    );
+                    
                     return (
                       <TableRow key={row.id} className="bg-green-50/50 hover:bg-green-100/50">
                         <TableCell className="font-medium">{row.indentNumber || "-"}</TableCell>
+                        <TableCell>{indentRecord ? formatDateDash(indentRecord.data.planned5) : "-"}</TableCell>
+                        <TableCell>{indentRecord ? formatDateDash(indentRecord.data.actual5) : "-"}</TableCell>
                         <TableCell>{row.liftNo || "-"}</TableCell>
                         <TableCell>{row.vendorName || "-"}</TableCell>
                         <TableCell className="font-mono">{row.poNumber || "-"}</TableCell>
-                        <TableCell className="font-medium text-blue-700">{formatDisplayDate(row.nextFollowUpDate)}</TableCell>
+                        <TableCell>{formatDisplayDate(row.nextFollowUpDate)}</TableCell>
                         <TableCell>{row.remarks || "-"}</TableCell>
                         <TableCell>{row.itemName || "-"}</TableCell>
                         <TableCell>{row.liftingQty || "-"}</TableCell>
@@ -1592,7 +1628,7 @@ export default function Stage6() {
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h4 className="font-semibold text-lg">
-                          Lift the Material - Indent #{record.data.indentNumber}
+                          Lift the Material - Indent No.{record.data.indentNumber}
                         </h4>
                         <p className="text-sm text-gray-600">
                           {record.data.itemName} | Qty: {record.data.quantity} |

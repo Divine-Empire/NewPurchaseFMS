@@ -22,24 +22,26 @@ import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 // I(8): Planned      J(9): Actual
 
 const PENDING_COLUMNS = [
-    { key: "indentNo", label: "Indent #" },
+    { key: "indentNo", label: "Indent No." },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
     { key: "invoiceDate", label: "Invoice Date" },
     { key: "serialNo", label: "Serial No." },
     { key: "warrantyEnd", label: "Warranty End" },
+    { key: "planned", label: "Planned" },
 ];
 
 const HISTORY_COLUMNS = [
-    { key: "indentNo", label: "Indent #" },
+    { key: "indentNo", label: "Indent No." },
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "vendorName", label: "Vendor Name" },
     { key: "itemName", label: "Item Name" },
     { key: "invoiceDate", label: "Invoice Date" },
     { key: "serialNo", label: "Claimed Serial No." },
     { key: "warrantyEnd", label: "Warranty End" },
-    { key: "actual", label: "Claimed On" },
+    { key: "planned", label: "Planned" },
+    { key: "actual", label: "Actual" },
 ];
 
 
@@ -110,7 +112,7 @@ export default function WarrantyClaim() {
 
             if (claimJson.success && Array.isArray(claimJson.data)) {
                 // Warranty_Claim data starts from row 6 -> slice(5)
-                const claimRows = claimJson.data.slice(5).filter((row: any) => row[0] && String(row[0]).trim() !== "");
+                const claimRows = claimJson.data.slice(6).filter((row: any) => row[0] && String(row[0]).trim() !== "");
 
                 claimRows.forEach((row: any, i: number) => {
                     const indentNo = String(row[0] || "").trim();
@@ -232,7 +234,16 @@ export default function WarrantyClaim() {
         }
     }, [selectedIds, pending, fetchData]);
 
-    // ─── Cell renderer ────────────────────────────────────────────────────────
+    const formatDateDash = (dateStr: any) => {
+        if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
+        const d = parseSheetDate(dateStr);
+        if (!d || isNaN(d.getTime())) return dateStr;
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${day}-${month}-${year}`;
+    };
+
     const renderCell = (data: any, key: string) => {
         const val = data?.[key];
 
@@ -252,8 +263,13 @@ export default function WarrantyClaim() {
         }
 
         // Date columns
-        if (key === "invoiceDate" || key === "planned" || key === "actual" || key === "warrantyEnd") {
-            return formatDate(val);
+        if (
+            key === "invoiceDate" ||
+            key === "planned" ||
+            key === "actual" ||
+            key === "warrantyEnd"
+        ) {
+            return formatDateDash(val);
         }
 
         if (!val || String(val).trim() === "" || val === "-") return "-";
@@ -262,127 +278,159 @@ export default function WarrantyClaim() {
 
     // ─── Render ───────────────────────────────────────────────────────────────
     return (
-        <div className="p-6">
-            {/* Header */}
-            <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
-                <div className="flex items-start justify-between flex-wrap gap-4">
-                    <div className="flex items-center gap-3">
-                        <ShieldAlert className="w-7 h-7 text-indigo-600" />
-                        <div>
-                            <h2 className="text-2xl font-bold">Stage: Warranty Claim</h2>
+        <div className="p-6 min-h-screen bg-[#f8fafc]">
+            <Tabs
+                value={activeTab}
+                onValueChange={(v) => setActiveTab(v as any)}
+                className="w-full"
+            >
+                {/* Sticky Header and Tabs Container */}
+                <div className="sticky top-0 z-50 bg-[#f8fafc] -mx-6 px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
+                    {/* Header Card */}
+                    <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
+                        <div className="flex items-start justify-between flex-wrap gap-4">
+                            <div className="flex items-center gap-3">
+                                <ShieldAlert className="w-7 h-7 text-indigo-600" />
+                                <div>
+                                    <h2 className="text-2xl font-bold text-slate-900">Stage: Warranty Claim</h2>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4 flex-1 max-w-lg justify-end">
+                                {selectedIds.length > 0 && activeTab === "pending" && (
+                                    <Button 
+                                        onClick={handleBulkSubmit} 
+                                        disabled={isSubmitting} 
+                                        className="bg-indigo-600 hover:bg-indigo-700 whitespace-nowrap text-white shadow-sm"
+                                    >
+                                        {isSubmitting ? (
+                                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting...</>
+                                        ) : (
+                                            `Submit Claim (${selectedIds.length})`
+                                        )}
+                                    </Button>
+                                )}
+                                <div className="relative flex-1 max-w-sm">
+                                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                                    <Input
+                                        placeholder="Search by Indent, Item, Vendor..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="pl-9 bg-white border-slate-200 focus:ring-indigo-500 focus:border-indigo-500"
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div className="flex items-center gap-4 flex-1 max-w-lg justify-end">
-                        {selectedIds.length > 0 && activeTab === "pending" && (
-                            <Button onClick={handleBulkSubmit} disabled={isSubmitting} className="bg-indigo-600 hover:bg-indigo-700 whitespace-nowrap">
-                                {isSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting...</> : `Submit Claim (${selectedIds.length})`}
-                            </Button>
-                        )}
-                        <div className="relative flex-1 max-w-sm">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                            <Input
-                                placeholder="Search by Indent, Item, Vendor..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9 bg-white"
-                            />
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            {isLoading ? (
-                <div className="flex flex-col items-center justify-center py-24 text-gray-500">
-                    <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-600" />
-                    <p className="text-lg animate-pulse text-indigo-900 font-medium">Loading records...</p>
-                </div>
-            ) : (
-                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-                        <TabsTrigger value="history">History ({history.length})</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-2 h-12 bg-slate-100/50 p-1 rounded-lg">
+                        <TabsTrigger 
+                            value="pending"
+                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                        >
+                            Pending ({pending.length})
+                        </TabsTrigger>
+                        <TabsTrigger 
+                            value="history"
+                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                        >
+                            History ({history.length})
+                        </TabsTrigger>
                     </TabsList>
+                </div>
 
-                    {/* ── PENDING ── */}
-                    <TabsContent value="pending" className="mt-6">
-                        {pending.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500">
-                                <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                                <p className="text-lg">No pending Warranty Claims</p>
-                            </div>
-                        ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead className="w-[50px]">
-                                                <Checkbox
-                                                    checked={selectedIds.length > 0 && selectedIds.length === pending.length}
-                                                    onCheckedChange={toggleAll}
-                                                />
-                                            </TableHead>
-                                            {PENDING_COLUMNS.map((c) => (
-                                                <TableHead key={c.key}>{c.label}</TableHead>
-                                            ))}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {pending.map((rec) => (
-                                            <TableRow key={rec.id} className="hover:bg-gray-50 text-sm">
-                                                <TableCell>
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+                        <Loader2 className="w-8 h-8 animate-spin mb-4 text-indigo-600" />
+                        <p className="text-lg animate-pulse text-indigo-900 font-medium">Loading records...</p>
+                    </div>
+                ) : (
+                    <>
+                        {/* ── PENDING ── */}
+                        <TabsContent value="pending" className="mt-0 outline-none">
+                            {pending.length === 0 ? (
+                                <div className="text-center py-12 text-gray-500">
+                                    <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                                    <p className="text-lg text-black">No pending Warranty Claims</p>
+                                </div>
+                            ) : (
+                                <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm">
+                                    <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                                        <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                            <tr className="hover:bg-transparent border-none">
+                                                <th className="sticky left-0 z-40 bg-slate-50 w-[50px] border-b text-center px-4 py-3">
                                                     <Checkbox
-                                                        checked={selectedIds.includes(rec.id)}
-                                                        onCheckedChange={() => toggleSelection(rec.id)}
+                                                        checked={selectedIds.length > 0 && selectedIds.length === pending.length}
+                                                        onCheckedChange={toggleAll}
+                                                        className="translate-y-[2px]"
                                                     />
-                                                </TableCell>
-                                                {PENDING_COLUMNS.map((col) => (
-                                                    <TableCell key={col.key}>
-                                                        {renderCell(rec.data, col.key)}
-                                                    </TableCell>
+                                                </th>
+                                                {PENDING_COLUMNS.map((c) => (
+                                                    <th key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                        {c.label}
+                                                    </th>
                                                 ))}
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        )}
-                    </TabsContent>
-
-                    {/* ── HISTORY ── */}
-                    <TabsContent value="history" className="mt-6">
-                        {history.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500">
-                                <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                                <p className="text-lg">No completed Warranty Claims</p>
-                            </div>
-                        ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            {HISTORY_COLUMNS.map((c) => (
-                                                <TableHead key={c.key}>{c.label}</TableHead>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white">
+                                            {pending.map((rec) => (
+                                                <tr key={rec.id} className="hover:bg-gray-50 group transition-colors">
+                                                    <td className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b text-center px-4 py-2">
+                                                        <Checkbox
+                                                            checked={selectedIds.includes(rec.id)}
+                                                            onCheckedChange={() => toggleSelection(rec.id)}
+                                                            className="translate-y-[2px]"
+                                                        />
+                                                    </td>
+                                                    {PENDING_COLUMNS.map((col) => (
+                                                        <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                            {renderCell(rec.data, col.key)}
+                                                        </td>
+                                                    ))}
+                                                </tr>
                                             ))}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {history.map((rec) => (
-                                            <TableRow key={rec.id} className="hover:bg-gray-50">
-                                                {HISTORY_COLUMNS.map((col) => (
-                                                    <TableCell key={col.key}>
-                                                        {renderCell(rec.data, col.key)}
-                                                    </TableCell>
-                                                ))}
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        )}
-                    </TabsContent>
-                </Tabs>
-            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </TabsContent>
 
+                        {/* ── HISTORY ── */}
+                        <TabsContent value="history" className="mt-0 outline-none">
+                            {history.length === 0 ? (
+                                <div className="text-center py-12 text-gray-500">
+                                    <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                                    <p className="text-lg text-black">No completed Warranty Claims</p>
+                                </div>
+                            ) : (
+                                <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm">
+                                    <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                                        <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                            <tr className="hover:bg-transparent border-none">
+                                                {HISTORY_COLUMNS.map((c) => (
+                                                    <th key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                        {c.label}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white">
+                                            {history.map((rec) => (
+                                                <tr key={rec.id} className="hover:bg-indigo-50/50 transition-colors">
+                                                    {HISTORY_COLUMNS.map((col) => (
+                                                        <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                            {renderCell(rec.data, col.key)}
+                                                        </td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </TabsContent>
+                    </>
+                )}
+            </Tabs>
         </div>
     );
 }
