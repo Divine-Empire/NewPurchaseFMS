@@ -2,15 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, FileText, Search } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Loader2, FileText, Search, ClipboardCheck, RefreshCw } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,7 +35,6 @@ export default function Stage11() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
   const [searchTerm, setSearchTerm] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("All");
@@ -53,8 +44,6 @@ export default function Stage11() {
   const [formData, setFormData] = useState({
     checkedBy: "",
     verificationDate: new Date(),
-    invoiceNumber: "",
-    invoiceDate: "",
     remarks: "",
   });
 
@@ -130,62 +119,32 @@ export default function Stage11() {
             }
 
             return {
-              id: row[1] || `row-${originalIndex}`,
+              id: `${indentNo}_${originalIndex}`,
               rowIndex: originalIndex,
-              stage: 11,
               status,
-              originalRow: row, // Preserve data for safe updates
               data: {
-                indentNumber: row[1],
-                createdBy: row[2],
-                category: fmsRow[3], // D: Category (Indent Lift)
-                itemName: fmsRow[4], // E: Item Name (Indent Lift)
+                indentNumber: indentNo,
+                category: fmsRow[3] || row[3] || "-",
+                itemName: fmsRow[4] || row[4] || "-",
                 quantity: row[5],
                 warehouse: row[6],
                 deliveryDate: row[7],
-
-                // Stage 6 (9-24)
-                poNumber: row[4], // E: PO Number (Receiving Accounts)
-
-                // Stage 7 (25-39)
-                billAttachment: row[29], // AD: Bill (Receiving Accounts)
-                invoiceNumber: row[24], // Y: Invoice (Receiving Accounts)
-                invoiceDate: row[23], // X: Invoice Date (Receiving Accounts)
-                srnNumber: row[32],
-                receiptLiftNumber: row[28],
-
-                // Stage 8 QC (40-49)
-                qcStatus: row[28], // AC: QC Status (Receiving Accounts)
-                qcDate: row[43],
-
-                // Stage 9 Tally (50-54)
-                tallyDoneBy: row[38], // AM: Tally By (Receiving Accounts)
+                poNumber: row[4],
+                billAttachment: row[29],
+                invoiceNumber: row[24],
+                invoiceDate: row[23],
+                liftNo: row[2],
                 tallyDate: row[53],
-                tallyRemarks: row[54],
-
-                // Stage 10 Invoice Submission (AW-BB -> 48-53)
-                plan9: row[48],
-                actual9: row[49],
-                handoverBy: row[51],
-                submitToHeadOffice: row[52],
-                invoiceSubmissionDate: row[53],
-
-                // Stage 11 Verification (BC-BI -> 54-60)
-                plan10: row[54],   // BC: Plan 5
-                actual10: row[55], // BD: Actual 5
-                // delay10: row[56], // BE: Delay 5
-                verifiedReceivedBy: row[57], // BF: Received By
-                verifiedCheckedBy: row[58],  // BG: Checked By
-                verificationDate: row[59],   // BH: Verification Date
-                verificationRemarks: row[60], // BI: Verification Remarks
-
-                // FMS Data
-                approvedBy: fmsRow[12],
-                basicValue: fmsRow[55], // BD: Basic Value (Indent Lift)
-                totalWithTax: fmsRow[56], // BE: Total Value (Indent Lift)
-                poCopy: fmsRow[56],
-                ...vendorDetails,
-                vendorName: row[3], // D: Vendor Name (Receiving Accounts)
+                tallyRemarks: row[40], // AO: Tally Remarks
+                plan10: row[54],
+                actual10: row[55],
+                verifiedReceivedBy: row[57],
+                verifiedCheckedBy: row[58],
+                verificationDate: row[59],
+                verificationRemarks: row[60],
+                basicValue: fmsRow[55],
+                totalWithTax: fmsRow[56],
+                vendorName: row[3],
               }
             };
           });
@@ -234,25 +193,27 @@ export default function Stage11() {
     });
 
   const pendingColumns = [
-    { key: "indentNumber", label: "Indent #" },
+    { key: "indentNumber", label: "Indent No." },
+    { key: "liftNo", label: "Unit Tracking No." },
     { key: "category", label: "Category" },
     { key: "itemName", label: "Item" },
     { key: "quantity", label: "Qty" },
     { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor" },
-    { key: "poNumber", label: "PO #" },
-    { key: "invoiceNumber", label: "Invoice #" },
-    { key: "invoiceDate", label: "Inv. Date" },
-    { key: "basicValue", label: "Basic Val" },
-    { key: "totalWithTax", label: "Total Val" },
+    { key: "poNumber", label: "PO No." },
+    { key: "invoiceNumber", label: "Invoice No." },
+    { key: "invoiceDate", label: "Invoice Date" },
+    { key: "basicValue", label: "Basic Value" },
+    { key: "totalWithTax", label: "Total Value" },
     { key: "billAttachment", label: "Bill Attach" },
-    { key: "qcStatus", label: "QC Status" },
-    { key: "tallyDoneBy", label: "Tally By" },
+    { key: "tallyDate", label: "Tally Date" },
+    { key: "tallyRemarks", label: "Tally Remarks" },
+    { key: "plan10", label: "Planned" },
   ];
-
+ 
   const historyColumns = [
     ...pendingColumns,
-    // plan10/actual10 removed
+    { key: "actual10", label: "Actual" },
     { key: "verifiedReceivedBy", label: "Verified Received By" },
     { key: "verifiedCheckedBy", label: "Verified Checked By" },
     { key: "verificationDate", label: "Verification Date" },
@@ -285,38 +246,25 @@ export default function Stage11() {
 
   const handleOpenForm = (recordId?: string) => {
     setBulkError(null);
-    let targetRecord;
-
     if (recordId) {
       setSelectedRows(new Set([recordId]));
-      targetRecord = sheetRecords.find((r) => r.id === recordId);
-    } else {
-      if (selectedRows.size === 0) return;
-      const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
-      if (selectedRecords.length === 0) return;
-
-      // Validate Same Invoice
-      const firstInv = selectedRecords[0].data.invoiceNumber || "";
-      const isConsistent = selectedRecords.every(r => (r.data.invoiceNumber || "") === firstInv);
-
-      if (!isConsistent) {
-        setBulkError("Selected items have different Invoice Numbers. Cannot submit together.");
-      }
-      targetRecord = selectedRecords[0];
+    } else if (selectedRows.size === 0) {
+      return;
     }
 
-    if (!targetRecord) return;
+    const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
+    if (selectedRecords.length === 0) return;
 
-    const vendor = getVendorData(targetRecord);
-    const invoiceNumber = targetRecord.data?.invoiceNumber || "-";
-    const invoiceDate = targetRecord.data?.invoiceDate || "";
+    if (!recordId && selectedRows.size > 1) {
+      const firstInvoice = selectedRecords[0].data.invoiceNumber || "";
+      if (!selectedRecords.every(r => (r.data.invoiceNumber || "") === firstInvoice)) {
+        setBulkError("Selected items have different Invoice Numbers. Cannot submit together.");
+      }
+    }
 
-    setSelectedRecordId(targetRecord.id);
     setFormData({
       checkedBy: "",
       verificationDate: new Date(),
-      invoiceNumber,
-      invoiceDate,
       remarks: "",
     });
     setOpen(true);
@@ -324,62 +272,44 @@ export default function Stage11() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!selectedRecordId && selectedRows.size === 0) || !SHEET_API_URL) return;
-    if (bulkError) return; // Prevent submission if there's a bulk error
+    if (selectedRows.size === 0 || !SHEET_API_URL || bulkError) return;
 
     setIsSubmitting(true);
     try {
       const selectedRecords = sheetRecords.filter(r => selectedRows.has(r.id));
       if (selectedRecords.length === 0) return;
 
-      // 🔵 UPDATED: convert to M/D/YYYY so Google Sheets recognizes as DATE (not string)
+      const timestamp = getFmsTimestamp();
       const d = formData.verificationDate;
       const verDateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 
-      const timestamp = getFmsTimestamp();
+      await Promise.all(selectedRecords.map(async (rec) => {
+        const updates = [
+          { col: "56", val: timestamp },  // BD(55): Actual 5 (Index 55, Column 56)
+          { col: "59", val: formData.checkedBy }, // BG(58): Checked By (Index 58, Column 59)
+          { col: "60", val: verDateStr }, // BH(59): Verification Date (Index 59, Column 60)
+          { col: "61", val: formData.remarks }  // BI(60): Remarks (Index 60, Column 61)
+        ];
 
-      // Iterate and submit for ALL selected records
-      for (const rec of selectedRecords) {
-        // Create sparse row (DO NOT copy original row)
-        const rowArray = new Array(70).fill(""); // >= sheet width
-
-        // Ensure array size covers up to index 60 (BH covers index 59)
-        while (rowArray.length <= 60) {
-          rowArray.push("");
+        for (const u of updates) {
+          const params = new URLSearchParams({
+            action: "updateCell",
+            sheetName: "RECEIVING-ACCOUNTS",
+            rowIndex: rec.rowIndex.toString(),
+            columnIndex: u.col,
+            value: u.val
+          });
+          await fetch(SHEET_API_URL, { method: "POST", body: params });
         }
+      }));
 
-        // 61: Actual 10 (Verification Date)
-        rowArray[55] = timestamp; // BD(55): Actual 5
-        // 56 (BE): Delay 5 (Skip)
-
-        // 62: Verified Received By
-        rowArray[57] = ""; // BF(57): Received By
-
-        // 63: Verified Checked By
-        rowArray[58] = formData.checkedBy; // BG(58): Checked By
-
-        // 64: Verification Date
-        rowArray[59] = verDateStr; // BH(59): Verification Date
-
-        // 65: Remarks
-        rowArray[60] = formData.remarks; // BI(60): Remarks
-
-        const params = new URLSearchParams();
-        params.append("action", "update");
-        params.append("sheetName", "RECEIVING-ACCOUNTS");
-        params.append("rowIndex", rec.rowIndex.toString());
-        params.append("rowData", JSON.stringify(rowArray));
-
-        await fetch(SHEET_API_URL, { method: "POST", body: params });
-      }
-
-      toast.success("Verification completed successfully!");
+      toast.success(`${selectedRecords.length} record(s) verified successfully!`);
       setOpen(false);
       setSelectedRows(new Set());
       fetchData();
-
-    } catch (err: any) {
-      toast.error(err.message || "Failed to submit");
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Failed to submit");
     } finally {
       setIsSubmitting(false);
     }
@@ -397,12 +327,22 @@ export default function Stage11() {
     };
   };
 
+  const formatDateDash = (dateStr: any) => {
+    if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${day}-${month}-${year}`;
+  };
+
   const safeValue = (record: any, key: string) => {
     try {
       const data = record?.data;
       if (!data) return "-";
 
-      const vendor = getVendorData(record);
+      if (key === "vendorName") return data.vendorName || "-";
 
       if (key === "billAttachment") {
         const url = data.billAttachment;
@@ -424,29 +364,17 @@ export default function Stage11() {
             className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
           >
             <FileText className="w-3.5 h-3.5" />
-            View
+            <span className="truncate max-w-20">View</span>
           </a>
         );
-      }
-
-      // Prioritize vendorName from data (Column D) if available
-      if (key === "vendorName") {
-        return data.vendorName && data.vendorName !== "-" ? data.vendorName : vendor.name;
-      }
-
-      // Handle QC Status for display
-      if (key === "qcStatus") {
-        const val = data[key];
-        if (!val || val === "-") return "-";
-        return String(val).charAt(0).toUpperCase() + String(val).slice(1);
       }
 
       const val = data[key];
       if (val === undefined || val === null || String(val).trim() === "") return "-";
 
-      // Improved Date Parsing Check: Only format if key implies date
-      if ((key.includes("Date") || key.includes("plan") || key.includes("actual")) && !isNaN(Date.parse(String(val))) && !String(val).match(/^\d+$/)) {
-        return new Date(String(val)).toLocaleDateString("en-IN");
+      const lowKey = key.toLowerCase();
+      if ((lowKey.includes("date") || lowKey.includes("plan") || lowKey.includes("actual"))) {
+        return formatDateDash(val);
       }
 
       return String(val);
@@ -460,172 +388,173 @@ export default function Stage11() {
 
   if (isLoading && sheetRecords.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <Loader2 className="w-8 h-8 animate-spin text-black" />
-        <p className="text-gray-500 font-medium">Loading verifications...</p>
+      <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+        <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-600" />
+        <p className="text-lg animate-pulse text-blue-900 font-medium">Fetching verifications from system...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold">Stage 11: Verification by Accounts</h2>
-          </div>
-          <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Show Columns:</Label>
-            <Select value="" onValueChange={() => { }}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
-              </SelectTrigger>
-              <SelectContent className="w-40 max-h-96 overflow-y-auto">
-                <div className="p-2">
-                  <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
-                    <Checkbox
-                      checked={activeTab === "pending" ? selectedPendingColumns.length === pendingColumns.length : selectedHistoryColumns.length === historyColumns.length}
-                      onCheckedChange={(c) => {
-                        if (activeTab === "pending") setSelectedPendingColumns(c ? pendingColumns.map(x => x.key) : []);
-                        else setSelectedHistoryColumns(c ? historyColumns.map(x => x.key) : []);
-                      }}
-                    />
-                    <Label>All</Label>
-                  </div>
-                  {(activeTab === "pending" ? pendingColumns : historyColumns).map(col => (
-                    <div key={col.key} className="flex items-center space-x-2 py-1">
-                      <Checkbox
-                        checked={activeTab === "pending" ? selectedPendingColumns.includes(col.key) : selectedHistoryColumns.includes(col.key)}
-                        onCheckedChange={(c) => {
-                          if (activeTab === "pending") {
-                            setSelectedPendingColumns(c ? [...selectedPendingColumns, col.key] : selectedPendingColumns.filter(x => x !== col.key));
-                          } else {
-                            setSelectedHistoryColumns(c ? [...selectedHistoryColumns, col.key] : selectedHistoryColumns.filter(x => x !== col.key));
-                          }
-                        }}
-                      />
-                      <Label>{col.label}</Label>
-                    </div>
-                  ))}
+    <div className="p-6 min-h-screen bg-[#f8fafc]">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+        <div className="sticky top-0 z-50 bg-[#f8fafc] -mx-6 px-6 pt-2 pb-4 mb-4 border-b shadow-sm">
+          <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
+            <div className="flex items-start justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-blue-50 p-2 rounded-lg text-blue-600">
+                  <ClipboardCheck className="w-7 h-7" />
                 </div>
-              </SelectContent>
-            </Select>
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Stage: Verification</h2>
+                  <p className="text-sm text-slate-500">Accounts verification process</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 flex-1 justify-end flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-slate-600">Columns:</Label>
+                  <Select value="" onValueChange={() => { }}>
+                    <SelectTrigger className="w-40 bg-white border-slate-200 h-9 text-slate-900">
+                      <SelectValue placeholder={`${activeTab === "pending" ? selectedPendingColumns.length : selectedHistoryColumns.length} selected`} />
+                    </SelectTrigger>
+                    <SelectContent className="w-56 max-h-96 overflow-y-auto">
+                      <div className="p-2">
+                        <div className="flex items-center space-x-2 mb-2 pb-2 border-b">
+                          <Checkbox
+                            id="select-all-columns"
+                            checked={activeTab === "pending" ? selectedPendingColumns.length === pendingColumns.length : selectedHistoryColumns.length === historyColumns.length}
+                            onCheckedChange={(checked) => {
+                              if (activeTab === "pending") {
+                                setSelectedPendingColumns(checked ? pendingColumns.map((c) => c.key) : []);
+                              } else {
+                                setSelectedHistoryColumns(checked ? historyColumns.map((c) => c.key) : []);
+                              }
+                            }}
+                          />
+                          <Label htmlFor="select-all-columns" className="text-sm font-semibold text-slate-900 cursor-pointer">Select All</Label>
+                        </div>
+                        {(activeTab === "pending" ? pendingColumns : historyColumns).map((col) => (
+                          <div key={col.key} className="flex items-center space-x-2 py-1.5 hover:bg-slate-50 px-1 rounded transition-colors">
+                            <Checkbox
+                              id={`col-${col.key}`}
+                              checked={activeTab === "pending" ? selectedPendingColumns.includes(col.key) : selectedHistoryColumns.includes(col.key)}
+                              onCheckedChange={(checked) => {
+                                if (activeTab === "pending") {
+                                  setSelectedPendingColumns(checked ? [...selectedPendingColumns, col.key] : selectedPendingColumns.filter((c) => c !== col.key));
+                                } else {
+                                  setSelectedHistoryColumns(checked ? [...selectedHistoryColumns, col.key] : selectedHistoryColumns.filter((c) => c !== col.key));
+                                }
+                              }}
+                            />
+                            <Label htmlFor={`col-${col.key}`} className="text-sm cursor-pointer flex-1 text-slate-700">{col.label}</Label>
+                          </div>
+                        ))}
+                      </div>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
+                  <SelectTrigger className="w-[160px] bg-white border-slate-200 h-9 text-slate-900">
+                    <SelectValue placeholder="Warehouse" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    <SelectItem value="All">All Warehouses</SelectItem>
+                    <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
+                    <SelectItem value="Others">Others</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                  <Input
+                    placeholder="Search records..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 bg-white border-slate-200 h-9"
+                  />
+                </div>
+
+                <Button variant="outline" size="icon" onClick={fetchData} disabled={isLoading} className="h-9 w-9 border-slate-200">
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin text-blue-600" : "text-slate-600"}`} />
+                </Button>
+
+                {selectedRows.size > 0 && activeTab === "pending" && (
+                  <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700 text-white h-9 shadow-sm whitespace-nowrap">
+                    Verify ({selectedRows.size})
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
+
+          <TabsList className="grid w-full grid-cols-2 h-12 bg-slate-100/50 p-1 rounded-lg">
+            <TabsTrigger value="pending" className="rounded-md data-[state=active]:bg-white transition-all">Pending ({pending.length})</TabsTrigger>
+            <TabsTrigger value="history" className="rounded-md data-[state=active]:bg-white transition-all">History ({completed.length})</TabsTrigger>
+          </TabsList>
         </div>
 
-        {selectedRows.size > 0 && (
-          <div className="mt-4 flex items-center gap-4">
-            <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700 text-white">
-              Verify Selected ({selectedRows.size})
-            </Button>
-            <span className="text-sm text-gray-500">
-              {selectedRows.size} item(s) selected
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Search and Filters */}
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white"
-          />
-        </div>
-
-        {/* Warehouse Filter */}
-        <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
-          <SelectTrigger className="w-[150px] bg-white">
-            <SelectValue placeholder="Select warehouse" />
-          </SelectTrigger>
-          <SelectContent className="bg-white">
-            <SelectItem value="All">All Warehouses</SelectItem>
-            <SelectItem value="NE Warehouse">NE Warehouse</SelectItem>
-            <SelectItem value="Others">Others</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-          <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pending" className="mt-6">
+        <TabsContent value="pending" className="mt-0 outline-none">
           {pending.length === 0 ? (
-            <div className="text-center py-12 text-gray-500"><p className="text-lg">No pending verifications</p></div>
+            <div className="text-center py-24 bg-white border rounded-lg border-dashed text-slate-500">No pending verifications found</div>
           ) : (
-            <div className="border rounded-lg overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12 sticky left-0 bg-white z-20">
-                      <Checkbox
-                        checked={selectedRows.size === pending.length && pending.length > 0}
-                        onCheckedChange={toggleAll}
-                      />
-                    </TableHead>
-                    <TableHead className="bg-white z-10">Actions</TableHead>
-                    {pendingColumns.filter(c => selectedPendingColumns.includes(c.key)).map(col => (
-                      <TableHead key={col.key}>{col.label}</TableHead>
+            <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm bg-white">
+              <table className="w-full text-sm border-separate border-spacing-0 min-w-max">
+                <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm">
+                  <tr>
+                    <th className="sticky left-0 z-40 bg-slate-200 w-[50px] border-b text-center py-3">
+                      <Checkbox checked={pending.length > 0 && pending.every(r => selectedRows.has(r.id))} onCheckedChange={toggleAll} />
+                    </th>
+                    <th className="sticky left-[50px] z-40 bg-slate-200 w-[100px] border-b text-center px-4 py-3 font-semibold text-slate-900">Actions</th>
+                    {pendingColumns.filter(c => selectedPendingColumns.includes(c.key)).map(c => (
+                      <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900">{c.label}</th>
                     ))}
-
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pending.map((rec: any) => (
-                    <TableRow key={rec.id}>
-                      <TableCell className="w-12 sticky left-0 bg-white z-10">
-                        <Checkbox
-                          checked={selectedRows.has(rec.id)}
-                          onCheckedChange={() => toggleRow(rec.id)}
-                        />
-                      </TableCell>
-                      <TableCell className="bg-white z-10">
-                        <Button variant="outline" size="sm" onClick={() => handleOpenForm(rec.id)}>Verify</Button>
-                      </TableCell>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pending.map((rec) => (
+                    <tr key={rec.id} className="hover:bg-blue-50/30 transition-colors group">
+                      <td className="sticky left-0 z-20 bg-white group-hover:bg-blue-50/50 border-b text-center py-2">
+                        <Checkbox checked={selectedRows.has(rec.id)} onCheckedChange={() => toggleRow(rec.id)} />
+                      </td>
+                      <td className="sticky left-[50px] z-20 bg-white group-hover:bg-blue-50/50 border-b text-center px-4 py-2">
+                        <Button variant="outline" size="sm" onClick={() => handleOpenForm(rec.id)} className="h-8 transition-colors hover:text-blue-600">Verify</Button>
+                      </td>
                       {pendingColumns.filter(c => selectedPendingColumns.includes(c.key)).map(col => (
-                        <TableCell key={col.key}>{safeValue(rec, col.key)}</TableCell>
+                        <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">{safeValue(rec, col.key)}</td>
                       ))}
-
-                    </TableRow>
+                    </tr>
                   ))}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="history" className="mt-6">
+        <TabsContent value="history" className="mt-0 outline-none">
           {completed.length === 0 ? (
-            <div className="text-center py-12 text-gray-500"><p className="text-lg">No verified invoices yet</p></div>
+            <div className="text-center py-24 bg-white border rounded-lg border-dashed text-slate-500">No history found</div>
           ) : (
-            <div className="border rounded-lg overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky left-0 bg-white z-10 w-12"></TableHead>
-                    {historyColumns.filter(c => selectedHistoryColumns.includes(c.key)).map(col => (
-                      <TableHead key={col.key}>{col.label}</TableHead>
+            <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm bg-white">
+              <table className="w-full text-sm border-separate border-spacing-0 min-w-max">
+                <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm">
+                  <tr>
+                    {historyColumns.filter(c => selectedHistoryColumns.includes(c.key)).map(c => (
+                      <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900">{c.label}</th>
                     ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {completed.map((rec: any) => (
-                    <TableRow key={rec.id}>
-                      <TableCell className="sticky left-0 bg-white z-10"></TableCell>
+                  </tr>
+                </thead>
+                <tbody>
+                  {completed.map((rec) => (
+                    <tr key={rec.id} className="hover:bg-slate-50 transition-colors text-slate-700">
                       {historyColumns.filter(c => selectedHistoryColumns.includes(c.key)).map(col => (
-                        <TableCell key={col.key}>{safeValue(rec, col.key)}</TableCell>
+                        <td key={col.key} className="border-b px-4 py-2 text-center">{safeValue(rec, col.key)}</td>
                       ))}
-                    </TableRow>
+                    </tr>
                   ))}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
           )}
         </TabsContent>
@@ -634,46 +563,52 @@ export default function Stage11() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader><DialogTitle>Verification by Accounts ({selectedRows.size} Selected)</DialogTitle></DialogHeader>
-
-          {bulkError && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-md text-sm mb-4 border border-red-200">
-              {bulkError}
-            </div>
-          )}
-
           <div className="py-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded">
-              <div><Label>Invoice #</Label><p className="font-mono">{formData.invoiceNumber}</p></div>
-              <div><Label>Inv. Date</Label><p>{formData.invoiceDate ? new Date(formData.invoiceDate).toLocaleDateString("en-IN") : "-"}</p></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100 mb-6">
               <div>
-                <Label>Checked By *</Label>
+                <Label className="text-xs font-semibold uppercase text-gray-500 mb-1 block">Invoice No.</Label>
+                <p className="font-mono font-medium text-lg text-slate-900">{sheetRecords.find(r => selectedRows.has(r.id))?.data.invoiceNumber || "-"}</p>
+              </div>
+              <div>
+                <Label className="text-xs font-semibold uppercase text-gray-500 mb-1 block">Vendor</Label>
+                <p className="font-medium text-lg text-slate-900">{sheetRecords.find(r => selectedRows.has(r.id))?.data.vendorName || "-"}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              <div className="space-y-2">
+                <Label className="font-medium text-gray-700">Checked By *</Label>
                 <Select value={formData.checkedBy} onValueChange={(v) => setFormData({ ...formData, checkedBy: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectTrigger className="w-full shadow-sm"><SelectValue placeholder="Select checker" /></SelectTrigger>
                   <SelectContent>{checkersList.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label className="font-medium text-gray-700">Verification Date *</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full text-left font-normal border-gray-300 shadow-sm">
+                      {formData.verificationDate ? format(formData.verificationDate, "PPP") : "Pick date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={formData.verificationDate} onSelect={(d) => d && setFormData({ ...formData, verificationDate: d })} initialFocus />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
-            <div>
-              <Label>Verification Date *</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full text-left font-normal">{formData.verificationDate ? format(formData.verificationDate, "PPP") : "Pick date"}</Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar mode="single" selected={formData.verificationDate} onSelect={(d) => d && setFormData({ ...formData, verificationDate: d })} initialFocus />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div>
-              <Label>Remarks</Label>
-              <textarea className="w-full p-2 border rounded" rows={3} value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} />
+            <div className="space-y-2">
+              <Label className="font-medium text-gray-700">Remarks</Label>
+              <Input
+                placeholder="Enter verification remarks..."
+                value={formData.remarks}
+                onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                className="bg-white border-gray-300 shadow-sm"
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!isFormValid || isSubmitting || !!bulkError}>
+            <Button onClick={handleSubmit} disabled={!isFormValid || isSubmitting}>
               {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying...</> : "Verify"}
             </Button>
           </DialogFooter>

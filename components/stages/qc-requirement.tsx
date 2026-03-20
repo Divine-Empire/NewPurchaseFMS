@@ -27,9 +27,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Loader2, Search } from "lucide-react";
+import { FileText, Loader2, Search, ClipboardCheck, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { getFmsTimestamp } from "@/lib/utils";
 
 const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
 const IMAGE_FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
@@ -43,9 +43,11 @@ const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 
 
 const PENDING_COLUMNS = [
-  { key: "indentNumber", label: "Indent #" },
+  { key: "indentNumber", label: "Indent No." },
+  { key: "liftNo", label: "Unit Tracking No." },
+  { key: "plan7", label: "Planned" },
   { key: "vendorName", label: "Vendor" },
-  { key: "invoiceNumber", label: "Invoice #" },
+  { key: "invoiceNumber", label: "Invoice No." },
   { key: "itemName", label: "Item" },
   { key: "receivedQty", label: "Received Qty" },
   { key: "totalApproved", label: "Approved" },
@@ -54,9 +56,11 @@ const PENDING_COLUMNS = [
 ];
 
 const HISTORY_COLUMNS = [
-  { key: "indentNumber", label: "Indent #" },
+  { key: "indentNumber", label: "Indent No." },
   { key: "vendorName", label: "Vendor" },
   { key: "itemName", label: "Item" },
+  { key: "plan7", label: "Planned" },
+  { key: "actual7", label: "Actual" },
   { key: "qcDate", label: "QC Date" },
   { key: "qcBy", label: "QC By" },
   { key: "qcStatus", label: "Status" },
@@ -121,7 +125,7 @@ export default function Stage8() {
       let pRows: any[] = [];
 
       if (partialJson.success && Array.isArray(partialJson.data)) {
-        pRows = partialJson.data.slice(1);
+        pRows = partialJson.data.slice(7);
         pRows.forEach((r: any) => {
           const indentNo = String(r[1] || "").trim();
           if (!indentNo) return;
@@ -132,8 +136,8 @@ export default function Stage8() {
       }
 
       if (json.success && Array.isArray(json.data)) {
-        const rows = json.data.slice(6)
-          .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
+        const rows = json.data.slice(7)
+          .map((row: any, i: number) => ({ row, originalIndex: i + 8 }))
           .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
           .map(({ row, originalIndex }: any) => {
             const indentNo = String(row[1] || "").trim();
@@ -154,56 +158,22 @@ export default function Stage8() {
             }
 
             return {
-              id: row[1] || `row-${originalIndex}`,
+              id: `${indentNo}_${originalIndex}`,
               rowIndex: originalIndex,
               status,
               data: {
-                indentNumber: row[1] || "",
+                indentNumber: indentNo,
                 liftNo: row[2] || "",
                 vendorName: row[3] || "",
                 poNumber: row[4] || "",
-                nextFollowUpDate: row[5] || "",
-                remarksStage6: row[6] || "",
                 itemName: row[7] || "",
-                liftingQty: row[8] || "",
-                transporterName: row[9] || "",
-                vehicleNo: row[10] || "",
-                contactNo: row[11] || "",
-                lrNo: row[12] || "",
-                dispatchDate: row[13] || "",
-                freightAmount: row[14] || "",
-                advanceAmount: row[15] || "",
-                paymentDate: row[16] || "",
-                paymentStatus: row[17] || "",
-                biltyCopy: row[18] || "",
-                invoiceType: row[22] || "-",
-                invoiceDate: row[23] || "-",
                 invoiceNumber: row[24] || "-",
-                receivedQty: row[25] || "-",
-                receivedItemImage: row[26] || "",
-                srnNumber: row[27] || "-",
-                qcRequirement: row[28] || "-",
-                billAttachment: row[29] || "",
-                paymentAmountHydra: row[30] || "",
-                paymentAmountLabour: row[31] || "",
-                paymentAmountHamali: row[32] || "",
-                remarksStage7: row[33] || "",
+                receivedQty: row[25] || "0",
                 plan7: row[61],
                 actual7: row[62],
-                delay7: row[63],
-                qcBy: row[64],
-                qcDate: row[65],
-                qcStatus: row[66],
-                qcRemarks: row[67],
-                rejectQty: row[68],
-                rejectPhoto: row[69],
-                rejectRemarks: row[70],
-                returnStatus: row[73],
-                srnJson: row[74] || "",
                 totalApproved,
                 totalRejected,
                 pendingQty,
-                completionDate,
               },
             };
           });
@@ -245,15 +215,20 @@ export default function Stage8() {
     return partialQCRecords
       .filter(pRow => pRow[1] && String(pRow[1]).trim() !== "")
       .map((pRow, idx) => {
-        const indentNo = String(pRow[1] || "").trim();
-        const parentData = sheetRecords.find(r => r.data.indentNumber === indentNo)?.data ?? {};
+        const indentNoUpper = String(pRow[1] || "").trim().toUpperCase();
+        const indentNoLower = indentNoUpper.toLowerCase();
+        const parentData = sheetRecords.find(r => 
+          String(r.data.indentNumber || "").trim().toLowerCase() === indentNoLower
+        )?.data ?? {};
         return {
-          id: `partial-${indentNo}-${idx}`,
+          id: `partial-${indentNoUpper}-${idx}`,
           data: {
-            indentNumber: indentNo,
+            indentNumber: indentNoUpper,
             vendorName: parentData.vendorName || "-",
             invoiceNumber: parentData.invoiceNumber || "-",
             itemName: parentData.itemName || "-",
+            plan7: parentData.plan7 || "-",
+            actual7: pRow[0] || "-",
             qcDate: pRow[4] || "-",
             qcBy: pRow[3] || "-",
             approvedQty: pRow[10] || "0",
@@ -309,14 +284,16 @@ export default function Stage8() {
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRecordId || !SHEET_API_URL || !selectedRecord) return;
+    if (!SHEET_API_URL || !selectedRecord) return;
 
     setIsSubmitting(true);
     try {
       const timestamp = getFmsTimestamp();
       const mDYYYY = timestamp;
-      const qcDateFormatted = formData.qcDate
-        ? (() => { const d = new Date(formData.qcDate); return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`; })()
+      
+      const qcDateObj = new Date(formData.qcDate);
+      const qcDateFormatted = !isNaN(qcDateObj.getTime()) 
+        ? `${qcDateObj.getMonth() + 1}/${qcDateObj.getDate()}/${qcDateObj.getFullYear()}`
         : "";
 
       let photoUrl = "";
@@ -355,6 +332,17 @@ export default function Stage8() {
         approvedQtyJson = JSON.stringify(srnData);
       }
 
+      const updateCell = async (row: number, col: number, value: string) => {
+        const params = new URLSearchParams();
+        params.append("action", "updateCell");
+        params.append("sheetName", "RECEIVING-ACCOUNTS");
+        params.append("rowIndex", row.toString());
+        params.append("columnIndex", col.toString());
+        params.append("value", value);
+        const res = await fetch(SHEET_API_URL!, { method: "POST", body: params });
+        return res.json();
+      };
+
       const postToPartialQC = async (row: any[]) => {
         const p = new URLSearchParams();
         p.append("action", "batchInsert");
@@ -366,21 +354,12 @@ export default function Stage8() {
         if (!json.success) throw new Error("Failed to write to Partial QC sheet");
       };
 
-      const writeActualDateToRA = async () => {
-        const raRowArray = new Array(80).fill("");
-        raRowArray[62] = mDYYYY;
-        const p = new URLSearchParams();
-        p.append("action", "update");
-        p.append("sheetName", "RECEIVING-ACCOUNTS");
-        p.append("rowIndex", selectedRecord.rowIndex.toString());
-        p.append("rowData", JSON.stringify(raRowArray));
-        await fetch(SHEET_API_URL!, { method: "POST", body: p });
-      };
-
       const receivedQty = parseFloat(selectedRecord.data.receivedQty || "0");
+      const currentResolved = (selectedRecord.data.totalApproved || 0) + (selectedRecord.data.totalRejected || 0);
+      const promises: Promise<any>[] = [];
 
       if (formData.qcStatus === "rejected") {
-        await postToPartialQC([
+        const row = [
           mDYYYY,
           selectedRecord.data.indentNumber,
           selectedRecord.data.liftNo || "",
@@ -394,22 +373,17 @@ export default function Stage8() {
           "",
           "",
           formData.returnStatus,
-        ]);
-
-        const totalResolved =
-          (selectedRecord.data.totalApproved || 0) +
-          (selectedRecord.data.totalRejected || 0) +
-          (parseFloat(formData.rejectQty || "0"));
-
-        if (totalResolved >= receivedQty) {
-          await writeActualDateToRA();
+        ];
+        promises.push(postToPartialQC(row));
+        const newTotalResolved = currentResolved + parseFloat(formData.rejectQty || "0");
+        if (newTotalResolved >= receivedQty) {
+          promises.push(updateCell(selectedRecord.rowIndex, 62, mDYYYY));
           toast.success("QC Rejection Complete — all quantity resolved!");
         } else {
           toast.success("Partial Rejection recorded.");
         }
-
       } else if (formData.qcStatus === "approved") {
-        await postToPartialQC([
+        const row = [
           mDYYYY,
           selectedRecord.data.indentNumber,
           selectedRecord.data.liftNo || "",
@@ -423,20 +397,19 @@ export default function Stage8() {
           formData.approvedQty,
           approvedQtyJson,
           formData.returnStatus,
-        ]);
+        ];
+        promises.push(postToPartialQC(row));
 
-        const totalResolved =
-          (selectedRecord.data.totalApproved || 0) +
-          (selectedRecord.data.totalRejected || 0) +
-          (parseFloat(formData.approvedQty || "0"));
-
-        if (totalResolved >= receivedQty) {
-          await writeActualDateToRA();
+        const newTotalResolved = currentResolved + parseFloat(formData.approvedQty || "0");
+        if (newTotalResolved >= receivedQty) {
+          promises.push(updateCell(selectedRecord.rowIndex, 62, mDYYYY));
           toast.success("QC Full Approval Recorded!");
         } else {
           toast.success("Partial QC Recorded.");
         }
       }
+
+      await Promise.all(promises);
 
       setOpen(false);
       fetchData();
@@ -445,7 +418,17 @@ export default function Stage8() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedRecordId, selectedRecord, formData, fetchData]);
+  }, [selectedRecord, formData, fetchData]);
+
+  const formatDateDash = (dateStr: any) => {
+    if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${day}-${month}-${year}`;
+  };
 
   const safeValue = useCallback((record: any, key: string, isHistory = false) => {
     try {
@@ -474,21 +457,10 @@ export default function Stage8() {
         return amount && amount !== "-" && amount !== "" ? `₹${amount}` : "-";
       }
 
-      if (key === "receivedQty" && isHistory) {
-        try {
-          const json = data.srnJson;
-          if (json && json !== "-" && json !== "") {
-            const parsed = JSON.parse(json);
-            return Array.isArray(parsed) ? parsed.length : 0;
-          }
-          return 0;
-        } catch { return 0; }
-      }
-
       const val = data[key];
       const lowKey = key.toLowerCase();
       if (lowKey.includes("date") || lowKey.includes("plan") || lowKey.includes("actual")) {
-        return formatDate(val);
+        return formatDateDash(val);
       }
 
       if (val === undefined || val === null || String(val).trim() === "") return "-";
@@ -499,118 +471,228 @@ export default function Stage8() {
   }, []);
 
   return (
-    <div className="p-6">
-      <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Stage 8: Quality Control</h2>
-        </div>
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-          <Input
-            placeholder="Search by Indent No, Item, Vendor, PO, Invoice..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 bg-white"
-          />
+    <div className="flex flex-col h-full bg-slate-50/30">
+      {/* Sticky Header Section */}
+      <div className="sticky top-0 z-20 bg-slate-50/30 backdrop-blur-md border-b">
+        <div className="p-4 lg:p-6 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <ClipboardCheck className="w-6 h-6 text-blue-600" />
+                Stage 8: Quality Control
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">Manage inspections and SRN entries</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search records..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 bg-white border-slate-200 focus:ring-blue-500 rounded-lg shadow-sm w-full"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={fetchData}
+                disabled={isLoading}
+                className="bg-white hover:bg-slate-50 shrink-0"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
+          </div>
+
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+            <TabsList className="bg-slate-100/80 p-1 w-full md:w-auto">
+              <TabsTrigger
+                value="pending"
+                className="px-8 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all"
+              >
+                Pending ({pending.length})
+              </TabsTrigger>
+              <TabsTrigger
+                value="history"
+                className="px-8 data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:shadow-sm transition-all"
+              >
+                History ({history.length})
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-24 text-gray-500">
-          <Loader2 className="w-8 h-8 animate-spin mb-4 text-black" />
-          <p className="text-lg animate-pulse text-black font-medium">Loading records...</p>
-        </div>
-      ) : (
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-            <TabsTrigger value="history">History ({history.length})</TabsTrigger>
-          </TabsList>
+      <div className="flex-1 overflow-hidden">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center h-[400px] text-slate-500 bg-white m-6 rounded-xl border border-dashed">
+            <div className="relative">
+              <div className="w-12 h-12 border-4 border-blue-100 rounded-full animate-pulse"></div>
+              <Loader2 className="w-12 h-12 animate-spin text-blue-600 absolute inset-0" />
+            </div>
+            <p className="mt-4 font-medium text-slate-900">Fetching records...</p>
+            <p className="text-xs text-slate-400 mt-1">This may take a few seconds</p>
+          </div>
+        ) : (
+          <div className="h-full overflow-auto p-4 lg:p-6">
+            <Tabs value={activeTab} className="mt-0 h-full">
+              <TabsContent value="pending" className="mt-0 focus-visible:outline-none">
+                {pending.length === 0 ? (
+                  <div className="bg-white border rounded-xl p-12 text-center shadow-sm">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <ClipboardCheck className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900">No pending QC checks</h3>
+                    <p className="text-slate-500 mt-1 max-w-xs mx-auto">All items have been inspected or are not yet ready for QC.</p>
+                  </div>
+                ) : (
+                  <div className="bg-white border rounded-xl shadow-sm overflow-hidden min-w-full">
+                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+                      <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-slate-200 border-b border-slate-300">
+                            <th className="px-4 py-4 font-semibold text-slate-900 w-24">Actions</th>
+                            {PENDING_COLUMNS.map((col) => (
+                              <th key={col.key} className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">
+                                {col.label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {pending.map((record: any) => (
+                            <tr key={record.id} className="hover:bg-slate-50/80 transition-colors group">
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenForm(record.id)}
+                                  className="h-8 bg-white hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all font-medium"
+                                >
+                                  Perform QC
+                                </Button>
+                              </td>
+                              {PENDING_COLUMNS.map((col) => (
+                                <td key={col.key} className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                  {safeValue(record, col.key)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
 
-          <TabsContent value="pending" className="mt-6">
-            {pending.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <p className="text-lg">No pending QC checks</p>
-                <p className="text-sm mt-1">All items are inspected!</p>
-              </div>
-            ) : (
-              <div className="border rounded-lg overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="bg-white z-10">Actions</TableHead>
-                      {PENDING_COLUMNS.map((col) => <TableHead key={col.key}>{col.label}</TableHead>)}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pending.map((record: any) => (
-                      <TableRow key={record.id}>
-                        <TableCell className="bg-white z-10">
-                          <Button variant="outline" size="sm" onClick={() => handleOpenForm(record.id)}>Perform QC</Button>
-                        </TableCell>
-                        {PENDING_COLUMNS.map((col) => (
-                          <TableCell key={col.key}>{safeValue(record, col.key)}</TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="history" className="mt-6">
-            {history.length === 0 ? (
-              <div className="text-center py-12 text-gray-500"><p className="text-lg">No QC history found</p></div>
-            ) : (
-              <div className="border rounded-lg overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {HISTORY_COLUMNS.map((col) => <TableHead key={col.key}>{col.label}</TableHead>)}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {history.map((record: any) => (
-                      <TableRow key={record.id}>
-                        {HISTORY_COLUMNS.map((col) => (
-                          <TableCell key={col.key}>{safeValue(record, col.key, true)}</TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      )}
+              <TabsContent value="history" className="mt-0 focus-visible:outline-none">
+                {history.length === 0 ? (
+                  <div className="bg-white border rounded-xl p-12 text-center shadow-sm">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <RefreshCw className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900">No QC history found</h3>
+                    <p className="text-slate-500 mt-1">Recent QC records will appear here.</p>
+                  </div>
+                ) : (
+                  <div className="bg-white border rounded-xl shadow-sm overflow-hidden min-w-full">
+                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]">
+                      <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-slate-200 border-b border-slate-300">
+                            {HISTORY_COLUMNS.map((col) => (
+                              <th key={col.key} className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">
+                                {col.label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {history.map((record: any) => (
+                            <tr key={record.id} className="hover:bg-slate-50/80 transition-colors">
+                              {HISTORY_COLUMNS.map((col) => (
+                                <td key={col.key} className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                  {safeValue(record, col.key, true)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        )}
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-          <DialogHeader><DialogTitle>Quality Control Inspection</DialogTitle></DialogHeader>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Planned QC Date</Label>
-                  <Input value={formatDate(selectedRecord?.data?.plan7)} readOnly className="bg-gray-50" />
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-xl bg-white">
+          <DialogHeader className="p-6 bg-slate-50 border-b">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-blue-600" />
+              Quality Control Inspection
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100 grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <dt className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Indent No.</dt>
+                <dd className="text-sm font-semibold text-slate-900">{selectedRecord?.data?.indentNumber || "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Vendor</dt>
+                <dd className="text-sm font-semibold text-slate-900 truncate">{selectedRecord?.data?.vendorName || "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Item</dt>
+                <dd className="text-sm font-semibold text-slate-900 truncate">{selectedRecord?.data?.itemName || "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Received Qty</dt>
+                <dd className="text-sm font-semibold text-slate-900">{selectedRecord?.data?.receivedQty || "0"} units</dd>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit} id="qc-form" className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-700">Planned QC Date</Label>
+                  <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm text-slate-600 font-medium">
+                    {formatDateDash(selectedRecord?.data?.plan7)}
+                  </div>
                 </div>
-                <div>
-                  <Label>QC Done By *</Label>
+                
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-700">QC Done By <span className="text-red-500">*</span></Label>
                   <Select value={formData.qcBy} onValueChange={(v) => setFormData({ ...formData, qcBy: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select engineer" /></SelectTrigger>
+                    <SelectTrigger className="bg-white border-slate-200 rounded-lg shadow-sm h-10">
+                      <SelectValue placeholder="Select engineer" />
+                    </SelectTrigger>
                     <SelectContent>
                       {qcEngineerList.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>QC Date *</Label>
-                  <input type="date" className="w-full px-3 py-2 border rounded" value={formData.qcDate} onChange={(e) => setFormData({ ...formData, qcDate: e.target.value })} required />
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-700">QC Date <span className="text-red-500">*</span></Label>
+                  <Input 
+                    type="date" 
+                    className="bg-white border-slate-200 rounded-lg shadow-sm h-10" 
+                    value={formData.qcDate} 
+                    onChange={(e) => setFormData({ ...formData, qcDate: e.target.value })} 
+                    required 
+                  />
                 </div>
-                <div>
-                  <Label>QC Status *</Label>
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-700">QC Status <span className="text-red-500">*</span></Label>
                   <Select
                     value={formData.qcStatus}
                     onValueChange={(v) => setFormData({
@@ -622,7 +704,9 @@ export default function Stage8() {
                       srnEntries: v === "rejected" ? [] : formData.srnEntries,
                     })}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectTrigger className="bg-white border-slate-200 rounded-lg shadow-sm h-10">
+                      <SelectValue placeholder="Select outcome" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="approved">Approved</SelectItem>
                       <SelectItem value="rejected">Rejected</SelectItem>
@@ -631,14 +715,14 @@ export default function Stage8() {
                 </div>
 
                 {formData.qcStatus === "approved" && (
-                  <div>
-                    <Label>Approved Qty *</Label>
-                    <input
+                  <div className="space-y-2">
+                    <Label className="text-xs font-bold text-slate-700 font-medium">Approved Qty <span className="text-red-500">*</span></Label>
+                    <Input
                       type="number"
                       min="1"
-                      max={selectedRecord?.data?.receivedQty || 999}
-                      className="w-full px-3 py-2 border rounded"
-                      placeholder={`Max: ${selectedRecord?.data?.pendingQty || "-"}`}
+                      max={selectedRecord?.data?.pendingQty || 999}
+                      className="bg-white border-slate-200 rounded-lg shadow-sm h-10" 
+                      placeholder={`Pending: ${selectedRecord?.data?.pendingQty || "0"}`}
                       value={formData.approvedQty}
                       onChange={(e) => {
                         const qty = parseInt(e.target.value) || 0;
@@ -649,17 +733,35 @@ export default function Stage8() {
                           srn: formData.srnEntries[i]?.srn || "",
                           image: formData.srnEntries[i]?.image || null,
                         }));
-                        setFormData({ ...formData, approvedQty: e.target.value, srnEntries: newEntries });
+                        setFormData({ ...formData, approvedQty: String(validQty), srnEntries: newEntries });
                       }}
                       required
                     />
                   </div>
                 )}
 
-                <div>
-                  <Label>Return Status *</Label>
+                {formData.qcStatus === "rejected" && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-bold text-slate-700">Reject Qty <span className="text-red-500">*</span></Label>
+                    <Input 
+                      type="number" 
+                      min="1"
+                      max={selectedRecord?.data?.pendingQty || 999}
+                      className="bg-white border-slate-200 rounded-lg shadow-sm h-10" 
+                      placeholder={`Pending: ${selectedRecord?.data?.pendingQty || "0"}`}
+                      value={formData.rejectQty} 
+                      onChange={(e) => setFormData({ ...formData, rejectQty: e.target.value })} 
+                      required 
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-slate-700">Return Status <span className="text-red-500">*</span></Label>
                   <Select value={formData.returnStatus} onValueChange={(v) => setFormData({ ...formData, returnStatus: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectTrigger className="bg-white border-slate-200 rounded-lg shadow-sm h-10">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="return">Return</SelectItem>
                       <SelectItem value="not return">Not Return</SelectItem>
@@ -669,22 +771,21 @@ export default function Stage8() {
               </div>
 
               {formData.qcStatus === "approved" && formData.srnEntries.length > 0 && (
-                <div className="p-4 border rounded bg-green-50 space-y-3">
-                  <h3 className="font-semibold text-green-800">SRN Details ({formData.srnEntries.length} items)</h3>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-600 sticky top-0 bg-green-50 py-1">
-                      <div className="col-span-1">S.No</div>
-                      <div className="col-span-5">SRN *</div>
-                      <div className="col-span-6">Image</div>
-                    </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-800">SRN Items Registration</h3>
+                    <span className="text-xs bg-white text-slate-600 px-2 py-0.5 rounded-full border border-slate-200 font-medium">
+                      {formData.srnEntries.length} Items Pending
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto">
                     {formData.srnEntries.map((entry, idx) => (
-                      <div key={entry.serialNo} className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-1 text-sm font-medium text-gray-700">{entry.serialNo}</div>
-                        <div className="col-span-5">
-                          <input
-                            type="text"
-                            className="w-full px-2 py-1.5 border rounded text-sm"
-                            placeholder="Enter SRN..."
+                      <div key={entry.serialNo} className="grid grid-cols-12 gap-3 items-center bg-white p-3 rounded-lg border border-slate-100 group">
+                        <div className="col-span-1 text-xs font-bold text-slate-400">#{entry.serialNo}</div>
+                        <div className="col-span-5 relative">
+                          <Input
+                            placeholder="Enter SRN Number"
+                            className="bg-slate-50/50 border-slate-200 rounded-lg h-9 text-sm"
                             value={entry.srn}
                             onChange={(e) => {
                               const updated = [...formData.srnEntries];
@@ -695,25 +796,43 @@ export default function Stage8() {
                           />
                         </div>
                         <div className="col-span-6 flex items-center gap-2">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            id={`srn-image-${idx}`}
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0] || null;
-                              const updated = [...formData.srnEntries];
-                              updated[idx] = { ...updated[idx], image: file };
-                              setFormData({ ...formData, srnEntries: updated });
-                            }}
-                          />
-                          <label htmlFor={`srn-image-${idx}`} className="flex-1 px-2 py-1.5 border rounded bg-white cursor-pointer hover:bg-gray-50 text-sm text-center">
-                            {entry.image ? <span className="text-green-600 truncate block">{entry.image.name}</span> : <span className="text-gray-500">Upload</span>}
-                          </label>
+                          <div className="flex-1">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              id={`srn-image-${idx}`}
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                const updated = [...formData.srnEntries];
+                                updated[idx] = { ...updated[idx], image: file };
+                                setFormData({ ...formData, srnEntries: updated });
+                              }}
+                            />
+                            <label 
+                              htmlFor={`srn-image-${idx}`} 
+                              className={`flex items-center justify-center gap-2 px-3 py-1.5 border rounded-lg cursor-pointer transition-all h-9 text-xs font-medium ${
+                                entry.image 
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100" 
+                                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                              }`}
+                            >
+                              {entry.image ? (
+                                <>
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span className="truncate max-w-[120px]">{entry.image.name}</span>
+                                </>
+                              ) : (
+                                "Attach Photo"
+                              )}
+                            </label>
+                          </div>
                           {entry.image && (
-                            <button
+                            <Button
                               type="button"
-                              className="text-red-500 hover:text-red-700 text-xs"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                               onClick={() => {
                                 const updated = [...formData.srnEntries];
                                 updated[idx] = { ...updated[idx], image: null };
@@ -721,7 +840,7 @@ export default function Stage8() {
                               }}
                             >
                               ✕
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -731,38 +850,89 @@ export default function Stage8() {
               )}
 
               {formData.qcStatus === "rejected" && (
-                <div className="p-4 border rounded bg-red-50 space-y-3">
-                  <h3 className="font-semibold text-red-800">Rejection Details</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label>Reject Qty *</Label>
-                      <input type="number" className="w-full px-3 py-2 border rounded" placeholder="0" value={formData.rejectQty} onChange={(e) => setFormData({ ...formData, rejectQty: e.target.value })} required />
-                    </div>
-                    <div>
-                      <Label>Reject Photo</Label>
-                      <input type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0]; if (file) setFormData({ ...formData, rejectPhoto: file }); }} className="hidden" id="reject-photo" />
-                      <label htmlFor="reject-photo" className="flex items-center justify-center w-full p-2 border rounded cursor-pointer hover:bg-gray-50">
-                        {formData.rejectPhoto ? <span className="text-green-600">Photo Selected</span> : <span>Upload Photo</span>}
-                      </label>
-                    </div>
-                    <div className="col-span-2">
-                      <Label>Reject Remarks *</Label>
-                      <textarea className="w-full px-3 py-2 border rounded resize-none" rows={3} value={formData.rejectRemarks} onChange={(e) => setFormData({ ...formData, rejectRemarks: e.target.value })} required />
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-red-50/50 p-6 rounded-xl border border-red-100">
+                  <div className="space-y-4">
+                    <Label className="text-xs font-bold text-red-800">Defective Item Proof</Label>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={(e) => { const file = e.target.files?.[0]; if (file) setFormData({ ...formData, rejectPhoto: file }); }} 
+                      className="hidden" 
+                      id="reject-photo" 
+                    />
+                    <label 
+                      htmlFor="reject-photo" 
+                      className={`flex flex-col items-center justify-center w-full aspect-video border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+                        formData.rejectPhoto 
+                          ? "bg-white border-emerald-300 text-emerald-600" 
+                          : "bg-white border-red-200 text-slate-400 hover:bg-red-50 hover:border-red-300"
+                      }`}
+                    >
+                      {formData.rejectPhoto ? (
+                        <>
+                          <FileText className="w-8 h-8 mb-2" />
+                          <span className="text-sm font-bold truncate max-w-[200px] px-4">{formData.rejectPhoto.name}</span>
+                          <span className="text-[10px] mt-1 text-slate-400 underline">Tap to change photo</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="w-8 h-8 mb-2 text-red-200" />
+                          <span className="text-sm font-medium">Upload Defect Image</span>
+                          <span className="text-[10px] text-slate-400 mt-1">Accepts JPG, PNG</span>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-bold text-red-800">Rejection Reason <span className="text-red-500">*</span></Label>
+                    <textarea 
+                      className="w-full px-4 py-3 bg-white border border-red-200 rounded-xl resize-none text-sm focus:ring-red-500 h-[calc(100%-24px)]" 
+                      rows={4} 
+                      placeholder="Detail the quality issues found..."
+                      value={formData.rejectRemarks} 
+                      onChange={(e) => setFormData({ ...formData, rejectRemarks: e.target.value })} 
+                      required 
+                    />
                   </div>
                 </div>
               )}
 
-              <div>
-                <Label>QC Remarks</Label>
-                <textarea className="w-full px-3 py-2 border rounded resize-none" rows={3} value={formData.qcRemarks} onChange={(e) => setFormData({ ...formData, qcRemarks: e.target.value })} />
+              <div className="space-y-2">
+                <Label className="text-xs font-bold text-slate-700">Detailed QC Remarks & Findings</Label>
+                <textarea 
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl resize-none text-sm focus:ring-blue-500 shadow-sm" 
+                  rows={3} 
+                  placeholder="Optional internal notes..."
+                  value={formData.qcRemarks} 
+                  onChange={(e) => setFormData({ ...formData, qcRemarks: e.target.value })} 
+                />
               </div>
             </form>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={isSubmitting}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!isFormValid || isSubmitting}>
-              {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Submitting...</> : "Complete QC"}
+
+          <DialogFooter className="p-6 bg-slate-50 border-t flex items-center justify-between sm:justify-between w-full">
+            <Button 
+              variant="outline" 
+              onClick={() => setOpen(false)} 
+              disabled={isSubmitting}
+              className="px-8 border-slate-200 rounded-lg bg-white"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSubmit} 
+              disabled={!isFormValid || isSubmitting}
+              form="qc-form"
+              className="px-10 bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md transition-all active:scale-95"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Uploading Assets...
+                </>
+              ) : (
+                "Finalize Quality Report"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

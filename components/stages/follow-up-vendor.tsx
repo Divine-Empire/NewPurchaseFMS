@@ -1073,7 +1073,7 @@ export default function Stage6() {
             <>
               <div className="border rounded-lg overflow-auto flex-1 flex flex-col">
                 <Table>
-                  <TableHeader className="bg-gray-100 sticky top-0 z-10">
+                  <TableHeader className="bg-slate-200 sticky top-0 z-10">
                     <TableRow>
                       <TableHead className="w-12">
                         <Checkbox
@@ -1226,7 +1226,7 @@ export default function Stage6() {
           ) : (
             <div className="border rounded-lg overflow-auto flex-1 flex flex-col">
               <Table>
-                <TableHeader className="bg-gray-100 sticky top-0 z-10">
+                <TableHeader className="bg-slate-200 sticky top-0 z-10">
                   <TableRow className="border-b-2">
                     <TableHead>Indent No.</TableHead>
                     <TableHead>Planned</TableHead>

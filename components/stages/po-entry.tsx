@@ -220,7 +220,7 @@ export default function Stage5() {
     }), [sheetRecords, searchTerm]);
 
   const baseColumns = [
-    { key: "indentNumber", label: "Indent #", icon: null },
+    { key: "indentNumber", label: "Indent-No", icon: null },
     { key: "itemName", label: "Item", icon: null },
     { key: "quantity", label: "Qty", icon: null },
     { key: "planned4", label: "Planned", icon: null },
@@ -347,9 +347,6 @@ export default function Stage5() {
           try {
             // Prepare Update Data - Only update specific columns
             const rowArray = new Array(72).fill("");
-
-            // Format current date with shared utility
-            const timestamp = getFmsTimestamp();
 
             // Calculate per-item packaging share
             const { perItemPkgTotal, perItemPkgBase } = getPkgTotals(
@@ -592,9 +589,9 @@ export default function Stage5() {
 
               <div className="border rounded-lg flex-1 overflow-auto shadow-sm relative h-full">
                 <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
-                  <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
-                    <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
-                      <TableHead className="w-12 sticky top-0 z-20 bg-slate-50 border-none pl-4 py-3">
+                  <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                    <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
+                      <TableHead className="w-12 sticky top-0 z-20 bg-slate-200 border-none pl-4 py-3 ">
                         <div className="flex items-center justify-start h-full">
                           <Checkbox
                             checked={selectedRecordIds.length === pending.length && pending.length > 0}
@@ -605,15 +602,15 @@ export default function Stage5() {
                       {baseColumns
                         .filter((c) => selectedColumns.includes(c.key))
                         .map((col) => (
-                          <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">{col.label}</TableHead>
+                          <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">{col.label}</TableHead>
                         ))}
-                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Vendor</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Rate</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Payment Terms</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Exp. Delivery</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Warranty</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Attachment</TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Vendor</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Rate</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Payment Terms</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Exp. Delivery</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Warranty</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Attachment</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -705,17 +702,17 @@ export default function Stage5() {
           ) : (
             <div className="border rounded-lg flex-1 overflow-auto shadow-sm relative h-full">
               <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
-                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
-                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Item Details</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Planned</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Actual</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Vendor Info</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Terms & Delivery</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Warranty/Quot.</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">PO Details (Incl. HSN)</TableHead>
-                    <TableHead className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Financials (Incl. GST%)</TableHead>
+                <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                  <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Item Details</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Planned</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Actual</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Vendor Info</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Terms & Delivery</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Warranty/Quot.</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">PO Details (Incl. HSN)</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Financials (Incl. GST%)</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -922,7 +919,7 @@ export default function Stage5() {
                 <div key={recordId} className="border rounded-lg p-4 bg-gray-50">
                   <div className="mb-4 pb-3 border-b">
                     <div className="grid grid-cols-3 gap-2 text-sm">
-                      <div><strong>Indent #:</strong> {record.data.indentNumber}</div>
+                      <div><strong>Indent-No:</strong> {record.data.indentNumber}</div>
                       <div><strong>Item:</strong> {record.data.itemName}</div>
                       <div><strong>Qty:</strong> {record.data.quantity}</div>
                     </div>

@@ -613,19 +613,22 @@ export default function SubmitInvoiceHO() {
                     ) : (
                         <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm bg-white">
                             <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                                <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                                     <tr className="hover:bg-transparent border-none">
-                                        <th className="sticky left-0 z-40 bg-slate-50 w-[50px] border-b text-center py-3">
+                                        <th className="sticky left-0 z-40 bg-slate-200 w-12 border-b text-center px-4 py-3">
                                             <Checkbox
-                                                checked={pending.length > 0 && pending.every(r => selectedRows.has(r.id))}
+                                                checked={
+                                                  selectedRows.size === pending.length &&
+                                                  pending.length > 0
+                                                }
                                                 onCheckedChange={toggleAll}
                                             />
                                         </th>
-                                        <th className="sticky left-[50px] z-40 bg-slate-50 w-[100px] border-b text-center px-4 py-3 font-semibold text-slate-900">Actions</th>
+                                        <th className="sticky left-[50px] z-40 bg-slate-200 w-[100px] border-b text-center px-4 py-3 font-semibold text-slate-900">Actions</th>
                                         {pendingColumns
                                             .filter((c) => selectedPendingColumns.includes(c.key))
                                             .map((c) => (
-                                                <th key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
                                                     {c.label}
                                                 </th>
                                             ))}
@@ -674,12 +677,12 @@ export default function SubmitInvoiceHO() {
                     ) : (
                         <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm bg-white">
                             <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                                <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                                     <tr className="hover:bg-transparent border-none">
                                         {historyColumns
                                             .filter((c) => selectedHistoryColumns.includes(c.key))
                                             .map((c) => (
-                                                <th key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
                                                     {c.label}
                                                 </th>
                                             ))}

@@ -528,17 +528,17 @@ export default function TransporterFollowUp() {
                             <div className="text-center py-12 text-gray-500">No pending transporter follow-ups</div>
                         ) : (                            <div className="border rounded-lg flex-1 overflow-auto shadow-sm relative h-full">
                                 <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
-                                        <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
-                                            <TableHead className="w-[50px] sticky top-0 left-0 z-40 bg-slate-50 border-none pl-4 py-3">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                                        <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
+                                            <TableHead className="w-[50px] sticky top-0 left-0 z-40 bg-slate-200 border-none pl-4 py-3">
                                                 <Checkbox
                                                     checked={selectedRows.size === pending.length && pending.length > 0}
                                                     onCheckedChange={toggleAll}
                                                 />
                                             </TableHead>
-                                            <TableHead className="w-[120px] sticky top-0 left-[50px] z-40 bg-slate-50 border-none px-4 py-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center font-bold text-slate-700 uppercase">Actions</TableHead>
+                                            <TableHead className="w-[120px] sticky top-0 left-[50px] z-40 bg-slate-200 border-none px-4 py-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] text-center font-bold text-slate-700 uppercase">Actions</TableHead>
                                             {pendingColumns.map(c => (
-                                                <TableHead key={c.key} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-center font-bold text-slate-700 uppercase whitespace-nowrap">{c.label}</TableHead>
+                                                <TableHead key={c.key} className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-center font-bold text-slate-700 uppercase whitespace-nowrap">{c.label}</TableHead>
                                             ))}
                                         </TableRow>
                                     </TableHeader>
@@ -599,10 +599,10 @@ export default function TransporterFollowUp() {
                             <div className="text-center py-12 text-gray-500">No follow-up history</div>
                         ) : (                            <div className="border rounded-lg overflow-auto shadow-sm flex-1 relative h-full">
                                 <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
-                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
-                                        <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                                        <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
                                             {historyColumns.map(c => (
-                                                <TableHead key={c.key} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3 text-center font-bold text-slate-700 uppercase whitespace-nowrap">{c.label}</TableHead>
+                                                <TableHead key={c.key} className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-center font-bold text-slate-700 uppercase whitespace-nowrap">{c.label}</TableHead>
                                             ))}
                                         </TableRow>
                                     </TableHeader>

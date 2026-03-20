@@ -783,9 +783,9 @@ export default function Stage1() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
       {/* Header Card */}
-      <div className="mb-6 p-6 bg-linear-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm">
+      <div className="mb-6 p-6 bg-linear-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 rounded-lg shadow-slate-100 shadow-xl text-white">
@@ -827,7 +827,7 @@ export default function Stage1() {
           <p className="text-lg animate-pulse text-black font-medium">Loading records...</p>
         </div>
       ) : (
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-2">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50">
             <TabsTrigger
               value="pending"
@@ -857,7 +857,7 @@ export default function Stage1() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="pending" className="mt-0 outline-none">
+          <TabsContent value="pending" className="mt-0 outline-none flex-1 flex flex-col overflow-hidden">
             <StageTable
               title=""
               stage={1}
@@ -866,8 +866,9 @@ export default function Stage1() {
               onOpenForm={() => setOpen(true)}
               onSelectRecord={(record) => handleEditRecord(record)}
               showPending={true}
+              hideTableTitle={true}
               columns={[
-                { key: "indentNumber", label: "Indent #" },
+                { key: "indentNumber", label: "Indent" },
                 { key: "createdBy", label: "Created By" },
                 { key: "category", label: "Category" },
                 { key: "warehouseLocation", label: "Warehouse" },
@@ -882,7 +883,7 @@ export default function Stage1() {
             />
           </TabsContent>
 
-          <TabsContent value="history" className="mt-0 outline-none">
+          <TabsContent value="history" className="mt-0 outline-none flex-1 flex flex-col overflow-hidden">
             <StageTable
               title=""
               stage={1}
@@ -891,8 +892,9 @@ export default function Stage1() {
               onOpenForm={() => setOpen(true)}
               onSelectRecord={() => { }}
               showPending={false}
+              hideTableTitle={true}
               columns={[
-                { key: "indentNumber", label: "Indent #" },
+                { key: "indentNumber", label: "Indent" },
                 { key: "createdBy", label: "Created By" },
                 { key: "category", label: "Category" },
                 { key: "warehouseLocation", label: "Warehouse" },

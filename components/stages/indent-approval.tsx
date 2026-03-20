@@ -535,9 +535,9 @@ export default function Stage2() {
           ) : (
             <div className="border rounded-lg overflow-auto flex-1 shadow-sm relative h-full">
               <table className="w-full caption-bottom text-sm border-separate border-spacing-0">
-                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm">
-                  <TableRow className="bg-slate-50 hover:bg-slate-50">
-                    <TableHead className="w-12 sticky top-0 z-20 bg-slate-50 shadow-sm border-none">
+                <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm">
+                  <TableRow className="bg-slate-200 hover:bg-slate-200">
+                    <TableHead className="w-12 sticky top-0 z-20 bg-slate-200 shadow-sm border-none">
                       <Checkbox
                         checked={
                           pending.length > 0 &&
@@ -550,7 +550,7 @@ export default function Stage2() {
                       .filter((c) => selectedColumns.includes(c.key) &&
                         !["actualDate", "delay", "status", "remarks", "approvedQty"].includes(c.key))
                       .map((col) => (
-                        <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-50 shadow-sm border-none">
+                        <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-200 shadow-sm border-none">
                           <div className="flex items-center gap-2">
                             {col.icon && <col.icon className="w-4 h-4" />}
                             {col.label}
@@ -620,13 +620,13 @@ export default function Stage2() {
           ) : (
             <div className="border rounded-lg overflow-auto flex-1 shadow-sm relative h-full">
               <table className="w-full caption-bottom text-sm border-collapse">
-                <TableHeader className="bg-slate-50 sticky top-0 z-30 shadow-sm border-none">
-                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
-                    <TableHead className="w-12 text-center text-sm font-bold text-slate-400 sticky top-0 z-20 bg-slate-50 border-none">#</TableHead>
+                <TableHeader className="bg-slate-200 sticky top-0 z-30 shadow-sm border-none">
+                  <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
+                    <TableHead className="w-12 text-center text-sm font-bold text-slate-400 sticky top-0 z-20 bg-slate-200 border-none">#</TableHead>
                     {columns
                       .filter((c) => selectedColumns.includes(c.key) && c.key !== "delay")
                       .map((col) => (
-                        <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-50 border-none">
+                        <TableHead key={col.key} className="sticky top-0 z-20 bg-slate-200 border-none">
                           <div className="flex items-center gap-2 text-sm font-bold text-slate-600">
                             {col.icon && <col.icon className="w-4 h-4" />}
                             {col.label}

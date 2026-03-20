@@ -760,10 +760,10 @@ export default function Stage7() {
                         ) : (
                             <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
                                 <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                                         <TableRow className="hover:bg-transparent border-none">
                                             {activeTab === "pending" && (
-                                                <TableHead className="sticky left-0 z-40 bg-slate-50 w-[50px] border-b text-center">
+                                                <TableHead className="sticky left-0 z-40 bg-slate-200 w-[50px] border-b text-center">
                                                     <Checkbox
                                                         checked={
                                                             pending.length > 0 &&
@@ -779,11 +779,11 @@ export default function Stage7() {
                                                     />
                                                 </TableHead>
                                             )}
-                                            <TableHead className="sticky left-[50px] z-40 bg-slate-50 w-[150px] border-b text-center whitespace-nowrap px-4">Actions</TableHead>
+                                            <TableHead className="sticky left-[50px] z-40 bg-slate-200 w-[150px] border-b text-center whitespace-nowrap px-4">Actions</TableHead>
                                             {PENDING_COLUMNS.filter((c) =>
                                                 selectedPendingColumns.includes(c.key)
                                             ).map((c) => (
-                                                <TableHead key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{c.label}</TableHead>
+                                                <TableHead key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{c.label}</TableHead>
                                             ))}
                                         </TableRow>
                                     </TableHeader>
@@ -912,12 +912,12 @@ export default function Stage7() {
                         ) : (
                             <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
                                 <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                                    <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                    <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                                         <TableRow className="hover:bg-transparent border-none">
                                             {HISTORY_COLUMNS.filter((c) =>
                                                 selectedHistoryColumns.includes(c.key)
                                             ).map((c) => (
-                                                <TableHead key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                <TableHead key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
                                                     {c.label}
                                                 </TableHead>
                                             ))}

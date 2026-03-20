@@ -133,8 +133,8 @@ export default function Stage13() {
 
             // 2. Process Partial QC Rows
             if (Array.isArray(partialJson.data)) {
-                const rows = partialJson.data.slice(1)
-                    .map((row: any, i: number) => ({ row, rowIndex: i + 2 }))
+                const rows = partialJson.data.slice(7)
+                    .map((row: any, i: number) => ({ row, rowIndex: i + 8 }))
                     .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
                     .map(({ row, rowIndex }: any) => {
                         const indentNo = String(row[1]).trim();
@@ -268,7 +268,7 @@ export default function Stage13() {
         // Validation
         const invoices = new Set(selectedRecords.map((r) => r.data.invoiceNumber));
         if (invoices.size > 1) {
-            toast.error("Cannot proceed: All selected items must have the same Invoice #", {
+            toast.error("Cannot proceed: All selected items must have the same Invoice", {
                 style: { background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c' }
             });
             return;
@@ -429,155 +429,232 @@ export default function Stage13() {
     }, [selectedRows, sheetRecords]);
 
     return (
-        <div className="p-6">
-            <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm">
-                <div className="flex justify-between items-center">
-                    <div>
-                        <h2 className="text-2xl font-bold">Stage 13: Return Approval</h2>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        <div className="relative flex-1 max-w-sm">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                            <Input
-                                placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-9 bg-white w-[350px]"
-                            />
-                        </div>
-                        <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Bulk Approval Controls */}
-                {selectedRows.size > 0 && (
-                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                        <div className="flex items-center gap-4 flex-wrap">
-                            <div className="flex items-center gap-2">
-                                <Checkbox checked={true} disabled />
-                                <span className="font-medium">{selectedRows.size} selected</span>
-                                <span className="text-xs text-gray-500">
-                                    (Invoice: {getFirstSelectedInvoice()})
+        <div className="flex flex-col min-h-screen bg-slate-50/30">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b shadow-sm">
+                <div className="max-w-[1600px] mx-auto">
+                    <div className="p-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                                <span className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-blue-200 shadow-lg">
+                                    <RefreshCw className="w-6 h-6 text-white" />
                                 </span>
+                                Stage 13: Return Approval
+                            </h1>
+                            <p className="text-slate-500 text-sm mt-1 ml-12">Review and finalize rejected item returns</p>
+                        </div>
+
+                        <div className="flex items-center gap-3 w-full md:w-auto">
+                            {/* Selected Info & Bulk Action */}
+                            {selectedRows.size > 1 && (
+                                <div className="flex items-center gap-3 px-4 py-1.5 bg-blue-50 border border-blue-100 rounded-xl animate-in fade-in slide-in-from-right-4 duration-300">
+                                    <div className="flex flex-col items-start leading-tight">
+                                        <span className="text-sm font-semibold text-blue-700">{selectedRows.size} selected</span>
+                                    </div>
+                                    <Button 
+                                        size="sm" 
+                                        onClick={handleOpenBulkForm}
+                                        className="h-8 bg-blue-600 hover:bg-blue-700 text-white shadow-sm px-4 rounded-lg text-xs"
+                                    >
+                                        Bulk Approval
+                                    </Button>
+                                </div>
+                            )}
+
+                            <div className="relative flex-1 md:w-80 group">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                                <Input
+                                    placeholder="Search indent, item, vendor, invoice..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-10 bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all h-10 rounded-xl"
+                                />
                             </div>
-                            <Button onClick={handleOpenBulkForm}>
-                                Bulk Approval
+                            <Button 
+                                variant="outline" 
+                                size="icon"
+                                onClick={fetchData} 
+                                disabled={isLoading}
+                                className="h-10 w-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border-slate-200"
+                            >
+                                <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
                             </Button>
                         </div>
                     </div>
-                )}
+
+                    <div className="px-6 pb-2">
+                        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+                            <TabsList className="bg-slate-200/50 p-1 rounded-xl h-11 inline-flex w-auto mb-2">
+                                <TabsTrigger 
+                                    value="pending" 
+                                    className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 transition-all font-medium"
+                                >
+                                    Pending ({pending.length})
+                                </TabsTrigger>
+                                <TabsTrigger 
+                                    value="history"
+                                    className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 transition-all font-medium"
+                                >
+                                    History ({completed.length})
+                                </TabsTrigger>
+                            </TabsList>
+                        </Tabs>
+                    </div>
+                </div>
             </div>
 
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-                    <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
-                </TabsList>
-
-                {/* PENDING TAB */}
-                <TabsContent value="pending" className="mt-6">
-                    {pending.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">No pending approvals</div>
-                    ) : (
-                        <div className="border rounded-lg overflow-x-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead className="w-12">
-                                            <Checkbox
-                                                checked={selectedRows.size === pending.length && pending.length > 0}
-                                                onCheckedChange={toggleAll}
-                                            />
-                                        </TableHead>
-                                        <TableHead>Action</TableHead>
-                                        <TableHead>Indent #</TableHead>
-                                        <TableHead>Unit Tracking No.</TableHead>
-                                        <TableHead>Item Name</TableHead>
-                                        <TableHead>Invoice #</TableHead>
-                                        <TableHead>Return Qty</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Planned Date</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {pending.map((rec) => (
-                                        <TableRow key={rec.id}>
-                                            <TableCell className="w-12">
-                                                <Checkbox
-                                                    checked={selectedRows.has(rec.id)}
-                                                    onCheckedChange={() => toggleRow(rec.id)}
-                                                />
-                                            </TableCell>
-                                            <TableCell>
-                                                <Button size="sm" onClick={() => handleOpenForm(rec.id)}>Process</Button>
-                                            </TableCell>
-                                            <TableCell>{rec.data.indentNumber}</TableCell>
-                                            <TableCell>{rec.data.liftNumber}</TableCell>
-                                            <TableCell>{rec.data.itemName}</TableCell>
-                                            <TableCell>{safeValue(rec.data.invoiceNumber)}</TableCell>
-                                            <TableCell>{safeValue(rec.data.returnQty)}</TableCell>
-                                            <TableCell>{safeValue(rec.data.returnStatus)}</TableCell>
-                                            <TableCell>{formatDate(rec.data.plannedDate)}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
+            <div className="p-4 md:p-6 max-w-[1600px] mx-auto w-full flex-1">
+                {isLoading && sheetRecords.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-64 bg-white border rounded-2xl shadow-sm">
+                        <div className="relative">
+                            <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+                            <RefreshCw className="w-5 h-5 text-blue-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
                         </div>
-                    )}
-                </TabsContent>
+                        <p className="mt-4 text-slate-500 font-medium animate-pulse">Synchronizing records...</p>
+                    </div>
+                ) : (
+                    <div className="bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
+                        <Tabs value={activeTab} className="w-full flex flex-col h-full">
+                            {/* PENDING TAB */}
+                            <TabsContent value="pending" className="flex-1 mt-0 focus-visible:outline-none">
+                                {pending.length === 0 ? (
+                                    <div className="py-20 flex flex-col items-center justify-center text-center">
+                                        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 transition-transform hover:scale-110">
+                                            <FileText className="w-10 h-10 text-slate-300" />
+                                        </div>
+                                        <h3 className="text-xl font-semibold text-slate-900">No pending approvals</h3>
+                                        <p className="text-slate-500 mt-2 max-w-sm">
+                                            All returns have been approved or there are no pending items at this stage.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+                                        <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+                                            <thead className="sticky top-0 z-10 shadow-sm">
+                                                <tr className="bg-slate-200 border-b border-slate-300">
+                                                    <th className="px-4 py-4 w-12 bg-slate-200">
+                                                        <Checkbox
+                                                            checked={selectedRows.size === pending.length && pending.length > 0}
+                                                            onCheckedChange={toggleAll}
+                                                            className="border-slate-400 data-[state=checked]:bg-blue-600"
+                                                        />
+                                                    </th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 w-24 whitespace-nowrap">Action</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Indent</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Unit Tracking No.</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Item Name</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Invoice</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Return Qty</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Status</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Planned</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {pending.map((rec) => (
+                                                    <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors group">
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <Checkbox
+                                                                checked={selectedRows.has(rec.id)}
+                                                                onCheckedChange={() => toggleRow(rec.id)}
+                                                                className="border-slate-300 transition-all data-[state=checked]:bg-blue-600"
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => handleOpenForm(rec.id)}
+                                                                className="h-8 bg-white hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all font-medium"
+                                                            >
+                                                                Process
+                                                            </Button>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-900 font-medium whitespace-nowrap">{rec.data.indentNumber}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{rec.data.liftNumber}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{rec.data.itemName}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{safeValue(rec.data.invoiceNumber)}</td>
+                                                        <td className="px-4 py-3 text-slate-600 font-medium whitespace-nowrap">{safeValue(rec.data.returnQty)}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                                            <span className="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold uppercase tracking-wider">
+                                                                {safeValue(rec.data.returnStatus)}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(rec.data.plannedDate)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </TabsContent>
 
-                {/* HISTORY TAB */}
-                <TabsContent value="history" className="mt-6">
-                    {completed.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500">No history</div>
-                    ) : (
-                        <div className="border rounded-lg overflow-x-auto">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Indent #</TableHead>
-                                        <TableHead>Item Name</TableHead>
-                                        <TableHead>Invoice #</TableHead>
-                                        <TableHead>Return Qty</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Planned Date</TableHead>
-                                        <TableHead>Actual Date</TableHead>
-                                        <TableHead>Delay</TableHead>
-                                        <TableHead>DN Number</TableHead>
-                                        <TableHead>Image</TableHead>
-                                        <TableHead>Remarks</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {completed.map((rec) => (
-                                        <TableRow key={rec.id}>
-                                            <TableCell>{rec.data.indentNumber}</TableCell>
-                                            <TableCell>{rec.data.itemName}</TableCell>
-                                            <TableCell>{safeValue(rec.data.invoiceNumber)}</TableCell>
-                                            <TableCell>{safeValue(rec.data.returnQty)}</TableCell>
-                                            <TableCell>{safeValue(rec.data.returnStatus)}</TableCell>
-                                            <TableCell>{formatDate(rec.data.plannedDate)}</TableCell>
-                                            <TableCell>{formatDate(rec.data.actualDate)}</TableCell>
-                                            <TableCell>{rec.data.delay}</TableCell>
-                                            <TableCell>{rec.data.dnNumber}</TableCell>
-                                            <TableCell>
-                                                {rec.data.returnImage ? (
-                                                    <a href={rec.data.returnImage} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline flex items-center gap-1">
-                                                        <FileText className="w-3 h-3" /> View
-                                                    </a>
-                                                ) : "-"}
-                                            </TableCell>
-                                            <TableCell>{rec.data.remarks}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    )}
-                </TabsContent>
-            </Tabs>
+                            {/* HISTORY TAB */}
+                            <TabsContent value="history" className="flex-1 mt-0 focus-visible:outline-none">
+                                {completed.length === 0 ? (
+                                    <div className="py-20 flex flex-col items-center justify-center text-center">
+                                        <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 transition-transform hover:scale-110">
+                                            <Search className="w-10 h-10 text-slate-300" />
+                                        </div>
+                                        <h3 className="text-xl font-semibold text-slate-900">No history found</h3>
+                                        <p className="text-slate-500 mt-2 max-w-sm">
+                                            Processed approvals will appear here once they are submitted.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+                                        <table className="w-full text-sm text-left border-collapse min-w-[1400px]">
+                                            <thead className="sticky top-0 z-10 shadow-sm">
+                                                <tr className="bg-slate-200 border-b border-slate-300">
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Indent</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Unit Tracking No.</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Item Name</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Invoice</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Return Qty</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Status</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Planned</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Actual</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Delay</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">DN Number</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Image</th>
+                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Remarks</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {completed.map((rec) => (
+                                                    <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
+                                                        <td className="px-4 py-3 text-slate-900 font-medium whitespace-nowrap">{rec.data.indentNumber}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{rec.data.liftNumber}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{rec.data.itemName}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{safeValue(rec.data.invoiceNumber)}</td>
+                                                        <td className="px-4 py-3 text-slate-600 font-medium whitespace-nowrap">{safeValue(rec.data.returnQty)}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                                            <span className="px-2 py-1 rounded bg-slate-100 text-[10px] font-bold uppercase tracking-wider">
+                                                                {safeValue(rec.data.returnStatus)}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(rec.data.plannedDate)}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap font-medium text-blue-600">{formatDate(rec.data.actualDate)}</td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{rec.data.delay}</td>
+                                                        <td className="px-4 py-3 text-slate-600 font-semibold whitespace-nowrap">{rec.data.dnNumber}</td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            {rec.data.returnImage ? (
+                                                                <a href={rec.data.returnImage} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-medium whitespace-nowrap">
+                                                                    <FileText className="w-3.5 h-3.5" /> View
+                                                                </a>
+                                                            ) : "-"}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate whitespace-nowrap">{rec.data.remarks}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </TabsContent>
+                        </Tabs>
+                    </div>
+                )}
+            </div>
 
             {/* FORM MODAL */}
             <Dialog open={open} onOpenChange={setOpen}>
@@ -592,7 +669,7 @@ export default function Stage13() {
                                 <Input value={formData.liftNumber} disabled className="bg-gray-100 h-8 text-xs" />
                             </div>
                             <div className="space-y-2">
-                                <Label>Invoice Number</Label>
+                                <Label>Invoice No</Label>
                                 <Input value={formData.invoiceNumber} disabled className="bg-gray-100 h-8 text-xs" />
                             </div>
 
@@ -709,7 +786,7 @@ export default function Stage13() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Indent #</TableHead>
+                                            <TableHead>Indent</TableHead>
                                             <TableHead>Item Name</TableHead>
                                             <TableHead>Return Qty</TableHead>
                                         </TableRow>

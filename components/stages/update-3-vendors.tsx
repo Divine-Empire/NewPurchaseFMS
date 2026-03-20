@@ -741,9 +741,9 @@ export default function Stage3() {
           ) : (
             <div className="border rounded-lg overflow-auto flex-1 shadow-sm relative h-full">
               <table className="w-full caption-bottom text-sm border-collapse">
-                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
-                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
-                    <TableHead className="w-[50px] sticky top-0 z-20 bg-slate-50 border-none">
+                <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                  <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
+                    <TableHead className="w-[50px] sticky top-0 z-20 bg-slate-200 border-none">
                       <Checkbox
                         checked={pending.length > 0 && pending.every(r => selectedIds.has(r.id))}
                         onCheckedChange={toggleSelectAll}
@@ -752,7 +752,7 @@ export default function Stage3() {
                     {baseColumns
                       .filter((c) => ["indentNumber", "createdBy", "category", "itemName", "quantity", "warehouseLocation", "itemCode", "leadTime", "planned2"].includes(c.accessorKey) || (c.accessorKey !== "actual2" && selectedColumns.includes(c.accessorKey)))
                       .map((col) => (
-                        <TableHead key={col.accessorKey} className="sticky top-0 z-20 bg-slate-50 border-none px-4 py-3">
+                        <TableHead key={col.accessorKey} className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3">
                           <div className="flex items-center gap-2 font-bold text-slate-600 truncate uppercase text-[11px] tracking-wider">
                             {col.header}
                           </div>

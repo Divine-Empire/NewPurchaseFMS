@@ -3,14 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, RefreshCw, Upload, CheckCircle, CalendarIcon, Banknote, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,11 +36,11 @@ const IMAGE_FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID;
 
 // Stable column definitions — outside component so reference is identical each render
 const PENDING_COLUMNS = [
-    { key: "invoiceNo", label: "Invoice #" },
+    { key: "invoiceNo", label: "Invoice" },
     { key: "totalVal", label: "Total Amt" },
     { key: "totalPaid", label: "Paid" },
     { key: "pendingAmount", label: "Pending" },
-    { key: "plan1", label: "Due Date" },
+    { key: "plan1", label: "Planned" },
     { key: "invoiceDate", label: "Inv. Date" },
     { key: "vendor", label: "Vendor" },
     { key: "poNumber", label: "PO Number" },
@@ -60,8 +52,10 @@ const PENDING_COLUMNS = [
 
 const HISTORY_COLUMNS = [
     { key: "date", label: "Payment Date" },
-    { key: "invoiceNo", label: "Invoice #" },
+    { key: "invoiceNo", label: "Invoice" },
     { key: "vendor", label: "Vendor" },
+    { key: "planned", label: "Planned" },
+    { key: "actual", label: "Actual" },
     { key: "amountPaid", label: "Amount Paid" },
     { key: "mode", label: "Payment Mode" },
     { key: "status", label: "Status" },
@@ -156,19 +150,14 @@ export default function Stage13() {
                         const storedPaid = parseNum(row[16]);
                         const plan1 = row[13];
                         const actual1 = row[14];
-                        const hasPlan = !!plan1 && String(plan1).trim() !== "" && String(plan1).trim() !== "-";
-                        const hasActual = !!actual1 && String(actual1).trim() !== "" && String(actual1).trim() !== "-";
-
-                        let status = "not_ready";
-                        if (hasPlan) {
-                            status = (!hasActual || currentPending > 1) ? "pending" : "history";
-                        }
+                        const status = (!!plan1 && String(plan1).trim() !== "" && String(plan1).trim() !== "-")
+                            ? ((!actual1 || String(actual1).trim() === "" || String(actual1).trim() === "-" || currentPending > 1) ? "pending" : "history")
+                            : "not_ready";
 
                         const invNo = String(row[1] || "").trim();
                         const vendorName = String(row[4] || "").trim();
 
-                        const qtyStr = String(row[10] || "");
-                        const totalRcvd = qtyStr.split(',')
+                        const totalRcvd = String(row[10] || "").split(',')
                             .map(v => parseFloat(v.trim()) || 0)
                             .reduce((sum, val) => sum + val, 0);
 
@@ -204,20 +193,40 @@ export default function Stage13() {
             // A(0)=Timestamp, B(1)=Status, C(2)=Invoice No, D(3)=Vendor Name,
             // E(4)=Amount, F(5)=Payment Status, G(6)=Payment Due Date, H(7)=Payment Type, I(8)=Proof
             if (histJson.success && Array.isArray(histJson.data)) {
+                // Create a lookup for Planned/Actual from VENDOR-PAYMENTS data
+                const lookupMap = new Map();
+                if (payJson.success && Array.isArray(payJson.data)) {
+                    payJson.data.slice(6).forEach((row: any) => {
+                        const invNo = String(row[1] || "").trim();
+                        if (invNo) {
+                            lookupMap.set(invNo, {
+                                planned: toDate(row[13]),
+                                actual: toDate(row[14])
+                            });
+                        }
+                    });
+                }
+
                 const hRows = histJson.data
                     .slice(1)
                     .map((row: any, i: number) => ({ row, id: `HIST_${i}` }))
                     .filter(({ row }: any) => row[1] === "Vendor Payment")
-                    .map(({ row, id }: any) => ({
-                        id,
-                        invoiceNo: row[2],
-                        vendor: row[3],
-                        amountPaid: row[4],
-                        status: row[5],
-                        date: toDate(row[6]),
-                        mode: row[7],
-                        proof: row[8],
-                    }));
+                    .map(({ row, id }: any) => {
+                        const invNo = String(row[2] || "").trim();
+                        const extra = lookupMap.get(invNo) || { planned: "-", actual: "-" };
+                        return {
+                            id,
+                            invoiceNo: row[2],
+                            vendor: row[3],
+                            amountPaid: row[4],
+                            status: row[5],
+                            date: toDate(row[6]),
+                            planned: extra.planned,
+                            actual: extra.actual,
+                            mode: row[7],
+                            proof: row[8],
+                        };
+                    });
 
                 setHistoryRecords(hRows.reverse());
             }
@@ -439,143 +448,230 @@ export default function Stage13() {
 
     // ─── Render ───────────────────────────────────────────────────────────────
     return (
-        <div className="p-6">
-            {/* Header */}
-            <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
-                <div>
-                    <h2 className="text-2xl font-bold">Stage 13: Vendor Payments</h2>
-                </div>
+        <div className="flex flex-col min-h-screen bg-slate-50/30">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b shadow-sm">
+                <div className="max-w-[1600px] mx-auto">
+                    <div className="p-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                                <span className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center shadow-emerald-200 shadow-lg">
+                                    <Banknote className="w-6 h-6 text-white" />
+                                </span>
+                                Stage 13: Vendor Payments
+                            </h1>
+                            <p className="text-slate-500 text-sm mt-1 ml-13">Process and track vendor invoice payments</p>
+                        </div>
 
-                <div className="flex gap-4 items-center">
-                    <Button
-                        onClick={handleBulkOpen}
-                        className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-md hover:shadow-lg transition-all duration-200 ease-in-out transform hover:-translate-y-0.5 gap-2 px-6"
-                    >
-                        <Banknote className="w-4 h-4" /> Payment
-                    </Button>
+                        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                            <Button
+                                onClick={handleBulkOpen}
+                                className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-md hover:shadow-lg transition-all duration-200 ease-in-out transform hover:-translate-y-0.5 gap-2 px-6 h-10 rounded-xl"
+                            >
+                                <Banknote className="w-4 h-4" /> Payment
+                            </Button>
 
-                    <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                        <Input
-                            placeholder="Search by Invoice, Vendor, Item, PO..."
-                            value={searchTerm}
-                            onChange={handleSearchChange}
-                            className="pl-9 bg-white w-[320px]"
-                        />
+                            <div className="relative flex-1 md:w-64 group">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                                <Input
+                                    placeholder="Search invoice, vendor, PO..."
+                                    value={searchTerm}
+                                    onChange={handleSearchChange}
+                                    className="pl-10 bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-emerald-100 transition-all h-10 rounded-xl shadow-none"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleSort('plan1')}
+                                    className={cn(
+                                        "h-10 rounded-xl border-slate-200 bg-white hover:bg-slate-50 gap-2 whitespace-nowrap px-4",
+                                        sortConfig?.key === 'plan1' && "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    )}
+                                    title="Sort by Due Date"
+                                >
+                                    <span className="text-sm font-medium">Due Date</span>
+                                    {sortConfig?.key === 'plan1' ? (
+                                        sortConfig.direction === 'asc' ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />
+                                    ) : (
+                                        <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                                    )}
+                                </Button>
+
+                                <Select value="" onValueChange={() => { }}>
+                                    <SelectTrigger className="h-10 w-32 rounded-xl border-slate-200 bg-white hover:bg-slate-50">
+                                        <SelectValue placeholder="Columns" />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-80 min-w-[200px] p-2">
+                                        <div className="mb-2 px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Visible Columns</div>
+                                        {PENDING_COLUMNS.map(c => (
+                                            <div key={c.key} className="flex items-center p-2 gap-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors" onClick={() => handleColumnToggle(c.key, !selectedPendingColumns.includes(c.key))}>
+                                                <Checkbox
+                                                    checked={selectedPendingColumns.includes(c.key)}
+                                                    onCheckedChange={(chk) => handleColumnToggle(c.key, !!chk)}
+                                                    className="data-[state=checked]:bg-emerald-600 border-slate-300"
+                                                />
+                                                <span className="text-sm text-slate-600 font-medium leading-none">{c.label}</span>
+                                            </div>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+
+                                <Button 
+                                    variant="outline" 
+                                    size="icon"
+                                    onClick={fetchData} 
+                                    disabled={isLoading}
+                                    className="h-10 w-10 rounded-xl bg-white hover:bg-slate-50 border-slate-200 flex-shrink-0"
+                                >
+                                    <RefreshCw className={`w-4 h-4 text-slate-600 ${isLoading ? "animate-spin" : ""}`} />
+                                </Button>
+                            </div>
+                        </div>
                     </div>
 
-                    <Button
-                        variant="outline"
-                        onClick={() => handleSort('plan1')}
-                        className="bg-white"
-                        title="Sort by Due Date"
-                    >
-                        Due Date
-                        {sortConfig?.key === 'plan1' ? (
-                            sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 ml-2" /> : <ArrowDown className="w-4 h-4 ml-2" />
-                        ) : (
-                            <ArrowUpDown className="w-4 h-4 ml-2 text-gray-400" />
-                        )}
-                    </Button>
-
-                    <Select value="" onValueChange={() => { }}>
-                        <SelectTrigger className="w-35"><SelectValue placeholder="Columns" /></SelectTrigger>
-                        <SelectContent className="max-h-64">
-                            {PENDING_COLUMNS.map(c => (
-                                <div key={c.key} className="flex items-center p-2 gap-2">
-                                    <Checkbox
-                                        checked={selectedPendingColumns.includes(c.key)}
-                                        onCheckedChange={chk => handleColumnToggle(c.key, !!chk)}
-                                    />
-                                    <span className="text-sm">{c.label}</span>
-                                </div>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    </Button>
+                    <div className="px-6 pb-2">
+                        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+                            <TabsList className="bg-slate-200/50 p-1 rounded-xl h-11 inline-flex w-auto mb-2">
+                                <TabsTrigger 
+                                    value="pending" 
+                                    className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-emerald-600 transition-all font-medium"
+                                >
+                                    Pending Invoices ({filteredRecords.length})
+                                </TabsTrigger>
+                                <TabsTrigger 
+                                    value="history"
+                                    className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-emerald-600 transition-all font-medium"
+                                >
+                                    Payment History ({filteredHistoryRecords.length})
+                                </TabsTrigger>
+                            </TabsList>
+                        </Tabs>
+                    </div>
                 </div>
             </div>
 
-            {/* Tables */}
-            {isLoading ? (
-                <div className="flex justify-center items-center h-64">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-                    <span className="ml-2 text-gray-500">Loading verified invoices...</span>
-                </div>
-            ) : (
-                <Tabs value={activeTab} onValueChange={handleTabChange}>
-                    <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="pending">Pending ({filteredRecords.length})</TabsTrigger>
-                        <TabsTrigger value="history">History ({filteredHistoryRecords.length})</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="pending" className="mt-6">
-                        {filteredRecords.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500">No pending payments</div>
-                        ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            {visiblePendingColumns.map(c => <TableHead key={c.key}>{c.label}</TableHead>)}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {filteredRecords.map(rec => (
-                                            <TableRow key={rec.id}>
-                                                {visiblePendingColumns.map(c => (
-                                                    <TableCell key={c.key}>{safeValue(rec.data[c.key])}</TableCell>
-                                                ))}
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        )}
-                    </TabsContent>
-
-                    <TabsContent value="history" className="mt-6">
-                        <div className="mb-4 text-sm text-gray-600">
-                            Showing partial and full payment transaction history.
+            {/* Main Content Area */}
+            <div className="p-4 md:p-6 max-w-[1600px] mx-auto w-full flex-1">
+                {isLoading && records.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-80 bg-white border border-slate-200 rounded-3xl shadow-sm">
+                        <div className="relative mb-6">
+                            <div className="w-16 h-16 border-4 border-emerald-50 border-t-emerald-600 rounded-full animate-spin"></div>
+                            <Banknote className="w-7 h-7 text-emerald-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
                         </div>
-                        {filteredHistoryRecords.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500">No payment transaction history</div>
-                        ) : (
-                            <div className="border rounded-lg overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            {HISTORY_COLUMNS.map(c => <TableHead key={c.key}>{c.label}</TableHead>)}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {filteredHistoryRecords.map(rec => (
-                                            <TableRow key={rec.id}>
-                                                {HISTORY_COLUMNS.map(c => (
-                                                    <TableCell key={c.key}>
-                                                        {c.key === "amountPaid" ? (
-                                                            <span className="font-medium">₹ {rec[c.key]}</span>
-                                                        ) : c.key === "status" ? (
-                                                            <Badge variant={rec[c.key] === "Paid" ? "default" : "secondary"}>
-                                                                {rec[c.key]}
-                                                            </Badge>
-                                                        ) : (
-                                                            safeValue(rec[c.key])
-                                                        )}
-                                                    </TableCell>
+                        <h3 className="text-lg font-bold text-slate-900">Synchronizing Payments</h3>
+                        <p className="text-slate-500 mt-1 max-w-sm text-center">Fetching verified invoices and payment history from server...</p>
+                    </div>
+                ) : (
+                    <div className="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden flex flex-col h-full ring-1 ring-slate-400/5">
+                        <Tabs value={activeTab} className="w-full flex flex-col h-full">
+                            {/* PENDING TAB */}
+                            <TabsContent value="pending" className="flex-1 mt-0 focus-visible:outline-none">
+                                {filteredRecords.length === 0 ? (
+                                    <div className="py-24 flex flex-col items-center justify-center text-center">
+                                        <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6 transition-transform hover:scale-105 duration-300">
+                                            <FileText className="w-12 h-12 text-slate-300" />
+                                        </div>
+                                        <h3 className="text-2xl font-bold text-slate-900">All clear!</h3>
+                                        <p className="text-slate-500 mt-2 max-w-sm mx-auto">
+                                            No pending invoices found matching your criteria.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+                                        <table className="w-full text-sm text-left border-collapse min-w-[1500px]">
+                                            <thead className="sticky top-0 z-10 shadow-sm">
+                                                <tr className="bg-slate-200 border-b border-slate-300">
+                                                    {visiblePendingColumns.map(c => (
+                                                        <th key={c.key} className="px-5 py-4 font-bold text-slate-900 whitespace-nowrap tracking-tight bg-slate-200">
+                                                            {c.label}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {filteredRecords.map(rec => (
+                                                    <tr key={rec.id} className="hover:bg-slate-50/80 transition-all group duration-150">
+                                                        {visiblePendingColumns.map(c => (
+                                                            <td key={c.key} className={cn(
+                                                                "px-5 py-4 whitespace-nowrap transition-colors",
+                                                                c.key === "invoiceNo" ? "text-slate-900 font-bold" : "text-slate-600 font-medium",
+                                                                c.key === "pendingAmount" && rec.data[c.key] > 0 ? "text-red-600 font-bold bg-red-50/30" : ""
+                                                            )}>
+                                                                {c.key === "pendingAmount" ? `₹ ${parseNum(rec.data[c.key]).toLocaleString()}` : safeValue(rec.data[c.key])}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
                                                 ))}
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        )}
-                    </TabsContent>
-                </Tabs>
-            )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </TabsContent>
+
+                            {/* HISTORY TAB */}
+                            <TabsContent value="history" className="flex-1 mt-0 focus-visible:outline-none">
+                                {filteredHistoryRecords.length === 0 ? (
+                                    <div className="py-24 flex flex-col items-center justify-center text-center">
+                                        <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6">
+                                            <Banknote className="w-12 h-12 text-slate-200" />
+                                        </div>
+                                        <h3 className="text-lg font-semibold text-slate-900">No transactions recorded</h3>
+                                        <p className="text-slate-500 mt-2 max-w-sm mx-auto">
+                                            When you process payments, the history will appear here for tracking and audits.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+                                        <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+                                            <thead className="sticky top-0 z-10 shadow-sm">
+                                                <tr className="bg-slate-200 border-b border-slate-300">
+                                                    {HISTORY_COLUMNS.map(c => (
+                                                        <th key={c.key} className="px-5 py-4 font-bold text-slate-900 whitespace-nowrap tracking-tight bg-slate-200">
+                                                            {c.label}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {filteredHistoryRecords.map(rec => (
+                                                    <tr key={rec.id} className="hover:bg-slate-50/80 transition-all duration-150">
+                                                        {HISTORY_COLUMNS.map(c => (
+                                                            <td key={c.key} className="px-5 py-4 whitespace-nowrap">
+                                                                {c.key === "amountPaid" ? (
+                                                                    <span className="font-bold text-slate-900 tracking-tight">₹ {parseNum(rec[c.key]).toLocaleString()}</span>
+                                                                ) : c.key === "status" ? (
+                                                                    <Badge variant="outline" className={cn(
+                                                                        "px-2.5 py-0.5 rounded-lg font-bold border-2 transition-colors",
+                                                                        rec[c.key] === "Paid" 
+                                                                            ? "bg-emerald-50 text-emerald-700 border-emerald-100" 
+                                                                            : "bg-amber-50 text-amber-700 border-amber-100"
+                                                                    )}>
+                                                                        {rec[c.key]}
+                                                                    </Badge>
+                                                                ) : c.key === "date" ? (
+                                                                    <div className="flex items-center gap-2 font-semibold text-slate-600">
+                                                                        <CalendarIcon className="w-3.5 h-3.5 text-slate-400" />
+                                                                        {rec[c.key]}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="font-medium text-slate-600">{safeValue(rec[c.key])}</span>
+                                                                )}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </TabsContent>
+                        </Tabs>
+                    </div>
+                )}
+            </div>
 
             {/* Bulk Payment Dialog */}
             <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
@@ -618,51 +714,58 @@ export default function Stage13() {
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            <div className="border rounded-lg overflow-hidden">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead className="w-[50px]"></TableHead>
-                                            <TableHead>Invoice #</TableHead>
-                                            <TableHead>Date</TableHead>
-                                            <TableHead className="text-right">Total Amt</TableHead>
-                                            <TableHead className="text-right">Total Paid</TableHead>
-                                            <TableHead className="text-right">Pending</TableHead>
-                                            <TableHead className="w-[150px]">Pay Amount</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
+                            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                <table className="w-full text-sm text-left border-collapse">
+                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-4 py-3 w-[50px]"></th>
+                                            <th className="px-4 py-3 font-bold text-slate-700">Invoice</th>
+                                            <th className="px-4 py-3 font-bold text-slate-700">Date</th>
+                                            <th className="px-4 py-3 font-bold text-slate-700 text-right">Total Amt</th>
+                                            <th className="px-4 py-3 font-bold text-slate-700 text-right">Total Paid</th>
+                                            <th className="px-4 py-3 font-bold text-slate-700 text-right">Pending</th>
+                                            <th className="px-4 py-3 font-bold text-slate-700 w-[150px]">Pay Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 bg-white font-medium">
                                         {Object.keys(bulkInvoices).map(id => {
                                             const rec = records.find(r => r.id === id);
                                             if (!rec) return null;
                                             const info = bulkInvoices[id];
                                             return (
-                                                <TableRow key={id} className={info.selected ? "bg-blue-50" : ""}>
-                                                    <TableCell>
+                                                <tr key={id} className={cn(
+                                                    "transition-colors hover:bg-slate-50/50",
+                                                    info.selected ? "bg-emerald-50/30" : ""
+                                                )}>
+                                                    <td className="px-4 py-3">
                                                         <Checkbox
                                                             checked={info.selected}
                                                             onCheckedChange={c => handleBulkInvoiceToggle(id, !!c)}
+                                                            className="data-[state=checked]:bg-emerald-600 border-slate-300"
                                                         />
-                                                    </TableCell>
-                                                    <TableCell className="font-medium">{rec.data.invoiceNo}</TableCell>
-                                                    <TableCell>{rec.data.invoiceDate}</TableCell>
-                                                    <TableCell className="text-right">{rec.data.totalVal}</TableCell>
-                                                    <TableCell className="text-right">{rec.data.totalPaid}</TableCell>
-                                                    <TableCell className="text-right text-red-600 font-medium">{info.originalPending.toFixed(2)}</TableCell>
-                                                    <TableCell>
-                                                        <Input
-                                                            type="number"
-                                                            className="h-8 w-32"
-                                                            value={info.payAmount}
-                                                            onChange={e => handleBulkAmountChange(id, e.target.value)}
-                                                            disabled={!info.selected}
-                                                        />
-                                                    </TableCell>
-                                                </TableRow>
+                                                    </td>
+                                                    <td className="px-4 py-3 font-bold text-slate-900">{rec.data.invoiceNo}</td>
+                                                    <td className="px-4 py-3 text-slate-600">{rec.data.invoiceDate}</td>
+                                                    <td className="px-4 py-3 text-right text-slate-600 italic">₹ {parseNum(rec.data.totalVal).toLocaleString()}</td>
+                                                    <td className="px-4 py-3 text-right text-slate-600 italic">₹ {parseNum(rec.data.totalPaid).toLocaleString()}</td>
+                                                    <td className="px-4 py-3 text-right text-red-600 font-bold">₹ {info.originalPending.toFixed(2)}</td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="relative">
+                                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] font-bold">₹</span>
+                                                            <Input
+                                                                type="number"
+                                                                className="h-9 pl-5 w-full bg-slate-50 border-slate-200 focus:bg-white transition-all rounded-lg"
+                                                                value={info.payAmount}
+                                                                onChange={e => handleBulkAmountChange(id, e.target.value)}
+                                                                disabled={!info.selected}
+                                                            />
+                                                        </div>
+                                                    </td>
+                                                </tr>
                                             );
                                         })}
-                                    </TableBody>
-                                </Table>
+                                    </tbody>
+                                </table>
                             </div>
 
                             <div className="grid grid-cols-2 gap-6 p-4 bg-gray-50 rounded-lg">

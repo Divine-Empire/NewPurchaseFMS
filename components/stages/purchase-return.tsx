@@ -3,14 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { Loader2, FileText, RefreshCw, Search } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,24 +28,25 @@ const FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09f
 
 // Static columns definition
 const PENDING_COLUMNS = [
-  { key: "indentNumber", label: "Indent #" },
-  { key: "category", label: "Category" },
+  { key: "indentNumber", label: "Indent No" },
+  { key: "unitTrackingNo", label: "Unit Tracking No" },
   { key: "itemName", label: "Item" },
   { key: "rejectedQty", label: "Rejected Qty" },
   { key: "vendor", label: "Vendor" },
-  { key: "invoiceNumber", label: "Invoice #" },
-  { key: "plan6", label: "Plan Date" },
+  { key: "invoiceNumber", label: "Invoice No" },
+  { key: "plan6", label: "Planned" },
 ];
 
 const HISTORY_COLUMNS = [
-  { key: "indentNumber", label: "Indent #" },
+  { key: "indentNumber", label: "Indent No" },
+  { key: "unitTrackingNo", label: "Unit Tracking No" },
   { key: "itemName", label: "Item" },
   { key: "vendor", label: "Vendor" },
-  { key: "invoiceNumber", label: "Invoice #" },
-  { key: "plan6", label: "Plan Date" },
-  { key: "actual6", label: "Return Date" },
-  { key: "returnedQty", label: "Ret Qty" },
-  { key: "returnAmount", label: "Ret Amount" },
+  { key: "invoiceNumber", label: "Invoice No" },
+  { key: "plan6", label: "Planned" },
+  { key: "actual6", label: "Actual" },
+  { key: "returnedQty", label: "Return Qty" },
+  { key: "returnAmount", label: "Return Amount" },
   { key: "returnReason", label: "Reason" },
   { key: "returnStatus", label: "Status" },
   { key: "returnItemImage", label: "Item Img" },
@@ -61,17 +54,29 @@ const HISTORY_COLUMNS = [
 ];
 
 // Helper functions
+const formatDateDash = (date: any) => {
+  if (!date || date === "-" || date === "—") return "-";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return typeof date === "string" ? date : "-";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy}`;
+};
+
 const safeValue = (val: any, key: string = "") => {
   if (!val || val === "-" || val === "") return "-";
-  if (key.includes("Image")) {
+  if (key.includes("Image") || key.includes("Attachment") || key.includes("Copy")) {
     return (
-      <a href={String(val)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
-        <FileText className="w-3 h-3" /> View
+      <a href={String(val)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-medium">
+        <FileText className="w-3.5 h-3.5" /> 
+        View
       </a>
     );
   }
-  if ((key.includes("plan") || key.includes("actual") || key.includes("Date")) && !isNaN(Date.parse(String(val))) && !String(val).match(/^\d+$/)) {
-    return new Date(String(val)).toLocaleDateString("en-IN");
+  const lowKey = key.toLowerCase();
+  if (lowKey.includes("plan") || lowKey.includes("actual") || lowKey.includes("date")) {
+    return formatDateDash(val);
   }
   return String(val);
 };
@@ -134,32 +139,18 @@ export default function Stage12() {
         throw new Error("Failed to load sheet data. Check console for details.");
       }
 
-      // Build FMS map for vendor info
-      const fmsMap = new Map<string, any[]>();
-      if (Array.isArray(fmsJson.data)) {
-        fmsJson.data.slice(7).forEach((r: any) => {
-          if (r[1] && String(r[1]).trim()) fmsMap.set(String(r[1]).trim(), r);
-        });
-      }
+      // Build lookup maps
 
-      // 1. Process RECEIVING-ACCOUNTS first to build a lookup map for Indent Details
+      // Process RECEIVING-ACCOUNTS to build a lookup map for Indent Details
       const indentMap = new Map<string, any>();
       if (Array.isArray(accJson.data)) {
         accJson.data.slice(6).forEach((row: any) => {
           const indentNo = String(row[1] || "").trim();
           if (!indentNo) return;
 
-          const fmsRow = fmsMap.get(indentNo) || [];
-          const selectedVendor = fmsRow[47]; // Index 47
-          let vendorName = "-";
-          if (selectedVendor === "Vendor 1") vendorName = fmsRow[21];
-          else if (selectedVendor === "Vendor 2") vendorName = fmsRow[29];
-          else if (selectedVendor === "Vendor 3") vendorName = fmsRow[37];
-
           indentMap.set(indentNo, {
             indentNumber: indentNo,
-            liftNo: row[2] || "",
-            category: row[2],
+            unitTrackingNo: row[2] || "",
             itemName: row[7],
             vendor: row[3],
             invoiceNumber: row[24],
@@ -337,8 +328,9 @@ export default function Stage12() {
 
       if (uploadPromises.length > 0) await Promise.all(uploadPromises);
 
-      const timestamp = getFmsTimestamp();
-      const dateStr = timestamp;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const d = formData.actual6Date || new Date();
+      const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(new Date().getHours())}:${pad(new Date().getMinutes())}:${pad(new Date().getSeconds())}`;
 
       // Update specific Partial QC cells using updateCell to avoid overwriting row data (col A-N) or formulas (col P)
       // O: Actual7 (Return Date) -> Col 15
@@ -388,111 +380,178 @@ export default function Stage12() {
     , [formData, originalQty]);
 
   return (
-    <div className="p-6">
-      <div className="mb-6 p-6 bg-white border rounded-lg shadow-sm flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold">Stage 12: Purchase Return</h2>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-            <Input
-              placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-white w-[350px]"
-            />
+    <div className="flex flex-col min-h-screen bg-slate-50/30">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full flex flex-col h-full">
+        {/* Sticky Top Header */}
+        <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b shadow-sm">
+          <div className="max-w-[1600px] mx-auto">
+            <div className="p-4 md:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                  <span className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-blue-200 shadow-lg">
+                    <RefreshCw className="w-6 h-6 text-white" />
+                  </span>
+                  Stage 12: Purchase Return
+                </h1>
+                <p className="text-slate-500 text-sm mt-1 ml-12">Process and track returns for rejected QC items</p>
+              </div>
+              
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="relative flex-1 md:w-80 group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                  <Input
+                    placeholder="Search by indent, item, vendor..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10 bg-slate-50 border-slate-200 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all h-10 rounded-xl"
+                  />
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={fetchData} 
+                  disabled={isLoading}
+                  className="h-10 w-10 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border-slate-200"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+            </div>
+
+            <div className="px-6 pb-2">
+              <TabsList className="bg-slate-200/50 p-1 rounded-xl h-11 inline-flex w-auto mb-2">
+                <TabsTrigger 
+                  value="pending" 
+                  className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 transition-all font-medium"
+                >
+                  Pending Returns ({pending.length})
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="history"
+                  className="rounded-lg px-6 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-blue-600 transition-all font-medium"
+                >
+                  Return History ({completed.length})
+                </TabsTrigger>
+              </TabsList>
+            </div>
           </div>
-          <Button variant="outline" onClick={fetchData} disabled={isLoading}>
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          </Button>
         </div>
-      </div>
 
-      {isLoading ? (
-        <div className="flex justify-center items-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-2 text-gray-500">Loading data...</span>
+        <div className="p-4 md:p-6 max-w-[1600px] mx-auto w-full flex-1">
+          {isLoading && sheetRecords.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 bg-white border rounded-2xl shadow-sm">
+              <div className="relative">
+                <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+                <RefreshCw className="w-5 h-5 text-blue-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+              </div>
+              <p className="mt-4 text-slate-500 font-medium animate-pulse">Synchronizing return data...</p>
+            </div>
+          ) : (
+            <div className="bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col h-full">
+              <TabsContent value="pending" className="flex-1 mt-0 focus-visible:outline-none">
+                {pending.length === 0 ? (
+                  <div className="py-20 flex flex-col items-center justify-center text-center">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 transition-transform hover:scale-110">
+                      <FileText className="w-10 h-10 text-slate-300" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-slate-900">No pending returns</h3>
+                    <p className="text-slate-500 mt-2 max-w-sm">
+                      All rejected items have been processed or there are no QC rejections currently.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+                    <table className="w-full text-sm text-left border-collapse min-w-[1200px]">
+                      <thead className="sticky top-0 z-10 shadow-sm">
+                        <tr className="bg-slate-200 border-b border-slate-300">
+                          <th className="px-4 py-4 font-semibold text-slate-900 w-24">Actions</th>
+                          {PENDING_COLUMNS.map((col) => (
+                            <th key={col.key} className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">
+                              {col.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {pending.map((record) => (
+                          <tr key={record.id} className="hover:bg-slate-50/80 transition-colors group">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenForm(record.id)}
+                                className="h-8 bg-white hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all font-medium"
+                              >
+                                Process
+                              </Button>
+                            </td>
+                            {PENDING_COLUMNS.map((col) => (
+                              <td key={col.key} className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                {safeValue(record.data[col.key], col.key)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="history" className="flex-1 mt-0 focus-visible:outline-none">
+                {completed.length === 0 ? (
+                  <div className="py-20 flex flex-col items-center justify-center text-center">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 transition-transform hover:scale-110">
+                      <Search className="w-10 h-10 text-slate-300" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-slate-900">No history found</h3>
+                    <p className="text-slate-500 mt-2 max-w-sm">
+                      Processed purchase returns will appear here once they are submitted.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)] custom-scrollbar">
+                    <table className="w-full text-sm text-left border-collapse min-w-[1400px]">
+                      <thead className="sticky top-0 z-10 shadow-sm">
+                        <tr className="bg-slate-200 border-b border-slate-300">
+                          {HISTORY_COLUMNS.map((col) => (
+                            <th key={col.key} className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">
+                              {col.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {completed.map((record) => (
+                          <tr key={record.id} className="hover:bg-slate-50/80 transition-colors">
+                            {HISTORY_COLUMNS.map((col) => (
+                              <td key={col.key} className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                {safeValue(record.data[col.key], col.key)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
+            </div>
+          )}
         </div>
-      ) : (
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-            <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="pending" className="mt-6">
-            {pending.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">No pending returns</div>
-            ) : (
-              <div className="border rounded-lg overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Actions</TableHead>
-                      {PENDING_COLUMNS.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pending.map((rec) => (
-                      <TableRow key={rec.id}>
-                        <TableCell>
-                          <Button size="sm" onClick={() => handleOpenForm(rec.id)}>Process</Button>
-                        </TableCell>
-                        {PENDING_COLUMNS.map(col => (
-                          <TableCell
-                            key={col.key}
-                            className={col.key === "rejectedQty" ? "text-center" : ""}
-                          >
-                            {safeValue(rec.data[col.key], col.key)}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="history" className="mt-6">
-            {completed.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">No return history</div>
-            ) : (
-              <div className="border rounded-lg overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {HISTORY_COLUMNS.map(col => <TableHead key={col.key}>{col.label}</TableHead>)}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {completed.map((rec) => (
-                      <TableRow key={rec.id}>
-                        {HISTORY_COLUMNS.map(col => (
-                          <TableCell
-                            key={col.key}
-                            className={col.key === "rejectedQty" ? "text-center" : ""}
-                          >
-                            {safeValue(rec.data[col.key], col.key)}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      )}
+      </Tabs>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Process Return</DialogTitle>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden rounded-2xl border-none shadow-2xl bg-white">
+          <DialogHeader className="p-6 bg-slate-50/80 backdrop-blur-sm border-b shrink-0">
+            <DialogTitle className="text-xl font-bold flex items-center gap-3 text-slate-900">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-blue-600" />
+              </div>
+              Process Purchase Return
+            </DialogTitle>
           </DialogHeader>
-          <div className="p-4 space-y-4">
+          <div className="p-6 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>Return Qty * (Max: {originalQty})</Label>

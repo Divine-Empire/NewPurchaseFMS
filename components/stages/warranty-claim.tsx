@@ -355,9 +355,9 @@ export default function WarrantyClaim() {
                             ) : (
                                 <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm">
                                     <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                                        <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                        <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                                             <tr className="hover:bg-transparent border-none">
-                                                <th className="sticky left-0 z-40 bg-slate-50 w-[50px] border-b text-center px-4 py-3">
+                                                <th className="sticky left-0 z-40 bg-slate-200 w-[50px] border-b text-center px-4 py-3">
                                                     <Checkbox
                                                         checked={selectedIds.length > 0 && selectedIds.length === pending.length}
                                                         onCheckedChange={toggleAll}
@@ -365,7 +365,7 @@ export default function WarrantyClaim() {
                                                     />
                                                 </th>
                                                 {PENDING_COLUMNS.map((c) => (
-                                                    <th key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                    <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
                                                         {c.label}
                                                     </th>
                                                 ))}
@@ -404,10 +404,10 @@ export default function WarrantyClaim() {
                             ) : (
                                 <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm">
                                     <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                                        <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                                        <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                                             <tr className="hover:bg-transparent border-none">
                                                 {HISTORY_COLUMNS.map((c) => (
-                                                    <th key={c.key} className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                    <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
                                                         {c.label}
                                                     </th>
                                                 ))}

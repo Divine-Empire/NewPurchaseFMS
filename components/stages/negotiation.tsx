@@ -624,15 +624,15 @@ export default function Stage4() {
           ) : (
             <div className="flex-1 overflow-auto border rounded-xl bg-white shadow-sm scrollbar-thin scrollbar-thumb-slate-200">
               <table className="w-full caption-bottom text-sm border-collapse">
-                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
-                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
-                    <TableHead className="w-[50px] sticky top-0 z-30 bg-slate-50 border-none px-4">
+                <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                  <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
+                    <TableHead className="w-[50px] sticky top-0 z-30 bg-slate-200 border-none px-4">
                       <Checkbox
                         checked={pending.length > 0 && selectedIndents.length === pending.length}
                         onCheckedChange={toggleSelectAll}
                       />
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Actions
                       </div>
@@ -640,38 +640,38 @@ export default function Stage4() {
                     {baseColumns
                       .filter((c) => ["indentNumber", "itemName", "quantity", "planned3"].includes(c.key) || (c.key !== "actual3" && selectedColumns.includes(c.key)))
                       .map((col) => (
-                        <TableHead key={col.key} className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                        <TableHead key={col.key} className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                           <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                             {col.label}
                           </div>
                         </TableHead>
                       ))}
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Vendor
                       </div>
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Rate
                       </div>
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Terms
                       </div>
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Exp. Delivery
                       </div>
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Warranty
                       </div>
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Attachment
                       </div>
@@ -785,28 +785,28 @@ export default function Stage4() {
           ) : (
             <div className="flex-1 overflow-auto border rounded-xl bg-white shadow-sm scrollbar-thin scrollbar-thumb-slate-200">
               <table className="w-full caption-bottom text-sm border-collapse">
-                <TableHeader className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
-                  <TableRow className="bg-slate-50 hover:bg-slate-50 border-none">
+                <TableHeader className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                  <TableRow className="bg-slate-200 hover:bg-slate-200 border-none">
                     {baseColumns
                       .filter((c) => selectedColumns.includes(c.key))
                       .map((col) => (
-                        <TableHead key={col.key} className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                        <TableHead key={col.key} className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                           <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                             {col.label}
                           </div>
                         </TableHead>
                       ))}
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Vendor
                       </div>
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Rate
                       </div>
                     </TableHead>
-                    <TableHead className="sticky top-0 z-30 bg-slate-50 border-none px-4 py-3">
+                    <TableHead className="sticky top-0 z-30 bg-slate-200 border-none px-4 py-3">
                       <div className="flex items-center gap-2 font-bold text-slate-700 truncate uppercase text-[13px] tracking-wider">
                         Approved By
                       </div>

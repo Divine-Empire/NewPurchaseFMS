@@ -823,9 +823,9 @@ export default function Stage9() {
           ) : (
             <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm overflow-y-auto">
               <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                   <tr className="hover:bg-transparent border-none">
-                    <th className="sticky left-0 z-40 bg-slate-50 w-12 border-b text-center px-4 py-3">
+                    <th className="sticky left-0 z-40 bg-slate-200 w-12 border-b text-center px-4 py-3">
                       <Checkbox
                         checked={
                           selectedRows.size === pending.length &&
@@ -840,7 +840,7 @@ export default function Stage9() {
                       .map((col) => (
                         <th
                           key={col.key}
-                          className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                          className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
                         >
                           {col.label}
                         </th>
@@ -887,14 +887,14 @@ export default function Stage9() {
           ) : (
             <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm overflow-y-auto">
               <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
-                <thead className="sticky top-0 z-30 bg-slate-50 shadow-sm border-none">
+                <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
                   <tr className="hover:bg-transparent border-none">
                     {historyColumns
                       .filter((c) => selectedHistoryColumns.includes(c.key))
                       .map((col) => (
                         <th
                           key={col.key}
-                          className="bg-slate-50 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                          className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
                         >
                           {col.label}
                         </th>
