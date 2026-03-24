@@ -27,10 +27,6 @@ const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 });
 
 // ─── WARRANTY sheet column map (0-based, data from row 7) ──────
-// A(0): Indent No.  B(1): Unit Tracking No.  C(2): Serial Code  D(3): Serial No.
-// E(4): Vendor Name  F(5): Item-Name  G(6): Invoice Date  H(7): Warranty End
-// I(8): Planned      J(9): Actual
-
 const PENDING_COLUMNS = [
     { key: "indentNo", label: "Indent No." },
     { key: "liftNo", label: "Unit Tracking No." },
@@ -42,16 +38,28 @@ const PENDING_COLUMNS = [
     { key: "planned", label: "Planned" },
 ];
 
+const CLOSURE_PENDING_COLUMNS = [
+    { key: "indentNo", label: "Indent No." },
+    { key: "liftNo", label: "Unit Tracking No." },
+    { key: "serialNo", label: "Serial No." },
+    { key: "invoiceNo", label: "Invoice No." },
+    { key: "issueDescription", label: "Issue Description" },
+    { key: "claimType", label: "Claim Type" },
+    { key: "status", label: "Status" },
+];
+
 const HISTORY_COLUMNS = [
     { key: "indentNo", label: "Indent No." },
     { key: "liftNo", label: "Unit Tracking No." },
-    { key: "vendorName", label: "Vendor Name" },
-    { key: "itemName", label: "Item Name" },
-    { key: "invoiceDate", label: "Invoice Date" },
-    { key: "serialNo", label: "Claimed Serial No." },
-    { key: "warrantyEnd", label: "Warranty End" },
-    { key: "planned", label: "Planned" },
-    { key: "actual", label: "Actual" },
+    { key: "serialNo", label: "Serial No." },
+    { key: "invoiceNo", label: "Invoice No." },
+    { key: "issueDescription", label: "Issue Description" },
+    { key: "claimType", label: "Claim Type" },
+    {key: "status", label: "Status"},
+    {key: "invoiceCopy", label: "Invoice Copy"},
+    {key: "photoVideo", label: "Photo/Video"},
+    {key: "closureDate", label: "Closure Date"},
+    {key: "remarks", label: "Remarks"},
 ];
 
 // --- Optimized Row Component ---
@@ -82,14 +90,18 @@ RecordRow.displayName = "RecordRow";
 
 export default function WarrantyClaim() {
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
+    const [closurePendingRecords, setClosurePendingRecords] = useState<any[]>([]);
     const [historyRecords, setHistoryRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
+    const [activeTab, setActiveTab] = useState<"pending" | "closurePending" | "history">("pending");
 
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isClosureModalOpen, setIsClosureModalOpen] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState<any>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    // Initial Claim Form State
     const [formData, setFormData] = useState({
         by: "",
         invoiceNo: "",
@@ -97,6 +109,10 @@ export default function WarrantyClaim() {
         issueDescription: "",
         photosVideos: null as File | null,
         claimType: "",
+    });
+
+    // Closure Form State
+    const [closureFormData, setClosureFormData] = useState({
         status: "Pending",
         closureDate: "",
         remarks: ""
@@ -116,22 +132,20 @@ export default function WarrantyClaim() {
             const claimJson = await claimRes.json();
 
             const pending: any[] = [];
+            const closurePending: any[] = [];
             const history: any[] = [];
 
             const warrantyMap = new Map();
 
             if (warrantyJson.success && Array.isArray(warrantyJson.data)) {
-                // WARRANTY data starts from row 7 (index 6, but we slice(6) -> index i + 7)
-                // Wait, if startRow was 7 in insert, headers are at row 6, data at 7.
-                // index 0 -> row 1, index 6 -> row 7.
                 const allRows = warrantyJson.data
                     .slice(6)
                     .map((row: any, i: number) => ({ row, sheetIndex: i + 7 }))
                     .filter(({ row }: any) => row[0] && String(row[0]).trim() !== "");
 
                 allRows.forEach(({ row, sheetIndex }: any) => {
-                    const actual = String(row[9] || "").trim(); // J
-                    const hasActual = actual !== "" && actual !== "-";
+                    const actualValue = String(row[9] || "").trim(); // J
+                    const hasActual = actualValue !== "" && actualValue !== "-";
 
                     const data = {
                         indentNo: String(row[0] || "").trim(), // A
@@ -143,7 +157,7 @@ export default function WarrantyClaim() {
                         invoiceDate: row[6] || "",            // G
                         warrantyEnd: row[7] || "",            // H
                         planned: row[8] || "",                // I
-                        actual,                               // J
+                        actual: actualValue,                   // J
                     };
 
                     const id = `w_${data.indentNo}_${data.liftNo}_${data.serialNo}`;
@@ -156,35 +170,52 @@ export default function WarrantyClaim() {
             }
 
             if (claimJson.success && Array.isArray(claimJson.data)) {
-                // Warranty_Claim data starts from row 6 -> slice(5)
-                const claimRows = claimJson.data.slice(6).filter((row: any) => row[0] && String(row[0]).trim() !== "");
+                // Warranty_Claim data starts from row 6 -> slice(6)
+                // row[0]: Timestamp, row[1]: Indent, row[2]: Lift, row[3]: SN ... row[10]: Status
+                const claimRows = claimJson.data
+                    .slice(6)
+                    .map((row: any, i: number) => ({ row, sheetIndex: i + 7 }))
+                    .filter(({ row }: any) => row[0] && String(row[0]).trim() !== "");
 
-                claimRows.forEach((row: any, i: number) => {
-                    const indentNo = String(row[0] || "").trim();
-                    const liftNo = row[1] || "";
-                    const serialNo = row[2] || ""; // C
+                claimRows.forEach(({ row, sheetIndex }: any) => {
+                    const status = String(row[10] || "Pending").trim();
+                    const indentNo = String(row[1] || "").trim();
+                    const liftNo = row[2] || "";
+                    const serialNo = row[3] || "";
                     
-                    const mapKey = `w_${indentNo}_${liftNo}_${serialNo}`;
-                    const wVal = warrantyMap.get(mapKey);
-                    let wData: any = wVal ? { ...wVal } : {
+                    const itemData = {
+                        timestamp: row[0],
                         indentNo,
                         liftNo,
                         serialNo,
+                        qty: row[4],
+                        invoiceNo: row[5],
+                        issueDescription: row[6],
+                        invoiceCopy: row[7],
+                        photoVideo: row[8],
+                        claimType: row[9],
+                        status,
+                        closureDate: row[11],
+                        remarks: row[12],
                     };
 
-                    history.push({
-                        id: `history_${i}_${indentNo}_${serialNo}`,
-                        data: {
-                            ...wData,
-                            indentNo,
-                            liftNo,
-                            serialNo,
-                        }
-                    });
+                    const rec = {
+                        id: `claim_${sheetIndex}_${indentNo}_${serialNo}`,
+                        sheetIndex,
+                        originalRow: row,
+                        data: itemData
+                    };
+
+                    if (status.toLowerCase() === "closure") {
+                        history.push(rec);
+                    } else {
+                        closurePending.push(rec);
+                    }
                 });
             }
 
             setPendingRecords(pending);
+            setClosurePendingRecords(closurePending);
             setHistoryRecords(history);
         } catch (e) {
             console.error("Fetch error:", e);
@@ -202,11 +233,13 @@ export default function WarrantyClaim() {
             r.data.indentNo?.toLowerCase().includes(lower) ||
             r.data.itemName?.toLowerCase().includes(lower) ||
             r.data.vendorName?.toLowerCase().includes(lower) ||
-            r.data.serialNo?.toLowerCase().includes(lower)
+            r.data.serialNo?.toLowerCase().includes(lower) ||
+            r.data.invoiceNo?.toLowerCase().includes(lower)
         );
     }, [searchTerm]);
 
     const pending = useMemo(() => applySearch(pendingRecords), [pendingRecords, applySearch]);
+    const closurePending = useMemo(() => applySearch(closurePendingRecords), [closurePendingRecords, applySearch]);
     const history = useMemo(() => applySearch(historyRecords), [historyRecords, applySearch]);
 
     // ─── Submit ───────────────────────────────────────────────────────────────
@@ -237,7 +270,6 @@ export default function WarrantyClaim() {
             let invoiceCopyUrl = "";
             let photosVideosUrl = "";
 
-            // Concurrent file uploads
             if (formData.by === "Client") {
                 const uploadPromises: Promise<any>[] = [];
                 if (formData.invoiceCopy) {
@@ -264,18 +296,18 @@ export default function WarrantyClaim() {
             row[7] = formData.by === "Client" ? invoiceCopyUrl : "";
             row[8] = formData.by === "Client" ? photosVideosUrl : "";
             row[9] = formData.claimType || "";
-            row[10] = formData.status || "";
-            row[11] = formData.status === "Closed" ? formData.closureDate || "" : "";
-            row[12] = formData.status === "Closed" ? formData.remarks || "" : "";
+            row[10] = "Pending"; // Always Pending by default as per request
+            row[11] = "";
+            row[12] = "";
 
             const insertParams = new URLSearchParams();
             insertParams.append("action", "batchInsert");
             insertParams.append("sheetName", "Warranty_Claim");
             insertParams.append("rowsData", JSON.stringify([row]));
-            insertParams.append("startRow", "6");
+            insertParams.append("startRow", "7"); // Standardizing on row 7 for consistency with others
 
             const warrantyRow = new Array(10).fill("");
-            warrantyRow[9] = ts; 
+            warrantyRow[9] = ts; // Col J: Actual 
 
             const updateParams = new URLSearchParams();
             updateParams.append("action", "update");
@@ -285,17 +317,13 @@ export default function WarrantyClaim() {
 
             toast.loading("Saving record...", { id: toastId });
             
-            // Execute DB updates in parallel
             await Promise.all([
                 fetch(API, { method: "POST", body: insertParams }),
                 fetch(API, { method: "POST", body: updateParams })
             ]);
 
-            // SNAPPY: Close modal immediately after DB success, before re-fetching
             setIsModalOpen(false);
             toast.success("Claim submitted successfully!", { id: toastId, duration: 2000 });
-            
-            // Re-fetch in the background
             fetchData();
         } catch (e: any) {
             console.error("Submit error:", e);
@@ -304,6 +332,59 @@ export default function WarrantyClaim() {
             setIsSubmitting(false);
         }
     }, [selectedRecord, formData, fetchData, uploadFile]);
+
+    const handleClosureSubmit = useCallback(async () => {
+        const API = process.env.NEXT_PUBLIC_API_URI;
+        if (!API || !selectedRecord) return;
+
+        setIsSubmitting(true);
+         const toastId = toast.loading("Processing closure...");
+         try {
+             // CLONE THE ORIGINAL ROW to ensure NO OTHER columns are touched
+             const updatedRow = [...selectedRecord.originalRow];
+             
+             // Logically update only columns K, L, M (Indices 10, 11, 12)
+             updatedRow[10] = closureFormData.status;
+             updatedRow[11] = closureFormData.status === "Closure" ? closureFormData.closureDate : "";
+             updatedRow[12] = closureFormData.remarks || "";
+ 
+             // CRITICAL FIX: Robustly preserve Column A (index 0) timestamp as a string.
+             // Google Apps Script stringifies Dates as ISO strings, so if Column A is a Date object,
+             // or an ISO string, we re-format it into a friendly space-separated string.
+             if (updatedRow[0]) {
+                 const d = parseSheetDate(updatedRow[0]);
+                 if (d && !isNaN(d.getTime())) {
+                     const pad = (n: number) => String(n).padStart(2, "0");
+                     updatedRow[0] = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                 } else {
+                     // Fallback: ensure it's at least a string
+                     updatedRow[0] = String(updatedRow[0]);
+                 }
+             }
+
+            const updateParams = new URLSearchParams();
+            updateParams.append("action", "update");
+            updateParams.append("sheetName", "Warranty_Claim");
+            updateParams.append("rowData", JSON.stringify(updatedRow));
+            updateParams.append("rowIndex", selectedRecord.sheetIndex.toString());
+
+            const res = await fetch(API, { method: "POST", body: updateParams });
+            const json = await res.json();
+
+            if (json.success) {
+                setIsClosureModalOpen(false);
+                toast.success("Closure updated successfully!", { id: toastId, duration: 2000 });
+                fetchData();
+            } else {
+                throw new Error(json.message || "Failed to update closure");
+            }
+        } catch (e: any) {
+            console.error("Closure update error:", e);
+            toast.error(e.message || "Failed to update closure", { id: toastId });
+        } finally {
+            setIsSubmitting(false);
+        }
+    }, [selectedRecord, closureFormData, fetchData]);
 
     const formatDateDash = (dateStr: any) => {
         if (!dateStr || dateStr === "-" || dateStr === "—") return "-";
@@ -319,14 +400,14 @@ export default function WarrantyClaim() {
         const val = data?.[key];
 
         // Link columns
-        if (key === "invoiceCopy" || key === "poCopy") {
+        if (key === "invoiceCopy" || key === "poCopy" || key === "photoVideo") {
             if (!val || String(val).trim() === "" || val === "-") return "-";
             return (
                 <a
                     href={String(val)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                    className="text-indigo-600 hover:underline inline-flex items-center gap-1 font-medium"
                 >
                     View
                 </a>
@@ -338,7 +419,8 @@ export default function WarrantyClaim() {
             key === "invoiceDate" ||
             key === "planned" ||
             key === "actual" ||
-            key === "warrantyEnd"
+            key === "warrantyEnd" ||
+            key === "closureDate"
         ) {
             return formatDateDash(val);
         }
@@ -380,12 +462,18 @@ export default function WarrantyClaim() {
                         </div>
                     </div>
 
-                    <TabsList className="grid w-full grid-cols-2 h-12 bg-slate-100/50 p-1 rounded-lg">
+                    <TabsList className="grid w-full grid-cols-3 h-12 bg-slate-100/50 p-1 rounded-lg">
                         <TabsTrigger 
                             value="pending"
                             className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
                         >
                             Pending ({pending.length})
+                        </TabsTrigger>
+                        <TabsTrigger 
+                            value="closurePending"
+                            className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
+                        >
+                            Closure Pending ({closurePending.length})
                         </TabsTrigger>
                         <TabsTrigger 
                             value="history"
@@ -441,11 +529,54 @@ export default function WarrantyClaim() {
                                                             issueDescription: "",
                                                             photosVideos: null,
                                                             claimType: "",
-                                                            status: "Pending",
-                                                            closureDate: "",
-                                                            remarks: ""
                                                         });
                                                         setIsModalOpen(true);
+                                                    }}
+                                                />
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </TabsContent>
+
+                        {/* ── CLOSURE PENDING ── */}
+                        <TabsContent value="closurePending" className="mt-0 outline-none">
+                            {closurePending.length === 0 ? (
+                                <div className="text-center py-12 text-gray-500">
+                                    <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                                    <p className="text-lg text-black">No pending closures</p>
+                                </div>
+                            ) : (
+                                <div className="border rounded-lg overflow-x-auto h-[70vh] relative shadow-sm">
+                                    <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
+                                        <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none">
+                                            <tr className="hover:bg-transparent border-none">
+                                                <th className="sticky left-0 z-40 bg-slate-200 w-[100px] border-b text-center px-4 py-3 font-semibold text-slate-900">
+                                                    Actions
+                                                </th>
+                                                {CLOSURE_PENDING_COLUMNS.map((c) => (
+                                                    <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+                                                        {c.label}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white">
+                                            {closurePending.map((rec) => (
+                                                <RecordRow
+                                                    key={rec.id}
+                                                    rec={rec}
+                                                    columns={CLOSURE_PENDING_COLUMNS}
+                                                    renderCell={renderCell}
+                                                    onAction={(r: any) => {
+                                                        setSelectedRecord(r);
+                                                        setClosureFormData({
+                                                            status: r.data.status || "Pending",
+                                                            closureDate: r.data.closureDate || "",
+                                                            remarks: r.data.remarks || ""
+                                                        });
+                                                        setIsClosureModalOpen(true);
                                                     }}
                                                 />
                                             ))}
@@ -503,8 +634,8 @@ export default function WarrantyClaim() {
                     </DialogHeader>
                     <div className="p-5 overflow-y-auto max-h-[75vh] custom-scrollbar">
                         <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                            {/* Row 1: By & Status */}
-                            <div className="space-y-1.5">
+                            {/* Row 1: By (Full Width because Status is removed) */}
+                            <div className="col-span-2 space-y-1.5">
                                 <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">By *</label>
                                 <select
                                     className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow transition-colors"
@@ -514,17 +645,6 @@ export default function WarrantyClaim() {
                                     <option value="" disabled>Select...</option>
                                     <option value="Client">Client</option>
                                     <option value="Company">Company</option>
-                                </select>
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Status *</label>
-                                <select
-                                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-shadow transition-colors"
-                                    value={formData.status}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                                >
-                                    <option value="Pending">Pending</option>
-                                    <option value="Closed">Closed</option>
                                 </select>
                             </div>
 
@@ -609,28 +729,6 @@ export default function WarrantyClaim() {
                                         </>
                                     )}
                                     
-                                    {formData.status === "Closed" && (
-                                        <>
-                                            <div className="space-y-1.5">
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Closure Date</label>
-                                                <Input 
-                                                    type="date"
-                                                    value={formData.closureDate} 
-                                                    onChange={(e) => setFormData(prev => ({ ...prev, closureDate: e.target.value }))}
-                                                    className="h-9 bg-white focus-visible:ring-indigo-500 text-sm"
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Remarks</label>
-                                                <Input 
-                                                    value={formData.remarks} 
-                                                    onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
-                                                    placeholder="Remarks..."
-                                                    className="h-9 bg-white focus-visible:ring-indigo-500 text-sm"
-                                                />
-                                            </div>
-                                        </>
-                                    )}
                                 </>
                             )}
                         </div>
@@ -653,6 +751,87 @@ export default function WarrantyClaim() {
                                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> ...</>
                             ) : (
                                 "Submit Claim"
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* --- Closure Modal --- */}
+            <Dialog open={isClosureModalOpen} onOpenChange={setIsClosureModalOpen}>
+                <DialogContent className="max-w-[360px] p-0 overflow-hidden border-none shadow-2xl rounded-xl">
+                    <DialogHeader className="p-4 bg-slate-50 border-b">
+                        <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-800">
+                            <ShieldAlert className="w-5 h-5 text-indigo-600" />
+                            Process Closure
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="p-5 overflow-y-auto max-h-[75vh] custom-scrollbar">
+                        <div className="space-y-4">
+                            <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-100 flex flex-col gap-1.5">
+                                <div className="flex justify-between items-center text-[10px] text-indigo-600 font-bold uppercase tracking-wider">
+                                    <span>Indent No</span>
+                                    <span>Serial No</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm font-semibold text-indigo-900">
+                                    <span>{selectedRecord?.data.indentNo || "-"}</span>
+                                    <span>{selectedRecord?.data.serialNo || "-"}</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Status *</label>
+                                <select
+                                    className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                                    value={closureFormData.status}
+                                    onChange={(e) => setClosureFormData(prev => ({ ...prev, status: e.target.value }))}
+                                >
+                                    <option value="Pending">Pending</option>
+                                    <option value="Closure">Closure</option>
+                                </select>
+                            </div>
+
+                            {closureFormData.status === "Closure" && (
+                                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Closure Date *</label>
+                                    <Input 
+                                        type="date"
+                                        value={closureFormData.closureDate} 
+                                        onChange={(e) => setClosureFormData(prev => ({ ...prev, closureDate: e.target.value }))}
+                                        className="h-10 bg-white focus-visible:ring-indigo-500 text-sm"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="space-y-1.5">
+                                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-tight">Remarks</label>
+                                <Input 
+                                    value={closureFormData.remarks} 
+                                    onChange={(e) => setClosureFormData(prev => ({ ...prev, remarks: e.target.value }))}
+                                    placeholder="Enter closure remarks..."
+                                    className="h-10 bg-white focus-visible:ring-indigo-500 text-sm"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter className="p-4 bg-slate-50 border-t flex gap-3">
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setIsClosureModalOpen(false)}
+                            disabled={isSubmitting}
+                            className="bg-white border-slate-300 hover:bg-slate-100 h-10 text-xs font-medium flex-1"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            onClick={handleClosureSubmit} 
+                            disabled={isSubmitting || (closureFormData.status === "Closure" && !closureFormData.closureDate)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-bold h-10 text-xs flex-1 transition-all active:scale-95"
+                        >
+                            {isSubmitting ? (
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Updating...</>
+                            ) : (
+                                "Update Status"
                             )}
                         </Button>
                     </DialogFooter>
