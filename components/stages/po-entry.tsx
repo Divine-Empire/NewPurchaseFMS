@@ -270,9 +270,14 @@ export default function Stage5() {
     const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
     if (!SHEET_API_URL || selectedRecordIds.length === 0) return;
 
-    // Validate shared PO Number
+    // Validate shared PO Number and PO Copy
     if (!commonPONumber.trim()) {
       toast.error("Please enter the PO Number.");
+      return;
+    }
+
+    if (!commonPOCopy) {
+      toast.error("Please upload the PO Copy.");
       return;
     }
 
@@ -1036,9 +1041,9 @@ export default function Stage5() {
             {/* SHARED PO COPY - AT BOTTOM */}
             <div className="border rounded-lg p-4 bg-blue-50">
               <div className="space-y-2">
-                <Label className="text-base font-semibold">
-                  PO Copy
-                  <span className="text-xs font-normal text-gray-500 ml-2">(applies to all items)</span>
+                <Label className="text-base font-semibold text-slate-900">
+                  PO Copy <span className="text-red-500">*</span>
+                  <span className="text-xs font-normal text-slate-500 ml-2">(applies to all items)</span>
                 </Label>
                 <div>
                   <input
@@ -1088,6 +1093,7 @@ export default function Stage5() {
                 isSubmitting ||
                 selectedRecordIds.length === 0 ||
                 !commonPONumber.trim() ||
+                !commonPOCopy ||
                 !selectedRecordIds.every((id) => {
                   const d = bulkFormData[id];
                   return d?.basicValue && d?.totalWithTax && d?.hsn && d?.gst;
