@@ -51,6 +51,17 @@ const formatDateDash = (date: any) => {
   return `${dd}-${mm}-${yyyy}`;
 };
 
+const formatGSTDisplay = (gst: any) => {
+  if (!gst || gst === "-" || gst === "") return "-";
+  const s = String(gst);
+  if (s.includes("%")) return s;
+  const n = parseFloat(s);
+  if (!isNaN(n) && n > 0 && n < 1) {
+    return `${Math.round(n * 100)}%`;
+  }
+  return s;
+};
+
 export default function Stage5() {
   const { moveToNextStage, updateRecord } = useWorkflow();
   const [open, setOpen] = useState(false);
@@ -194,14 +205,16 @@ export default function Stage5() {
     .filter((r) => r.status === "pending")
     .filter((r) => {
       const searchLower = searchTerm.toLowerCase();
-      // Safe checks for vendor data
-      const vName = r.data.selectedVendor ? (r.data[`${r.data.selectedVendor}Name`] || "") : "";
+      // Robust vendor name lookup
+      const selectedId = String(r.data.selectedVendor || "1");
+      const idx = parseInt(selectedId.toLowerCase().replace("vendor", "").trim(), 10) || 1;
+      const vName = r.data[`vendor${idx}Name`] || "";
 
       return (
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
         r.data.itemName?.toLowerCase().includes(searchLower) ||
         vName.toLowerCase().includes(searchLower) ||
-        String(r.data.poNumber || "").toLowerCase().includes(searchLower) // Added PO Search
+        String(r.data.poNumber || "").toLowerCase().includes(searchLower)
       );
     }), [sheetRecords, searchTerm]);
 
@@ -210,7 +223,11 @@ export default function Stage5() {
     .filter((r) => {
       const searchLower = searchTerm.toLowerCase();
       if (!searchLower) return true;
-      const vName = r.data.selectedVendor ? (r.data[`${r.data.selectedVendor}Name`] || "") : "";
+      // Robust vendor name lookup
+      const selectedId = String(r.data.selectedVendor || "1");
+      const idx = parseInt(selectedId.toLowerCase().replace("vendor", "").trim(), 10) || 1;
+      const vName = r.data[`vendor${idx}Name`] || "";
+
       return (
         r.data.indentNumber?.toLowerCase().includes(searchLower) ||
         r.data.itemName?.toLowerCase().includes(searchLower) ||
@@ -218,6 +235,18 @@ export default function Stage5() {
         String(r.data.poNumber || "").toLowerCase().includes(searchLower)
       );
     }), [sheetRecords, searchTerm]);
+    
+  const poTotalMap = useMemo(() => {
+    const totals = new Map<string, number>();
+    completed.forEach(record => {
+      const po = record.data.poNumber;
+      if (po && po !== "-") {
+        const amount = parseFloat(String(record.data.totalWithTax || "0").replace(/[^0-9.]/g, "")) || 0;
+        totals.set(po, (totals.get(po) || 0) + amount);
+      }
+    });
+    return totals;
+  }, [completed]);
 
   const baseColumns = [
     { key: "indentNumber", label: "Indent-No", icon: null },
@@ -507,7 +536,6 @@ export default function Stage5() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Stage 5: PO Creation</h2>
-                {isLoading && <Loader2 className="w-5 h-5 text-black animate-spin" />}
               </div>
               {submitError && (
                 <p className="text-red-600 text-sm mt-2 font-medium bg-red-50 p-2 rounded border border-red-100 flex items-center gap-2">
@@ -718,6 +746,7 @@ export default function Stage5() {
                     <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Approved By</TableHead>
                     <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">PO Details (Incl. HSN)</TableHead>
                     <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase">Financials (Incl. GST%)</TableHead>
+                    <TableHead className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3 text-[13px] font-bold text-slate-700 uppercase whitespace-nowrap">Total Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -822,9 +851,14 @@ export default function Stage5() {
                               <span className="font-medium">₹{record.data.basicValue || "-"}</span>
                             </div>
                             <div className="flex justify-between gap-4 border-t pt-1">
-                              <span className="text-xs text-gray-500 font-semibold text-green-700">GST: {record.data.gst || "-"}</span>
+                              <span className="text-xs text-gray-500 font-semibold text-green-700">GST: {formatGSTDisplay(record.data.gst)}</span>
                               <span className="font-bold text-green-800">Total: ₹{record.data.totalWithTax || "-"}</span>
                             </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="bg-white/50 border-l">
+                          <div className="font-bold text-green-800 text-sm">
+                            ₹{poTotalMap.get(record.data.poNumber)?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "-"}
                           </div>
                         </TableCell>
                       </TableRow>

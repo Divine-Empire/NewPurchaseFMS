@@ -29,7 +29,9 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Upload, X, Loader2, Search } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { FileText, Upload, X, Loader2, Search, Eye } from "lucide-react";
+import QRCode from "qrcode";
 import { toast } from "sonner";
 import { parseSheetDate, formatDate, getFmsTimestamp } from "@/lib/utils";
 
@@ -59,6 +61,15 @@ const toBase64 = (file: File): Promise<string> =>
         reader.onerror = (error) => reject(error);
     });
 
+const convertToDownloadUrl = (url: string) => {
+    if (!url || !url.includes("drive.google.com")) return url;
+    const match = url.match(/[?&]id=([a-zA-Z0-9_-]+)/) || url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+        return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+    }
+    return url;
+};
+
 const uploadFileToDrive = async (
     file: File,
     apiUrl: string,
@@ -72,7 +83,7 @@ const uploadFileToDrive = async (
     uploadParams.append("folderId", folderId);
     const res = await fetch(apiUrl, { method: "POST", body: uploadParams });
     const json = await res.json();
-    return json.success ? json.fileUrl : "";
+    return json.success ? convertToDownloadUrl(json.fileUrl) : "";
 };
 
 /* --------------------------------------------------------------- */
@@ -83,11 +94,11 @@ const PENDING_COLUMNS = [
     { key: "liftNo", label: "Unit Tracking No." },
     { key: "warehouse", label: "Warehouse" },
     { key: "vendorName", label: "Vendor Name" },
+    { key: "itemName", label: "Item Name" },
     { key: "poNumber", label: "PO Number" },
     { key: "planned6", label: "Planned" },
     { key: "nextFollowUpDate", label: "Next Follow-Up" },
     { key: "remarks", label: "Remarks" },
-    { key: "itemName", label: "Item Name" },
     { key: "liftingQty", label: "Dispatch Qty" },
     { key: "transporterName", label: "Transporter" },
     { key: "vehicleNo", label: "Vehicle No" },
@@ -102,6 +113,146 @@ const PENDING_COLUMNS = [
     { key: "poCopy", label: "PO Copy" },
 ] as const;
 
+// ─── QR CODES & UTILS ────────────────────────────────────────────────────────
+
+const codeMap: Record<string, string> = {
+    "0": "0", "1": "A", "2": "B", "3": "C", "4": "D",
+    "5": "E", "6": "F", "7": "G", "8": "H", "9": "I"
+};
+
+const encodeExpiryDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    try {
+        const parts = dateStr.split("-"); // YYYY-MM-DD
+        if (parts.length < 2) return "";
+        const year = parts[0].slice(2); // YY
+        const month = parts[1]; // MM
+        const encode = (s: string) => s.split("").map(c => codeMap[c] || c).join("");
+        return `${encode(month)}-${encode(year)}`;
+    } catch (e) {
+        return "";
+    }
+};
+
+const generateMaterialQR = async (itemName: string, itemCode: string, encodedDate: string): Promise<Blob> => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 600;
+    canvas.height = 250;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas context failed");
+    
+    // Background
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // QR Code square on the left half
+    const qrData = `${itemName}/${itemCode}/${encodedDate}`;
+    const qrSize = 200;
+    const qrDataUrl = await QRCode.toDataURL(qrData, { 
+        margin: 1, 
+        width: qrSize,
+        errorCorrectionLevel: 'M'
+    });
+    
+    const qrImg = new Image();
+    qrImg.src = qrDataUrl;
+    await new Promise((res) => {
+        qrImg.onload = res;
+    });
+    // Draw QR with padding (20px margin)
+    ctx.drawImage(qrImg, 20, 25, qrSize, qrSize);
+
+    // Right-half Text Info
+    ctx.fillStyle = "black";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.font = "22px Arial";
+    
+    const displayText = `${itemName} / ${itemCode} / ${encodedDate}`;
+    const startX = 240;
+    const startY = 40;
+    const maxWidth = 340;
+    const lineHeight = 28;
+
+    const wrapText = (context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+        const words = text.split(' ');
+        let line = '';
+        let currentY = y;
+
+        for (let n = 0; n < words.length; n++) {
+            const word = words[n];
+            const testLine = line + word + ' ';
+            const metrics = context.measureText(testLine);
+            const testWidth = metrics.width;
+
+            if (testWidth > maxWidth && n > 0) {
+                // If the single word itself is wider than maxWidth, we need character-level breaking
+                if (context.measureText(word).width > maxWidth) {
+                    context.fillText(line.trim(), x, currentY);
+                    currentY += lineHeight;
+                    line = '';
+                    for (let i = 0; i < word.length; i++) {
+                        const char = word[i];
+                        if (context.measureText(line + char).width > maxWidth) {
+                            context.fillText(line, x, currentY);
+                            line = char;
+                            currentY += lineHeight;
+                        } else {
+                            line += char;
+                        }
+                    }
+                    line += ' ';
+                } else {
+                    context.fillText(line.trim(), x, currentY);
+                    line = word + ' ';
+                    currentY += lineHeight;
+                }
+            } else {
+                // Check if the very first word is too long
+                if (n === 0 && context.measureText(word).width > maxWidth) {
+                    for (let i = 0; i < word.length; i++) {
+                        const char = word[i];
+                        if (context.measureText(line + char).width > maxWidth) {
+                            context.fillText(line, x, currentY);
+                            line = char;
+                            currentY += lineHeight;
+                        } else {
+                            line += char;
+                        }
+                    }
+                    line += ' ';
+                } else {
+                    line = testLine;
+                }
+            }
+        }
+        context.fillText(line.trim(), x, currentY);
+    };
+
+    wrapText(ctx, displayText, startX, startY, maxWidth, lineHeight);
+
+    return new Promise((resolve) => canvas.toBlob(b => resolve(b!), "image/png"));
+};
+
+const uploadQRToDrive = async (blob: Blob, fileName: string, apiUrl: string, folderId: string): Promise<string> => {
+    const toBase64 = (b: Blob): Promise<string> => new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(b);
+        reader.onload = () => res(reader.result as string);
+        reader.onerror = e => rej(e);
+    });
+
+    const uploadParams = new URLSearchParams();
+    uploadParams.append("action", "uploadFile");
+    uploadParams.append("base64Data", await toBase64(blob));
+    uploadParams.append("fileName", fileName);
+    uploadParams.append("mimeType", "image/png");
+    uploadParams.append("folderId", folderId);
+    const res = await fetch(apiUrl, { method: "POST", body: uploadParams });
+    const json = await res.json();
+    return json.success ? convertToDownloadUrl(json.url || json.fileUrl) : "";
+};
+
 /* --------------------------------------------------------------- */
 /*  COLUMNS FOR HISTORY TAB (SHOW ALL)                             */
 /* --------------------------------------------------------------- */
@@ -113,7 +264,7 @@ const HISTORY_COLUMNS = [
     { key: "receiptLiftNumber", label: "Receipt Unit Tracking No." },
     { key: "receivedQty", label: "Received Qty" },
     { key: "invoiceDate", label: "Invoice Date" },
-    { key: "invoiceNumber", label: "Invoice #" },
+    { key: "invoiceNumber", label: "Invoice No." },
     { key: "srnNumber", label: "SRN #" },
     { key: "qcRequirement", label: "QC Required" },
     { key: "receivedItemImage", label: "Rec. Item Img" },
@@ -138,6 +289,8 @@ export default function Stage7() {
     const [sheetRecords, setSheetRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [itemCodeMap, setItemCodeMap] = useState<Record<string, string>>({});
+    const [previewImages, setPreviewImages] = useState<Record<string, string>>({});
     const [searchTerm, setSearchTerm] = useState("");
     const [warehouseFilter, setWarehouseFilter] = useState("All");
 
@@ -292,9 +445,50 @@ export default function Stage7() {
         setIsLoading(false);
     }, []);
 
+    useEffect(() => {
+        const fetchDropdown = async () => {
+            const API = process.env.NEXT_PUBLIC_API_URI;
+            if (!API) return;
+            try {
+                const res = await fetch(`${API}?sheet=Dropdown&action=getAll`);
+                const json = await res.json();
+                if (json.success && Array.isArray(json.data)) {
+                    const mapping: Record<string, string> = {};
+                    json.data.slice(1).forEach((row: any) => {
+                        const code = String(row[2] || "").trim(); // C
+                        const name = String(row[4] || "").trim(); // E
+                        if (name && code) mapping[name] = code;
+                    });
+                    setItemCodeMap(mapping);
+                }
+            } catch (e) {
+                console.error("Error fetching dropdowns:", e);
+            }
+        };
+        fetchDropdown();
+    }, []);
+
+    const handleQRPreview = async (itemName: string, expiryDate: string, id: string) => {
+        if (!expiryDate) {
+            toast.error("Please select a Product Expiry date first");
+            return;
+        }
+        try {
+            const itemCode = itemCodeMap[itemName] || "N/A";
+            const encodedDate = encodeExpiryDate(expiryDate);
+            const blob = await generateMaterialQR(itemName, itemCode, encodedDate);
+            const url = URL.createObjectURL(blob);
+            setPreviewImages(prev => ({ ...prev, [id]: url }));
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to generate QR preview");
+        }
+    };
+
     useEffect(() => { fetchData(); }, [fetchData]);
 
     const [form, setForm] = useState({
+        itemName: "",
         liftNumber: "",
         receivedQty: "",
         invoiceNumber: "",
@@ -386,9 +580,9 @@ export default function Stage7() {
         setIsSubmitting(true);
         try {
             // Upload bill attachment once (shared across all items)
-            const billUrl = commonData.billAttachment
-                ? await uploadFileToDrive(commonData.billAttachment, SHEET_API_URL, folderId)
-                : "";
+            const billUrlPromise = commonData.billAttachment
+                ? uploadFileToDrive(commonData.billAttachment, SHEET_API_URL, folderId)
+                : Promise.resolve("");
 
             const timestamp = getFmsTimestamp();
 
@@ -400,39 +594,63 @@ export default function Stage7() {
             );
             const pkgBaseStr = perItemPkgBase > 0 ? perItemPkgBase.toFixed(2) : "";
 
-            for (const item of bulkItems) {
-                const itemImgUrl = item.receivedItemImage
-                    ? await uploadFileToDrive(item.receivedItemImage, SHEET_API_URL, folderId)
-                    : "";
+            const billUrl = await billUrlPromise;
 
-                const rowArray = new Array(110).fill("");
-                rowArray[20] = timestamp;
-                rowArray[22] = "independent";
-                rowArray[23] = commonData.invoiceDate;
-                rowArray[24] = commonData.invoiceNumber;
-                rowArray[25] = item.receivedQty;
-                rowArray[26] = itemImgUrl;
-                rowArray[27] = "";
-                rowArray[28] = item.qcRequirement;
-                rowArray[29] = billUrl;
-                rowArray[30] = commonData.paymentAmountHydra;
-                rowArray[31] = commonData.paymentAmountLabour;
-                rowArray[32] = commonData.paymentAmountHamali;
-                rowArray[33] = commonData.remarks;
-                rowArray[99] = pkgBaseStr;
-                rowArray[100] = commonData.pkgGST || "";
+            // Parallelize processing of all bulk items
+            await Promise.all(bulkItems.map(async (item) => {
+                // For each item, upload its specific image and handle QR concurrently
+                const imageUploadPromise = item.receivedItemImage
+                    ? uploadFileToDrive(item.receivedItemImage, SHEET_API_URL, folderId)
+                    : Promise.resolve("");
+
+                let qrLinkPromise = Promise.resolve("");
+                if (item.productExpiry) {
+                    qrLinkPromise = (async () => {
+                        try {
+                            const itemCode = itemCodeMap[item.itemName] || "N/A";
+                            const encodedDate = encodeExpiryDate(item.productExpiry);
+                            const fileName = `QR_${item.itemName}_${item.productExpiry}.png`;
+                            const blob = await generateMaterialQR(item.itemName, itemCode, encodedDate);
+                            return await uploadQRToDrive(blob, fileName, SHEET_API_URL, "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy");
+                        } catch (err) {
+                            console.error(`QR Upload failed for ${item.itemName}:`, err);
+                            return "";
+                        }
+                    })();
+                }
+
+                const [itemImgUrl, qrLink] = await Promise.all([imageUploadPromise, qrLinkPromise]);
+
+                const rowArray = new Array(116).fill("");
+                rowArray[20] = timestamp;               // U: Actual6
+                rowArray[22] = "independent";         // W: Invoice Type
+                rowArray[23] = commonData.invoiceDate;  // X
+                rowArray[24] = commonData.invoiceNumber; // Y
+                rowArray[25] = item.receivedQty;        // Z
+                rowArray[26] = itemImgUrl;              // AA
+                rowArray[27] = "";                      // AB: SRN
+                rowArray[28] = item.qcRequirement;      // AC
+                rowArray[29] = billUrl;                 // AD
+                rowArray[30] = commonData.paymentAmountHydra; // AE
+                rowArray[31] = commonData.paymentAmountLabour; // AF
+                rowArray[32] = commonData.paymentAmountHamali; // AG
+                rowArray[33] = commonData.remarks;             // AH
+                rowArray[99] = pkgBaseStr;              // CV
+                rowArray[100] = commonData.pkgGST || ""; // CW
                 rowArray[104] = item.warrantyClaim || "";  // DA: Warranty Claim
                 rowArray[105] = item.duration || "";       // DB: Duration
                 rowArray[106] = item.warrantyExpiry || ""; // DC: Warranty Expiry
                 rowArray[107] = item.productExpiry || "";  // DD: Product Expiry
+                rowArray[115] = qrLink;                 // DL: QR Code Link
 
                 const params = new URLSearchParams();
                 params.append("action", "update");
                 params.append("sheetName", "RECEIVING-ACCOUNTS");
                 params.append("rowData", JSON.stringify(rowArray));
                 params.append("rowIndex", item.index.toString());
-                await fetch(SHEET_API_URL, { method: "POST", body: params });
-            }
+                
+                return fetch(SHEET_API_URL, { method: "POST", body: params });
+            }));
 
             toast.success("Bulk Receipt recorded successfully!");
             setOpen(false);
@@ -445,7 +663,7 @@ export default function Stage7() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [commonData, bulkItems, getPkgTotals, fetchData]);
+    }, [commonData, bulkItems, getPkgTotals, fetchData, itemCodeMap]);
 
 
 
@@ -462,9 +680,10 @@ export default function Stage7() {
         setIsBulkMode(false);
         setSelectedRecordId(recordId);
         setForm({
+            itemName: rec.data.itemName || "",
             liftNumber: rec.data.liftNo || "",
-            receivedQty: "",
-            invoiceNumber: "",
+            receivedQty: rec.data.liftingQty || "",
+            invoiceNumber: rec.data.invoiceNumber || "",
             invoiceDate: "",
             billAttachment: null,
             receivedItemImage: null,
@@ -495,17 +714,36 @@ export default function Stage7() {
         const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
         setIsSubmitting(true);
         try {
-            const billUrl = form.billAttachment instanceof File
-                ? await uploadFileToDrive(form.billAttachment, SHEET_API_URL, folderId)
-                : typeof form.billAttachment === "string" ? form.billAttachment : "";
+            // Parallelize file uploads and QR generation/upload
+            const billPromise = form.billAttachment instanceof File
+                ? uploadFileToDrive(form.billAttachment, SHEET_API_URL, folderId)
+                : Promise.resolve(typeof form.billAttachment === "string" ? form.billAttachment : "");
 
-            const imageUrl = form.receivedItemImage instanceof File
-                ? await uploadFileToDrive(form.receivedItemImage, SHEET_API_URL, folderId)
-                : typeof form.receivedItemImage === "string" ? form.receivedItemImage : "";
+            const imagePromise = form.receivedItemImage instanceof File
+                ? uploadFileToDrive(form.receivedItemImage, SHEET_API_URL, folderId)
+                : Promise.resolve(typeof form.receivedItemImage === "string" ? form.receivedItemImage : "");
+
+            let qrPromise = Promise.resolve("");
+            if (form.productExpiry) {
+                qrPromise = (async () => {
+                    try {
+                        const itemCode = itemCodeMap[form.itemName] || "N/A";
+                        const encodedDate = encodeExpiryDate(form.productExpiry);
+                        const fileName = `QR_${form.itemName}_${form.productExpiry}.png`;
+                        const blob = await generateMaterialQR(form.itemName, itemCode, encodedDate);
+                        return await uploadQRToDrive(blob, fileName, SHEET_API_URL, "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy");
+                    } catch (err) {
+                        console.error("QR Generation/Upload failed:", err);
+                        return "";
+                    }
+                })();
+            }
+
+            const [billUrl, imageUrl, qrLink] = await Promise.all([billPromise, imagePromise, qrPromise]);
 
             const timestamp = getFmsTimestamp();
-            
-            const rowArray = new Array(110).fill("");
+            const rowArray = new Array(116).fill("");
+
             rowArray[20] = timestamp;               // U: Actual6
             rowArray[22] = "independent";         // W: Invoice Type
             rowArray[23] = form.invoiceDate;      // X
@@ -525,6 +763,7 @@ export default function Stage7() {
             rowArray[105] = form.duration || "";       // DB: Duration
             rowArray[106] = form.warrantyExpiry || ""; // DC: Warranty Expiry
             rowArray[107] = form.productExpiry || "";  // DD: Product Expiry
+            rowArray[115] = qrLink; // DL: QR Code Link
 
             const params = new URLSearchParams();
             params.append("action", "update");
@@ -1100,8 +1339,11 @@ export default function Stage7() {
                                                     <>
                                                         <TableHead className="w-[100px]">Duration (M)</TableHead>
                                                         <TableHead className="w-[120px]">Warranty Expiry</TableHead>
-                                                        <TableHead className="w-[150px]">Product Expiry</TableHead>
+                                                        <TableHead className="w-[180px]">Product Expiry</TableHead>
                                                     </>
+                                                )}
+                                                {!bulkItems.some(i => i.warrantyClaim === "yes") && (
+                                                    <TableHead className="w-[180px]">Product Expiry</TableHead>
                                                 )}
                                             </TableRow>
                                         </TableHeader>
@@ -1241,7 +1483,7 @@ export default function Stage7() {
                                                                 ) : "-"}
                                                             </TableCell>
                                                             <TableCell>
-                                                                {item.warrantyClaim === "yes" ? (
+                                                                <div className="flex items-center gap-1">
                                                                     <Input
                                                                         type="date"
                                                                         value={item.productExpiry}
@@ -1252,9 +1494,85 @@ export default function Stage7() {
                                                                         }}
                                                                         className="h-8 text-[10px]"
                                                                     />
-                                                                ) : "-"}
+                                                                    <Popover>
+                                                                        <PopoverTrigger asChild>
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-7 w-7 p-0"
+                                                                                onClick={() => handleQRPreview(item.itemName, item.productExpiry, `bulk-${idx}`)}
+                                                                                disabled={!item.productExpiry}
+                                                                            >
+                                                                                <Eye className="h-3.5 w-3.5" />
+                                                                            </Button>
+                                                                        </PopoverTrigger>
+                                                                        <PopoverContent className="w-[550px] p-2 bg-white" side="left">
+                                                                            <div className="flex flex-col items-center gap-2">
+                                                                                <span className="text-xs font-semibold text-gray-500">Label Preview</span>
+                                                                                {previewImages[`bulk-${idx}`] ? (
+                                                                                    <img
+                                                                                        src={previewImages[`bulk-${idx}`]}
+                                                                                        alt="QR Label Preview"
+                                                                                        className="border shadow-sm max-w-full rounded-sm"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="flex items-center justify-center w-full h-[200px] bg-slate-50 border border-dashed rounded text-slate-400">
+                                                                                        <Loader2 className="h-6 w-6 animate-spin" />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </PopoverContent>
+                                                                    </Popover>
+                                                                </div>
                                                             </TableCell>
                                                         </>
+                                                    )}
+                                                    {!bulkItems.some(i => i.warrantyClaim === "yes") && (
+                                                        <TableCell>
+                                                            <div className="flex items-center gap-1">
+                                                                <Input
+                                                                    type="date"
+                                                                    value={item.productExpiry}
+                                                                    onChange={(e) => {
+                                                                        const newItems = [...bulkItems];
+                                                                        newItems[idx].productExpiry = e.target.value;
+                                                                        setBulkItems(newItems);
+                                                                    }}
+                                                                    className="h-8 text-[10px]"
+                                                                />
+                                                                <Popover>
+                                                                    <PopoverTrigger asChild>
+                                                                        <Button
+                                                                            type="button"
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-7 w-7 p-0"
+                                                                            onClick={() => handleQRPreview(item.itemName, item.productExpiry, `bulk-${idx}`)}
+                                                                            disabled={!item.productExpiry}
+                                                                        >
+                                                                            <Eye className="h-3.5 w-3.5" />
+                                                                        </Button>
+                                                                    </PopoverTrigger>
+                                                                    <PopoverContent className="w-[550px] p-2 bg-white" side="left">
+                                                                        <div className="flex flex-col items-center gap-2">
+                                                                            <span className="text-xs font-semibold text-gray-500">Label Preview</span>
+                                                                            {previewImages[`bulk-${idx}`] ? (
+                                                                                <img
+                                                                                    src={previewImages[`bulk-${idx}`]}
+                                                                                    alt="QR Label Preview"
+                                                                                    className="border shadow-sm max-w-full rounded-sm"
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="flex items-center justify-center w-full h-[200px] bg-slate-50 border border-dashed rounded text-slate-400">
+                                                                                    <Loader2 className="h-6 w-6 animate-spin" />
+                                                                                </div>
+                                                                            )}
+                                                                            </div>
+                                                                        </PopoverContent>
+                                                                </Popover>
+                                                            </div>
+                                                        </TableCell>
                                                     )}
                                                 </TableRow>
                                             ))}
@@ -1295,7 +1613,7 @@ export default function Stage7() {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Invoice # <span className="text-red-500">*</span></Label>
+                                        <Label>Invoice No. <span className="text-red-500">*</span></Label>
                                         <Input
                                             value={commonData.invoiceNumber}
                                             onChange={(e) => setCommonData({ ...commonData, invoiceNumber: e.target.value })}
@@ -1429,7 +1747,15 @@ export default function Stage7() {
                             onSubmit={handleSubmit}
                             className="flex-1 overflow-y-auto space-y-6 pr-2"
                         >
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-4 gap-4">
+                                <div className="space-y-2 col-span-2">
+                                    <Label>Item Name</Label>
+                                    <Input
+                                        value={form.itemName}
+                                        readOnly
+                                        className="bg-gray-50 border-blue-200"
+                                    />
+                                </div>
                                 <div className="space-y-2">
                                     <Label>Unit Tracking No.</Label>
                                     <Input
@@ -1452,6 +1778,9 @@ export default function Stage7() {
                                         placeholder="0"
                                     />
                                 </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label>
                                         Invoice Date <span className="text-red-500">*</span>
@@ -1468,7 +1797,7 @@ export default function Stage7() {
 
                                 <div className="space-y-2">
                                     <Label>
-                                        Invoice # <span className="text-red-500">*</span>
+                                        Invoice No. <span className="text-red-500">*</span>
                                     </Label>
                                     <Input
                                         value={form.invoiceNumber}
@@ -1476,9 +1805,12 @@ export default function Stage7() {
                                             setForm({ ...form, invoiceNumber: e.target.value })
                                         }
                                         required
+                                        placeholder="Invoice #"
                                     />
                                 </div>
+                            </div>
 
+                            <div className="grid grid-cols-3 gap-4">
                                 <div className="space-y-2">
                                     <Label>
                                         QC Required <span className="text-red-500">*</span>
@@ -1520,10 +1852,52 @@ export default function Stage7() {
                                         </SelectContent>
                                     </Select>
                                 </div>
+
+                                <div className="space-y-2">
+                                    <Label>Product Expiry</Label>
+                                    <div className="flex items-center gap-2">
+                                        <Input
+                                            type="date"
+                                            value={form.productExpiry}
+                                            onChange={(e) => setForm({ ...form, productExpiry: e.target.value })}
+                                            className="flex-1"
+                                        />
+                                        <Popover>
+                                            <PopoverTrigger asChild>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="icon"
+                                                    className="h-10 w-10 shrink-0"
+                                                    onClick={() => handleQRPreview(form.itemName, form.productExpiry, "single")}
+                                                    disabled={!form.productExpiry}
+                                                >
+                                                    <Eye className="h-5 w-5 text-gray-500" />
+                                                </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-[550px] p-2 bg-white" side="left">
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <span className="text-xs font-semibold text-gray-500">Label Preview</span>
+                                                    {previewImages["single"] ? (
+                                                        <img
+                                                            src={previewImages["single"]}
+                                                            alt="QR Label Preview"
+                                                            className="border shadow-sm max-w-full rounded-sm"
+                                                        />
+                                                    ) : (
+                                                        <div className="flex items-center justify-center w-full h-[200px] bg-slate-50 border border-dashed rounded text-slate-400">
+                                                            <Loader2 className="h-8 w-8 animate-spin" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
+                                    </div>
+                                </div>
                             </div>
 
                             {form.warrantyClaim === "yes" && (
-                                <div className="grid grid-cols-3 gap-4 bg-amber-50 p-4 rounded-lg">
+                                <div className="grid grid-cols-2 gap-4 bg-amber-50 p-4 rounded-lg">
                                     <div className="space-y-2">
                                         <Label>Duration (Months)</Label>
                                         <Input
@@ -1556,97 +1930,92 @@ export default function Stage7() {
                                             placeholder="Auto-calc"
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label>Product Expiry</Label>
-                                        <Input
-                                            type="date"
-                                            value={form.productExpiry}
-                                            onChange={(e) => setForm({ ...form, productExpiry: e.target.value })}
-                                        />
-                                    </div>
                                 </div>
                             )}
 
-                            {/* Received Item Image */}
-                            <div className="space-y-2">
-                                <Label>Received Item Image</Label>
-                                <input
-                                    id="receivedItemImage"
-                                    type="file"
-                                    accept=".jpg,.jpeg,.png"
-                                    onChange={(e) =>
-                                        setForm({
-                                            ...form,
-                                            receivedItemImage: e.target.files?.[0] ?? null,
-                                        })
-                                    }
-                                    className="hidden"
-                                />
-                                <label
-                                    htmlFor="receivedItemImage"
-                                    className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400"
-                                >
-                                    <Upload className="w-6 h-6 text-gray-400 mr-2" />
-                                    <span className="text-sm text-gray-600">Upload Image</span>
-                                </label>
-                                {form.receivedItemImage && (
-                                    <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
-                                        <div className="flex items-center">
-                                            <FileText className="w-4 h-4 text-gray-500 mr-2" />
-                                            <span className="text-sm text-gray-700">
-                                                {form.receivedItemImage.name}
-                                            </span>
+                            {/* Media Row */}
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Received Item Image */}
+                                <div className="space-y-2">
+                                    <Label>Received Item Image</Label>
+                                    <input
+                                        id="receivedItemImage"
+                                        type="file"
+                                        accept=".jpg,.jpeg,.png"
+                                        onChange={(e) =>
+                                            setForm({
+                                                ...form,
+                                                receivedItemImage: e.target.files?.[0] ?? null,
+                                            })
+                                        }
+                                        className="hidden"
+                                    />
+                                    <label
+                                        htmlFor="receivedItemImage"
+                                        className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 h-[100px]"
+                                    >
+                                        <Upload className="w-5 h-5 text-gray-400 mr-2" />
+                                        <span className="text-sm text-gray-600">Upload Image</span>
+                                    </label>
+                                    {form.receivedItemImage && (
+                                        <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
+                                            <div className="flex items-center">
+                                                <FileText className="w-4 h-4 text-gray-500 mr-2" />
+                                                <span className="text-sm text-gray-700">
+                                                    {form.receivedItemImage.name}
+                                                </span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeFile("receivedItemImage")}
+                                                className="text-red-600 hover:text-red-800"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => removeFile("receivedItemImage")}
-                                            className="text-red-600 hover:text-red-800"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
+                                    )}
+                                </div>
 
-                            {/* Bill Attachment */}
-                            <div className="space-y-2">
-                                <Label>Bill Attachment <span className="text-red-500">*</span></Label>
-                                <input
-                                    id="billAttachment"
-                                    type="file"
-                                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                                    onChange={(e) =>
-                                        setForm({
-                                            ...form,
-                                            billAttachment: e.target.files?.[0] ?? null,
-                                        })
-                                    }
-                                    className="hidden"
-                                />
-                                <label
-                                    htmlFor="billAttachment"
-                                    className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400"
-                                >
-                                    <Upload className="w-6 h-6 text-gray-400 mr-2" />
-                                    <span className="text-sm text-gray-600">Upload Bill</span>
-                                </label>
-                                {form.billAttachment && (
-                                    <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
-                                        <div className="flex items-center">
-                                            <FileText className="w-4 h-4 text-gray-500 mr-2" />
-                                            <span className="text-sm text-gray-700">
-                                                {form.billAttachment.name}
-                                            </span>
+                                {/* Bill Attachment */}
+                                <div className="space-y-2">
+                                    <Label>Bill Attachment <span className="text-red-500">*</span></Label>
+                                    <input
+                                        id="billAttachment"
+                                        type="file"
+                                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                        onChange={(e) =>
+                                            setForm({
+                                                ...form,
+                                                billAttachment: e.target.files?.[0] ?? null,
+                                            })
+                                        }
+                                        className="hidden"
+                                    />
+                                    <label
+                                        htmlFor="billAttachment"
+                                        className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 h-[100px]"
+                                    >
+                                        <Upload className="w-5 h-5 text-gray-400 mr-2" />
+                                        <span className="text-sm text-gray-600">Upload Bill</span>
+                                    </label>
+                                    {form.billAttachment && (
+                                        <div className="mt-2 p-2 bg-gray-50 border rounded flex items-center justify-between">
+                                            <div className="flex items-center">
+                                                <FileText className="w-4 h-4 text-gray-500 mr-2" />
+                                                <span className="text-sm text-gray-700">
+                                                    {form.billAttachment.name}
+                                                </span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeFile("billAttachment")}
+                                                className="text-red-600 hover:text-red-800"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => removeFile("billAttachment")}
-                                            className="text-red-600 hover:text-red-800"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                             </div>
 
                             {/* Payment Heads */}

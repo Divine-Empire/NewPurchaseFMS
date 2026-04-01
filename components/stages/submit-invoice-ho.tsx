@@ -93,7 +93,7 @@ export default function SubmitInvoiceHO() {
                             data: {
                                 indentNumber: indentNo,
                                 category: fmsRow[3] || row[3],
-                                itemName: fmsRow[4] || row[4],
+                                itemName: fmsRow[4] || row[7], // Column H in RECEIVING-ACCOUNTS
                                 quantity: row[25],
                                 poNumber: fmsRow[54],
                                 billAttachment: row[18],
@@ -342,14 +342,7 @@ export default function SubmitInvoiceHO() {
 
     const isFormValid = formData.hardcopySubmitted;
 
-    if (isLoading && sheetRecords.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-24 text-gray-500">
-                <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-600" />
-                <p className="text-lg animate-pulse text-blue-900 font-medium">Fetching invoices from HO system...</p>
-            </div>
-        );
-    }
+
 
     return (
         <div className="p-6 min-h-screen bg-[#f8fafc]">
@@ -593,19 +586,24 @@ export default function SubmitInvoiceHO() {
                             value="pending"
                             className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
                         >
-                            Pending ({pending.length})
+                            Pending ({isLoading && pending.length === 0 ? "..." : pending.length})
                         </TabsTrigger>
                         <TabsTrigger
                             value="history"
                             className="rounded-md data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm transition-all"
                         >
-                            History ({completed.length})
+                            History ({isLoading && completed.length === 0 ? "..." : completed.length})
                         </TabsTrigger>
                     </TabsList>
                 </div>
 
                 <TabsContent value="pending" className="mt-0 outline-none">
-                    {pending.length === 0 ? (
+                    {isLoading && pending.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg border-dashed">
+                            <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-600" />
+                            <p className="text-lg animate-pulse text-blue-900 font-medium">Loading pending invoices...</p>
+                        </div>
+                    ) : pending.length === 0 ? (
                         <div className="text-center py-24 bg-white border rounded-lg border-dashed">
                             <ClipboardCheck className="w-12 h-12 mx-auto text-slate-200 mb-3" />
                             <p className="text-lg text-slate-500">No pending submissions found</p>
@@ -669,7 +667,12 @@ export default function SubmitInvoiceHO() {
                 </TabsContent>
 
                 <TabsContent value="history" className="mt-0 outline-none">
-                    {completed.length === 0 ? (
+                    {isLoading && completed.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-24 bg-white border rounded-lg border-dashed">
+                            <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-600" />
+                            <p className="text-lg animate-pulse text-blue-900 font-medium">Loading history...</p>
+                        </div>
+                    ) : completed.length === 0 ? (
                         <div className="text-center py-24 bg-white border rounded-lg border-dashed">
                             <ClipboardCheck className="w-12 h-12 mx-auto text-slate-200 mb-3" />
                             <p className="text-lg text-slate-500">No history found</p>
