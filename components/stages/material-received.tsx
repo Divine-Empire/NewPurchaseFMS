@@ -168,13 +168,14 @@ const generateMaterialQR = async (itemName: string, itemCode: string, encodedDat
     ctx.textBaseline = "top";
     ctx.font = "22px Arial";
     
-    const displayText = `${itemName} / ${itemCode} / ${encodedDate}`;
+    const line1 = `${itemName} (${itemCode})`;
+    const line2 = encodedDate;
     const startX = 240;
     const startY = 40;
     const maxWidth = 340;
     const lineHeight = 28;
 
-    const wrapText = (context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
+    const wrapText = (context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number => {
         const words = text.split(' ');
         let line = '';
         let currentY = y;
@@ -186,7 +187,6 @@ const generateMaterialQR = async (itemName: string, itemCode: string, encodedDat
             const testWidth = metrics.width;
 
             if (testWidth > maxWidth && n > 0) {
-                // If the single word itself is wider than maxWidth, we need character-level breaking
                 if (context.measureText(word).width > maxWidth) {
                     context.fillText(line.trim(), x, currentY);
                     currentY += lineHeight;
@@ -208,7 +208,6 @@ const generateMaterialQR = async (itemName: string, itemCode: string, encodedDat
                     currentY += lineHeight;
                 }
             } else {
-                // Check if the very first word is too long
                 if (n === 0 && context.measureText(word).width > maxWidth) {
                     for (let i = 0; i < word.length; i++) {
                         const char = word[i];
@@ -227,9 +226,14 @@ const generateMaterialQR = async (itemName: string, itemCode: string, encodedDat
             }
         }
         context.fillText(line.trim(), x, currentY);
+        return currentY + lineHeight;
     };
 
-    wrapText(ctx, displayText, startX, startY, maxWidth, lineHeight);
+    // Draw Line 1 (Name & Code)
+    const nextY = wrapText(ctx, line1, startX, startY, maxWidth, lineHeight);
+    
+    // Draw Line 2 (Expiry - Encoded Date)
+    wrapText(ctx, line2, startX, nextY, maxWidth, lineHeight);
 
     return new Promise((resolve) => canvas.toBlob(b => resolve(b!), "image/png"));
 };

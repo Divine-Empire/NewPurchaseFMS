@@ -112,77 +112,106 @@ const generateQRLabel = async (
     serialNo: string
 ): Promise<Blob> => {
     const canvas = document.createElement("canvas");
-    canvas.width = 400;
-    canvas.height = 520; // Increased height for better spacing
+    canvas.width = 600;
+    canvas.height = 250;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Could not get canvas context");
 
-    // Clear and fill with pure white (important for scanning)
+    // Background
     ctx.fillStyle = "white";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Text settings
-    ctx.fillStyle = "black";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-
-    // Item Name + Item Code (Top)
-    ctx.font = "bold 20px Arial";
-    const headerText = `${itemName} (${itemCode})`;
-    
-    // Simple text wrapping for header
-    const words = headerText.split(' ');
-    let line = '';
-    let y = 25;
-    const lineHeight = 28;
-    const maxWidth = 370;
-
-    for (let n = 0; n < words.length; n++) {
-        const testLine = line + words[n] + ' ';
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxWidth && n > 0) {
-            ctx.fillText(line, canvas.width / 2, y);
-            line = words[n] + ' ';
-            y += lineHeight;
-        } else {
-            line = testLine;
-        }
-    }
-    ctx.fillText(line, canvas.width / 2, y);
-
-    // QR Code (Middle)
-    // We encode the serial number with a label to make it clear what was scanned
-    const qrData = serialNo.trim();
-    const qrSize = 320; // Larger QR for better scan
-    const qrY = y + 45;
-    
-    // Use toCanvas for sharper rendering
-    const qrCanvas = document.createElement("canvas");
-    await QRCode.toCanvas(qrCanvas, qrData, { 
-        margin: 4, 
+    // QR Code square on the left half
+    const qrData = `${itemName}/${itemCode}/${serialNo}`;
+    const qrSize = 200;
+    const qrDataUrl = await QRCode.toDataURL(qrData, { 
+        margin: 1, 
         width: qrSize,
-        errorCorrectionLevel: 'H', // Maximum error correction
-        color: {
-            dark: '#000000',
-            light: '#ffffff'
+        errorCorrectionLevel: 'M'
+    });
+    
+    const qrImg = new Image();
+    qrImg.src = qrDataUrl;
+    await new Promise((res) => {
+        qrImg.onload = res;
+    });
+    // Draw QR with padding (20px margin)
+    ctx.drawImage(qrImg, 20, 25, qrSize, qrSize);
+
+    // Right-half Text Info
+    ctx.fillStyle = "black";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.font = "22px Arial";
+    
+    const line1 = `${itemName} (${itemCode})`;
+    const line2 = serialNo;
+    const startX = 240;
+    const startY = 40;
+    const maxWidth = 340;
+    const lineHeight = 28;
+
+    const wrapText = (context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number => {
+        const words = text.split(' ');
+        let line = '';
+        let currentY = y;
+
+        for (let n = 0; n < words.length; n++) {
+            const word = words[n];
+            const testLine = line + word + ' ';
+            const metrics = context.measureText(testLine);
+            const testWidth = metrics.width;
+
+            if (testWidth > maxWidth && n > 0) {
+                if (context.measureText(word).width > maxWidth) {
+                    context.fillText(line.trim(), x, currentY);
+                    currentY += lineHeight;
+                    line = '';
+                    for (let i = 0; i < word.length; i++) {
+                        const char = word[i];
+                        if (context.measureText(line + char).width > maxWidth) {
+                            context.fillText(line, x, currentY);
+                            line = char;
+                            currentY += lineHeight;
+                        } else {
+                            line += char;
+                        }
+                    }
+                    line += ' ';
+                } else {
+                    context.fillText(line.trim(), x, currentY);
+                    line = word + ' ';
+                    currentY += lineHeight;
+                }
+            } else {
+                if (n === 0 && context.measureText(word).width > maxWidth) {
+                    for (let i = 0; i < word.length; i++) {
+                        const char = word[i];
+                        if (context.measureText(line + char).width > maxWidth) {
+                            context.fillText(line, x, currentY);
+                            line = char;
+                            currentY += lineHeight;
+                        } else {
+                            line += char;
+                        }
+                    }
+                    line += ' ';
+                } else {
+                    line = testLine;
+                }
+            }
         }
-    });
+        context.fillText(line.trim(), x, currentY);
+        return currentY + lineHeight;
+    };
 
-    // Draw the QR onto our main canvas
-    ctx.imageSmoothingEnabled = false; // Keep QR sharp
-    ctx.drawImage(qrCanvas, (canvas.width - qrSize) / 2, qrY, qrSize, qrSize);
+    // Draw Line 1 (Name & Code)
+    const nextY = wrapText(ctx, line1, startX, startY, maxWidth, lineHeight);
+    
+    // Draw Line 2 (Serial No.)
+    wrapText(ctx, line2, startX, nextY, maxWidth, lineHeight);
 
-    // Serial No (Bottom)
-    ctx.font = "bold 24px Arial";
-    ctx.textBaseline = "bottom";
-    ctx.fillText(serialNo, canvas.width / 2, canvas.height - 25);
-
-    return new Promise((resolve, reject) => {
-        canvas.toBlob((blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error("Canvas toBlob failed"));
-        }, "image/png", 1.0); // Maximum quality
-    });
+    return new Promise((resolve) => canvas.toBlob(b => resolve(b!), "image/png"));
 };
 
 
