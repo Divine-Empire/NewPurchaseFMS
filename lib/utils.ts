@@ -63,3 +63,19 @@ export function getFmsTimestamp(): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 }
+/**
+ * Checks if a warranty expiry date is within one month from today.
+ */
+export function isWarrantyExpiringSoon(expiryDate: string | Date | null | undefined): boolean {
+  if (!expiryDate || expiryDate === "-" || expiryDate === "—") return false;
+  try {
+    const d = expiryDate instanceof Date ? expiryDate : parseSheetDate(expiryDate);
+    if (!d || isNaN(d.getTime())) return false;
+    const today = new Date();
+    const oneMonthFromNow = new Date();
+    oneMonthFromNow.setMonth(today.getMonth() + 1);
+    return d <= oneMonthFromNow;
+  } catch (e) {
+    return false;
+  }
+}

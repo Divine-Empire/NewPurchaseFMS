@@ -79,7 +79,7 @@ const purchaseStages = [
   { id: 6, name: "Follow-Up Vendor", color: "bg-emerald-500" },
   { id: 7, name: "Transporter Follow-Up", color: "bg-green-500" },
   { id: 8, name: "Material Received", color: "bg-lime-500" },
-  { id: 9, name: "Warranty Information", color: "bg-yellow-500" },
+  { id: 9, name: "Serial Generation", color: "bg-yellow-500" },
   { id: 11, name: "Receipt in Tally", color: "bg-orange-500" },
   { id: 12, name: "Submit Invoice (HO)", color: "bg-red-500" },
   { id: 13, name: "Submit Invoice", color: "bg-rose-500" },
@@ -466,7 +466,7 @@ export default function PurchaseDashboard() {
           setTopReceivedOrders(processedOrders.slice(0, 10));
 
           // Calculate Pending Items by Stage (Only RA Stages)
-          const raStages = ["Transporter Follow-Up", "Material Received", "Warranty Information", "QC Requirement", "Receipt in Tally", "Submit Invoice (HO)", "Submit Invoice", "Verification by Accounts", "Purchase Return"];
+          const raStages = ["Transporter Follow-Up", "Material Received", "Serial Generation", "QC Requirement", "Receipt in Tally", "Submit Invoice (HO)", "Submit Invoice", "Verification by Accounts", "Purchase Return"];
           const recCounts: Record<string, number> = {};
           const overdueRecCounts: Record<string, number> = {};
           raStages.forEach(name => {
@@ -492,7 +492,7 @@ export default function PurchaseDashboard() {
               // Indices verified against specialized stage components:
               check("Transporter Follow-Up", 88, 89, 88);
               check("Material Received", 19, 20, 19);
-              check("Warranty Information", 104, 109, 108);
+              check("Serial Generation", 104, 109, 108);
               check("QC Requirement", 61, 62, 61);
               check("Receipt in Tally", 35, 36, 35);
               check("Submit Invoice (HO)", 43, 44, 43);
@@ -1994,7 +1994,7 @@ export default function PurchaseDashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-amber-600" />
-              <h3 className="text-lg font-semibold">Warranty Information</h3>
+              <h3 className="text-lg font-semibold">Serial Generation</h3>
             </div>
             <Badge variant="secondary" className="bg-amber-50 text-amber-700">
               {finalWarrantyData.length} Items

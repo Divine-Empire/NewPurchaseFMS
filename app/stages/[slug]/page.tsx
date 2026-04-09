@@ -20,7 +20,7 @@ import ReturnApproval from "@/components/stages/return-approval";
 import VerificationByAccounts from "@/components/stages/verification";
 
 import SubmitInvoiceHO from "@/components/stages/submit-invoice-ho";
-import WarrantyInfo from "@/components/stages/warranty-info";
+import SerialGeneration from "@/components/stages/serial-generation";
 import WarrantyClaim from "@/components/stages/warranty-claim";
 
 const stageComponents: Record<string, React.ComponentType> = {
@@ -38,7 +38,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "submit-invoice": SubmitInvoice,
     "verification": Verification,
     "verification-by-accounts": VerificationByAccounts,
-    "warranty-info": WarrantyInfo,
+    "warranty-info": SerialGeneration,
     "warranty-claim": WarrantyClaim,
     "purchase-return": PurchaseReturn,
     "vendor-payment": VendorPayment,

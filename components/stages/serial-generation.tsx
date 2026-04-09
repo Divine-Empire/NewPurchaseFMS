@@ -58,6 +58,8 @@ const PENDING_COLUMNS = [
     { key: "poNumber", label: "PO Number" },
     { key: "poCopy", label: "PO Copy" },
     { key: "receivedQty", label: "Received Qty" },
+    { key: "warrantyExpiry", label: "Warranty Expiry" },
+    { key: "productExpiry", label: "Product Expiry" },
     { key: "planned", label: "Planned" },
 ];
 
@@ -72,6 +74,8 @@ const HISTORY_COLUMNS = [
     { key: "poNumber", label: "PO Number" },
     { key: "poCopy", label: "PO Copy" },
     { key: "receivedQty", label: "Received Qty" },
+    { key: "warrantyExpiry", label: "Warranty Expiry" },
+    { key: "productExpiry", label: "Product Expiry" },
     { key: "planned", label: "Planned" },
     { key: "actual", label: "Actual" },
 ];
@@ -106,10 +110,46 @@ const uploadFileToDrive = async (
     return json.success ? json.fileUrl : "";
 };
 
+const codeMap: Record<string, string> = {
+    "0": "0", "1": "A", "2": "B", "3": "C", "4": "D",
+    "5": "E", "6": "F", "7": "G", "8": "H", "9": "I"
+};
+
+const encodeExpiryDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    try {
+        const parts = dateStr.split("-"); // YYYY-MM-DD
+        if (parts.length < 2) return "";
+        const year = parts[0].slice(2); // YY
+        const month = parts[1]; // MM
+        const encode = (s: string) => s.split("").map(c => codeMap[c] || c).join("");
+        return `${encode(month)}-${encode(year)}`;
+    } catch (e) {
+        return "";
+    }
+};
+
+const encodeDateYYMMDD = (dateStr: string) => {
+    if (!dateStr || dateStr === "-") return "";
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return "";
+        const yy = String(d.getFullYear()).slice(-2);
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const full = yy + mm + dd; // YYMMDD
+        return full.split("").map(c => codeMap[c] || c).join("");
+    } catch (e) {
+        return "";
+    }
+};
+
+
 const generateQRLabel = async (
     itemName: string,
     itemCode: string,
-    serialNo: string
+    serialNo: string,
+    encodedDate: string
 ): Promise<Blob> => {
     const canvas = document.createElement("canvas");
     canvas.width = 600;
@@ -122,7 +162,9 @@ const generateQRLabel = async (
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // QR Code square on the left half
-    const qrData = `${itemName}/${itemCode}/${serialNo}`;
+    const qrData = encodedDate 
+        ? `${itemName}/${itemCode}/${serialNo}/${encodedDate}`
+        : `${itemName}/${itemCode}/${serialNo}`;
     const qrSize = 200;
     const qrDataUrl = await QRCode.toDataURL(qrData, { 
         margin: 1, 
@@ -146,6 +188,7 @@ const generateQRLabel = async (
     
     const line1 = `${itemName} (${itemCode})`;
     const line2 = serialNo;
+    const line3 = encodedDate;
     const startX = 240;
     const startY = 40;
     const maxWidth = 340;
@@ -209,13 +252,18 @@ const generateQRLabel = async (
     const nextY = wrapText(ctx, line1, startX, startY, maxWidth, lineHeight);
     
     // Draw Line 2 (Serial No.)
-    wrapText(ctx, line2, startX, nextY, maxWidth, lineHeight);
+    const currentY = wrapText(ctx, line2, startX, nextY, maxWidth, lineHeight);
+
+    // Draw Line 3 (Encoded Date) if present
+    if (line3) {
+        wrapText(ctx, line3, startX, currentY, maxWidth, lineHeight);
+    }
 
     return new Promise((resolve) => canvas.toBlob(b => resolve(b!), "image/png"));
 };
 
 
-export default function WarrantyInfo() {
+export default function SerialGeneration() {
     const [pendingRecords, setPendingRecords] = useState<any[]>([]);
     const [historyRecords, setHistoryRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -230,6 +278,8 @@ export default function WarrantyInfo() {
     const [vendorCodes, setVendorCodes] = useState<Record<string, string>>({});
     const [itemCodeMap, setItemCodeMap] = useState<Record<string, string>>({});
     const [previewImages, setPreviewImages] = useState<Record<number, string>>({});
+    const [startingSequence, setStartingSequence] = useState(1);
+    const [isCheckingSequence, setIsCheckingSequence] = useState(false);
 
     // ─── Fetch ───────────────────────────────────────────────────────────────
     const fetchData = useCallback(async () => {
@@ -305,6 +355,7 @@ export default function WarrantyInfo() {
                         invoiceCopy: row[29] || "",                 // AD: Bill Attachment
                         poCopy: fmsRow ? (fmsRow[58] || "") : "", // FMS BG: PO Copy
                         warrantyExpiry: row[106] || "",            // DC: Warranty Expiry
+                        productExpiry: row[107] || "",             // DD: Product Expiry
                         planned,
                         actual,
                     };
@@ -344,44 +395,93 @@ export default function WarrantyInfo() {
     }, [searchTerm]);
 
     const pending = useMemo(() => applySearch(pendingRecords), [pendingRecords, applySearch]);
+
     const history = useMemo(() => applySearch(historyRecords), [historyRecords, applySearch]);
 
     // ─── Open form ────────────────────────────────────────────────────────────
+    const fetchNextSequence = async (vendorName: string, invoiceDate: string) => {
+        const API = process.env.NEXT_PUBLIC_API_URI;
+        if (!API) return;
+        
+        setIsCheckingSequence(true);
+        try {
+            const vendorCode = vendorCodes[vendorName] || "UNKNOWN";
+            const encodedDate = encodeDateYYMMDD(invoiceDate);
+            const prefix = `${vendorCode}/${encodedDate}/`;
+            
+            const res = await fetch(`${API}?sheet=WARRANTY&action=getAll`);
+            const json = await res.json();
+            
+            if (json.success && Array.isArray(json.data)) {
+                // Column D is index 3
+                const serials = json.data.slice(6).map((r: any) => String(r[3] || ""));
+                const relevantSerials = serials.filter((s: string) => s.startsWith(prefix));
+                
+                let maxSeq = 0;
+                relevantSerials.forEach((s: string) => {
+                    const parts = s.split("/");
+                    if (parts.length >= 3) {
+                        const seqStr = parts[2];
+                        const seqNum = parseInt(seqStr, 10);
+                        if (!isNaN(seqNum) && seqNum > maxSeq) {
+                            maxSeq = seqNum;
+                        }
+                    }
+                });
+                setStartingSequence(maxSeq + 1);
+            }
+        } catch (err) {
+            console.error("Sequence fetch error:", err);
+        } finally {
+            setIsCheckingSequence(false);
+        }
+    };
+
     const openForm = useCallback((record: any) => {
         setSelectedRecord(record);
-        setIsAutoMode(false); // Reset to manual by default
+        setIsAutoMode(false); 
+        setStartingSequence(1); // Reset until fetch completes
+        
+        const vendorCode = vendorCodes[record.data.vendorName] || "UNKNOWN";
+        const encodedDate = encodeDateYYMMDD(record.data.invoiceDate);
+        const prefix = `${vendorCode}/${encodedDate}/`;
+        
         const qty = Math.max(1, parseInt(record.data.receivedQty) || 1);
         setEntries(Array.from({ length: qty }, () => ({
-            serialNo: "",
+            serialNo: prefix, // Pre-fill prefix for manual mode immediately
         })));
+        
+        // Trigger fetch silently in background
+        fetchNextSequence(record.data.vendorName, record.data.invoiceDate);
+        
         setOpen(true);
-    }, []);
+    }, [vendorCodes]);
 
     // ─── Auto Serial Generation Logic ───
     useEffect(() => {
-        if (isAutoMode && selectedRecord) {
-            const vendorCode = vendorCodes[selectedRecord.data.vendorName] || "UNKNOWN";
-            
-            // Format Invoice Date as DD-MM-YYYY
-            let dateStr = "00-00-0000";
-            if (selectedRecord.data.invoiceDate && selectedRecord.data.invoiceDate !== "-") {
-                const d = new Date(selectedRecord.data.invoiceDate);
-                if (!isNaN(d.getTime())) {
-                    const pad = (n: number) => String(n).padStart(2, "0");
-                    dateStr = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
-                }
-            }
+        if (!selectedRecord) return;
+        const vendorCode = vendorCodes[selectedRecord.data.vendorName] || "UNKNOWN";
+        const encodedDate = encodeDateYYMMDD(selectedRecord.data.invoiceDate);
+        const prefix = `${vendorCode}/${encodedDate}/`;
 
-            setEntries(prev => prev.map((_, idx) => ({
-                serialNo: `${vendorCode}/${dateStr}/${String(idx + 1).padStart(3, "0")}`
+        if (isAutoMode) {
+            if (isCheckingSequence) {
+                // Optionally show prefix + "..." while loading
+                setEntries(prev => prev.map(() => ({
+                    serialNo: `${prefix}Loading...`
+                })));
+            } else {
+                setEntries(prev => prev.map((_, idx) => ({
+                    serialNo: `${prefix}${String(startingSequence + idx).padStart(3, "0")}`
+                })));
+            }
+        } else {
+            // Manual Mode: Pre-fill prefix, clear sequence
+            setEntries(prev => prev.map(() => ({
+                serialNo: prefix
             })));
-        } else if (!isAutoMode && selectedRecord) {
-            // If switching from auto to manual, optionally clear or keep
-            // User said: "when button=Manual, then it will show the current serial no. fields"
-            // Let's clear for better UX or keep for editing. User's prompt implies manual entry.
-            // I'll keep them but allow editing.
         }
-    }, [isAutoMode, selectedRecord, vendorCodes]);
+    }, [isAutoMode, selectedRecord, vendorCodes, startingSequence, isCheckingSequence]);
 
     const updateEntry = useCallback((idx: number, field: keyof WarrantyEntry, value: string) => {
         setEntries((prev) => {
@@ -408,7 +508,8 @@ export default function WarrantyInfo() {
         try {
             const itemName = selectedRecord.data.itemName;
             const itemCode = itemCodeMap[itemName] || "N/A";
-            const blob = await generateQRLabel(itemName, itemCode, entry.serialNo);
+            const encodedDate = encodeExpiryDate(selectedRecord.data.productExpiry);
+            const blob = await generateQRLabel(itemName, itemCode, entry.serialNo, encodedDate);
             const url = URL.createObjectURL(blob);
             setPreviewImages(prev => ({ ...prev, [idx]: url }));
         } catch (err) {
@@ -433,7 +534,8 @@ export default function WarrantyInfo() {
             // 1. Generate and Upload images for each serial number
             const uploadResults = await Promise.all(entries.map(async (entry, idx) => {
                 try {
-                    const blob = await generateQRLabel(itemName, itemCode, entry.serialNo);
+                    const encodedDate = encodeExpiryDate(selectedRecord.data.productExpiry);
+                    const blob = await generateQRLabel(itemName, itemCode, entry.serialNo, encodedDate);
                     const fileName = `QR_${entry.serialNo.replace(/[/\\:]/g, '_')}.png`;
                     const driveUrl = await uploadFileToDrive(blob, fileName, API, FOLDER_ID);
                     return driveUrl;
@@ -445,7 +547,7 @@ export default function WarrantyInfo() {
 
             // 2. batchInsert new rows into WARRANTY sheet
             const rowsData = entries.map((entry, idx) => {
-                const warrantyRow = new Array(8).fill("");
+                const warrantyRow = new Array(14).fill("");
                 
                 let formattedWarrantyEnd = selectedRecord.data.warrantyExpiry;
                 if (formattedWarrantyEnd && formattedWarrantyEnd !== "-") {
@@ -464,6 +566,7 @@ export default function WarrantyInfo() {
                 warrantyRow[5] = selectedRecord.data.itemName;    // F: Item-Name
                 warrantyRow[6] = formatDate(selectedRecord.data.invoiceDate); // G: Invoice Date
                 warrantyRow[7] = formattedWarrantyEnd;            // H: Warranty End
+                warrantyRow[13] = ts;                             // N: Product Expiry (Submission Timestamp as local date-time)
                 return warrantyRow;
             });
 
@@ -493,7 +596,7 @@ export default function WarrantyInfo() {
             ]);
 
             if (insertJson.success && updateJson.success) {
-                toast.success("Warranty information recorded successfully!");
+                toast.success("Serial Generation recorded successfully!");
                 setOpen(false);
                 fetchData();
             } else {
@@ -534,7 +637,7 @@ export default function WarrantyInfo() {
         }
 
         // Date columns
-        if (key === "invoiceDate" || key === "planned" || key === "actual" || key === "warrantyEnd") {
+        if (key === "invoiceDate" || key === "planned" || key === "actual" || key === "warrantyEnd" || key === "warrantyExpiry" || key === "productExpiry") {
             return formatDateDash(val);
         }
 
@@ -554,17 +657,19 @@ export default function WarrantyInfo() {
                             <div className="flex items-center gap-3">
                                 <ShieldAlert className="w-7 h-7 text-amber-600" />
                                 <div>
-                                    <h2 className="text-2xl font-bold text-slate-900">Stage: Warranty Information</h2>
+                                    <h2 className="text-2xl font-bold text-slate-900">Stage: Serial Generation</h2>
                                 </div>
                             </div>
-                            <div className="relative flex-1 max-w-sm">
-                                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                                <Input
-                                    placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-9 bg-white border-slate-200 focus:ring-amber-500 focus:border-amber-500"
-                                />
+                            <div className="flex items-center gap-4 flex-1 max-w-2xl justify-end">
+                                <div className="relative flex-1 max-w-sm">
+                                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                                    <Input
+                                        placeholder="Search by Indent, Item, Vendor, PO, Invoice..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="pl-9 bg-white border-slate-200 focus:ring-amber-500 focus:border-amber-500"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -597,7 +702,7 @@ export default function WarrantyInfo() {
                             {pending.length === 0 ? (
                                 <div className="text-center py-12 text-gray-500">
                                     <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                                    <p className="text-lg text-black">No pending Warranty Information entries</p>
+                                    <p className="text-lg text-black">No pending Serial Generation entries</p>
                                 </div>
                             ) : (
                                 <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
@@ -611,20 +716,27 @@ export default function WarrantyInfo() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {pending.map((rec) => (
-                                                <tr key={rec.id} className="hover:bg-gray-50 group">
-                                                    <td className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b text-center px-4 py-2">
-                                                        <Button variant="outline" size="sm" onClick={() => openForm(rec)} className="h-8 px-3 text-xs font-medium border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-colors whitespace-nowrap">
-                                                            Warranty Information
-                                                        </Button>
-                                                    </td>
-                                                    {PENDING_COLUMNS.map((col) => (
-                                                        <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
-                                                            {renderCell(rec.data, col.key)}
+                                            {pending.map((rec) => {
+                                                return (
+                                                    <tr key={rec.id} className="hover:bg-gray-50 group transition-colors">
+                                                        <td className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b text-center px-4 py-2 transition-colors">
+                                                            <Button 
+                                                                variant="outline" 
+                                                                size="sm" 
+                                                                onClick={() => openForm(rec)} 
+                                                                className="h-8 px-3 text-xs font-medium border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-colors whitespace-nowrap"
+                                                            >
+                                                                Serial Generation
+                                                            </Button>
                                                         </td>
-                                                    ))}
-                                                </tr>
-                                            ))}
+                                                        {PENDING_COLUMNS.map((col) => (
+                                                            <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                                {renderCell(rec.data, col.key)}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -636,7 +748,7 @@ export default function WarrantyInfo() {
                             {history.length === 0 ? (
                                 <div className="text-center py-12 text-gray-500">
                                     <ShieldAlert className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                                    <p className="text-lg text-black">No completed Warranty Information entries</p>
+                                    <p className="text-lg text-black">No completed Serial Generation entries</p>
                                 </div>
                             ) : (
                                 <div className="border rounded-lg overflow-x-auto h-[70vh] relative">
@@ -671,7 +783,7 @@ export default function WarrantyInfo() {
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
                     <DialogHeader className="shrink-0">
-                        <DialogTitle>Warranty Information</DialogTitle>
+                        <DialogTitle>Serial Generation</DialogTitle>
                         {selectedRecord && (
                             <div className="flex flex-col gap-2 mt-1">
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
@@ -686,10 +798,15 @@ export default function WarrantyInfo() {
                                         type="button"
                                         size="sm"
                                         variant={isAutoMode ? "default" : "outline"}
-                                        className={isAutoMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-amber-500 text-amber-600 hover:bg-amber-50"}
+                                        className={isAutoMode ? "bg-blue-600 hover:bg-blue-700 text-white min-w-[80px]" : "border-amber-500 text-amber-600 hover:bg-amber-50 min-w-[80px]"}
                                         onClick={() => setIsAutoMode(!isAutoMode)}
+                                        disabled={isAutoMode && isCheckingSequence && entries[0]?.serialNo?.includes("Loading...")}
                                     >
-                                        {isAutoMode ? "Auto" : "Manual"}
+                                        {isAutoMode && isCheckingSequence ? (
+                                            <><Loader2 className="w-3 h-3 animate-spin mr-1.5" />Auto</>
+                                        ) : (
+                                            isAutoMode ? "Auto" : "Manual"
+                                        )}
                                     </Button>
                                 </div>
                             </div>

@@ -14,7 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Loader2, Search, ShieldAlert } from "lucide-react";
-import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
+import { formatDate, parseSheetDate, getFmsTimestamp, isWarrantyExpiringSoon } from "@/lib/utils";
 import { toast } from "sonner";
 
 const FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
@@ -63,11 +63,14 @@ const HISTORY_COLUMNS = [
 ];
 
 // --- Optimized Row Component ---
-const RecordRow = React.memo(({ rec, columns, onAction, isHistory = false, renderCell }: any) => {
+const RecordRow = React.memo(({ rec, columns, onAction, isHistory = false, renderCell, isCritical = false }: any) => {
+    const rowClass = isCritical ? "bg-red-50 hover:bg-red-100" : (isHistory ? "hover:bg-indigo-50/50" : "hover:bg-gray-50");
+    const stickyClass = isCritical ? "bg-red-50 group-hover:bg-red-100 border-b" : "bg-white group-hover:bg-gray-50 border-b";
+
     return (
-        <tr className={`group transition-colors ${isHistory ? "hover:bg-indigo-50/50" : "hover:bg-gray-50"}`}>
+        <tr className={`group transition-colors ${rowClass}`}>
             {!isHistory && (
-                <td className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b text-center px-4 py-2">
+                <td className={`sticky left-0 z-20 ${stickyClass} text-center px-4 py-2`}>
                     <Button
                         size="sm"
                         className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all active:scale-95 h-8 px-3 text-[11px] font-semibold"
@@ -95,6 +98,7 @@ export default function WarrantyClaim() {
     const [isLoading, setIsLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [activeTab, setActiveTab] = useState<"pending" | "closurePending" | "history">("pending");
+    const [showExpiringOnly, setShowExpiringOnly] = useState(false);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isClosureModalOpen, setIsClosureModalOpen] = useState(false);
@@ -238,7 +242,13 @@ export default function WarrantyClaim() {
         );
     }, [searchTerm]);
 
-    const pending = useMemo(() => applySearch(pendingRecords), [pendingRecords, applySearch]);
+    const pending = useMemo(() => {
+        let filtered = applySearch(pendingRecords);
+        if (showExpiringOnly) {
+            filtered = filtered.filter(r => isWarrantyExpiringSoon(r.data.warrantyEnd));
+        }
+        return filtered;
+    }, [pendingRecords, applySearch, showExpiringOnly]);
     const closurePending = useMemo(() => applySearch(closurePendingRecords), [closurePendingRecords, applySearch]);
     const history = useMemo(() => applySearch(historyRecords), [historyRecords, applySearch]);
 
@@ -448,7 +458,20 @@ export default function WarrantyClaim() {
                                     <h2 className="text-2xl font-bold text-slate-900">Stage: Warranty Claim</h2>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-4 flex-1 max-w-lg justify-end">
+                            <div className="flex items-center gap-4 flex-1 max-w-2xl justify-end">
+                                <Button
+                                    variant={showExpiringOnly ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setShowExpiringOnly(!showExpiringOnly)}
+                                    className={`h-10 px-4 flex items-center gap-2 transition-all ${
+                                        showExpiringOnly 
+                                            ? "bg-red-600 hover:bg-red-700 text-white border-red-600 shadow-md" 
+                                            : "border-slate-200 text-slate-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                                    }`}
+                                >
+                                    <ShieldAlert className={`w-4 h-4 ${showExpiringOnly ? "animate-pulse" : ""}`} />
+                                    <span className="font-semibold">Recent Expiring</span>
+                                </Button>
                                 <div className="relative flex-1 max-w-sm">
                                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
                                     <Input
@@ -520,6 +543,7 @@ export default function WarrantyClaim() {
                                                     rec={rec}
                                                     columns={PENDING_COLUMNS}
                                                     renderCell={renderCell}
+                                                    isCritical={isWarrantyExpiringSoon(rec.data.warrantyEnd)}
                                                     onAction={(r: any) => {
                                                         setSelectedRecord(r);
                                                         setFormData({

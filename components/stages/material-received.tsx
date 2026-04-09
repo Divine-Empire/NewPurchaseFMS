@@ -113,153 +113,7 @@ const PENDING_COLUMNS = [
     { key: "poCopy", label: "PO Copy" },
 ] as const;
 
-// ─── QR CODES & UTILS ────────────────────────────────────────────────────────
-
-const codeMap: Record<string, string> = {
-    "0": "0", "1": "A", "2": "B", "3": "C", "4": "D",
-    "5": "E", "6": "F", "7": "G", "8": "H", "9": "I"
-};
-
-const encodeExpiryDate = (dateStr: string) => {
-    if (!dateStr) return "";
-    try {
-        const parts = dateStr.split("-"); // YYYY-MM-DD
-        if (parts.length < 2) return "";
-        const year = parts[0].slice(2); // YY
-        const month = parts[1]; // MM
-        const encode = (s: string) => s.split("").map(c => codeMap[c] || c).join("");
-        return `${encode(month)}-${encode(year)}`;
-    } catch (e) {
-        return "";
-    }
-};
-
-const generateMaterialQR = async (itemName: string, itemCode: string, encodedDate: string): Promise<Blob> => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 600;
-    canvas.height = 250;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas context failed");
-    
-    // Background
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // QR Code square on the left half
-    const qrData = `${itemName}/${itemCode}/${encodedDate}`;
-    const qrSize = 200;
-    const qrDataUrl = await QRCode.toDataURL(qrData, { 
-        margin: 1, 
-        width: qrSize,
-        errorCorrectionLevel: 'M'
-    });
-    
-    const qrImg = new Image();
-    qrImg.src = qrDataUrl;
-    await new Promise((res) => {
-        qrImg.onload = res;
-    });
-    // Draw QR with padding (20px margin)
-    ctx.drawImage(qrImg, 20, 25, qrSize, qrSize);
-
-    // Right-half Text Info
-    ctx.fillStyle = "black";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    ctx.font = "22px Arial";
-    
-    const line1 = `${itemName} (${itemCode})`;
-    const line2 = encodedDate;
-    const startX = 240;
-    const startY = 40;
-    const maxWidth = 340;
-    const lineHeight = 28;
-
-    const wrapText = (context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number => {
-        const words = text.split(' ');
-        let line = '';
-        let currentY = y;
-
-        for (let n = 0; n < words.length; n++) {
-            const word = words[n];
-            const testLine = line + word + ' ';
-            const metrics = context.measureText(testLine);
-            const testWidth = metrics.width;
-
-            if (testWidth > maxWidth && n > 0) {
-                if (context.measureText(word).width > maxWidth) {
-                    context.fillText(line.trim(), x, currentY);
-                    currentY += lineHeight;
-                    line = '';
-                    for (let i = 0; i < word.length; i++) {
-                        const char = word[i];
-                        if (context.measureText(line + char).width > maxWidth) {
-                            context.fillText(line, x, currentY);
-                            line = char;
-                            currentY += lineHeight;
-                        } else {
-                            line += char;
-                        }
-                    }
-                    line += ' ';
-                } else {
-                    context.fillText(line.trim(), x, currentY);
-                    line = word + ' ';
-                    currentY += lineHeight;
-                }
-            } else {
-                if (n === 0 && context.measureText(word).width > maxWidth) {
-                    for (let i = 0; i < word.length; i++) {
-                        const char = word[i];
-                        if (context.measureText(line + char).width > maxWidth) {
-                            context.fillText(line, x, currentY);
-                            line = char;
-                            currentY += lineHeight;
-                        } else {
-                            line += char;
-                        }
-                    }
-                    line += ' ';
-                } else {
-                    line = testLine;
-                }
-            }
-        }
-        context.fillText(line.trim(), x, currentY);
-        return currentY + lineHeight;
-    };
-
-    // Draw Line 1 (Name & Code)
-    const nextY = wrapText(ctx, line1, startX, startY, maxWidth, lineHeight);
-    
-    // Draw Line 2 (Expiry - Encoded Date)
-    wrapText(ctx, line2, startX, nextY, maxWidth, lineHeight);
-
-    return new Promise((resolve) => canvas.toBlob(b => resolve(b!), "image/png"));
-};
-
-const uploadQRToDrive = async (blob: Blob, fileName: string, apiUrl: string, folderId: string): Promise<string> => {
-    const toBase64 = (b: Blob): Promise<string> => new Promise((res, rej) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(b);
-        reader.onload = () => res(reader.result as string);
-        reader.onerror = e => rej(e);
-    });
-
-    const uploadParams = new URLSearchParams();
-    uploadParams.append("action", "uploadFile");
-    uploadParams.append("base64Data", await toBase64(blob));
-    uploadParams.append("fileName", fileName);
-    uploadParams.append("mimeType", "image/png");
-    uploadParams.append("folderId", folderId);
-    const res = await fetch(apiUrl, { method: "POST", body: uploadParams });
-    const json = await res.json();
-    return json.success ? convertToDownloadUrl(json.url || json.fileUrl) : "";
-};
-
-/* --------------------------------------------------------------- */
-/*  COLUMNS FOR HISTORY TAB (SHOW ALL)                             */
-/* --------------------------------------------------------------- */
+// ─── COLUMNS FOR HISTORY TAB (SHOW ALL) ─────────────────────────────────────
 const HISTORY_COLUMNS = [
     ...PENDING_COLUMNS.slice(0, 6),
     { key: "actual6", label: "Actual" },
@@ -294,7 +148,6 @@ export default function Stage7() {
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [itemCodeMap, setItemCodeMap] = useState<Record<string, string>>({});
-    const [previewImages, setPreviewImages] = useState<Record<string, string>>({});
     const [searchTerm, setSearchTerm] = useState("");
     const [warehouseFilter, setWarehouseFilter] = useState("All");
 
@@ -472,22 +325,6 @@ export default function Stage7() {
         fetchDropdown();
     }, []);
 
-    const handleQRPreview = async (itemName: string, expiryDate: string, id: string) => {
-        if (!expiryDate) {
-            toast.error("Please select a Product Expiry date first");
-            return;
-        }
-        try {
-            const itemCode = itemCodeMap[itemName] || "N/A";
-            const encodedDate = encodeExpiryDate(expiryDate);
-            const blob = await generateMaterialQR(itemName, itemCode, encodedDate);
-            const url = URL.createObjectURL(blob);
-            setPreviewImages(prev => ({ ...prev, [id]: url }));
-        } catch (err) {
-            console.error(err);
-            toast.error("Failed to generate QR preview");
-        }
-    };
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -607,23 +444,7 @@ export default function Stage7() {
                     ? uploadFileToDrive(item.receivedItemImage, SHEET_API_URL, folderId)
                     : Promise.resolve("");
 
-                let qrLinkPromise = Promise.resolve("");
-                if (item.productExpiry) {
-                    qrLinkPromise = (async () => {
-                        try {
-                            const itemCode = itemCodeMap[item.itemName] || "N/A";
-                            const encodedDate = encodeExpiryDate(item.productExpiry);
-                            const fileName = `QR_${item.itemName}_${item.productExpiry}.png`;
-                            const blob = await generateMaterialQR(item.itemName, itemCode, encodedDate);
-                            return await uploadQRToDrive(blob, fileName, SHEET_API_URL, "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy");
-                        } catch (err) {
-                            console.error(`QR Upload failed for ${item.itemName}:`, err);
-                            return "";
-                        }
-                    })();
-                }
-
-                const [itemImgUrl, qrLink] = await Promise.all([imageUploadPromise, qrLinkPromise]);
+                const itemImgUrl = await imageUploadPromise;
 
                 const rowArray = new Array(116).fill("");
                 rowArray[20] = timestamp;               // U: Actual6
@@ -645,7 +466,6 @@ export default function Stage7() {
                 rowArray[105] = item.duration || "";       // DB: Duration
                 rowArray[106] = item.warrantyExpiry || ""; // DC: Warranty Expiry
                 rowArray[107] = item.productExpiry || "";  // DD: Product Expiry
-                rowArray[115] = qrLink;                 // DL: QR Code Link
 
                 const params = new URLSearchParams();
                 params.append("action", "update");
@@ -727,23 +547,7 @@ export default function Stage7() {
                 ? uploadFileToDrive(form.receivedItemImage, SHEET_API_URL, folderId)
                 : Promise.resolve(typeof form.receivedItemImage === "string" ? form.receivedItemImage : "");
 
-            let qrPromise = Promise.resolve("");
-            if (form.productExpiry) {
-                qrPromise = (async () => {
-                    try {
-                        const itemCode = itemCodeMap[form.itemName] || "N/A";
-                        const encodedDate = encodeExpiryDate(form.productExpiry);
-                        const fileName = `QR_${form.itemName}_${form.productExpiry}.png`;
-                        const blob = await generateMaterialQR(form.itemName, itemCode, encodedDate);
-                        return await uploadQRToDrive(blob, fileName, SHEET_API_URL, "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy");
-                    } catch (err) {
-                        console.error("QR Generation/Upload failed:", err);
-                        return "";
-                    }
-                })();
-            }
-
-            const [billUrl, imageUrl, qrLink] = await Promise.all([billPromise, imagePromise, qrPromise]);
+            const [billUrl, imageUrl] = await Promise.all([billPromise, imagePromise]);
 
             const timestamp = getFmsTimestamp();
             const rowArray = new Array(116).fill("");
@@ -767,7 +571,6 @@ export default function Stage7() {
             rowArray[105] = form.duration || "";       // DB: Duration
             rowArray[106] = form.warrantyExpiry || ""; // DC: Warranty Expiry
             rowArray[107] = form.productExpiry || "";  // DD: Product Expiry
-            rowArray[115] = qrLink; // DL: QR Code Link
 
             const params = new URLSearchParams();
             params.append("action", "update");
@@ -1487,7 +1290,6 @@ export default function Stage7() {
                                                                 ) : "-"}
                                                             </TableCell>
                                                             <TableCell>
-                                                                <div className="flex items-center gap-1">
                                                                     <Input
                                                                         type="date"
                                                                         value={item.productExpiry}
@@ -1498,84 +1300,21 @@ export default function Stage7() {
                                                                         }}
                                                                         className="h-8 text-[10px]"
                                                                     />
-                                                                    <Popover>
-                                                                        <PopoverTrigger asChild>
-                                                                            <Button
-                                                                                type="button"
-                                                                                variant="ghost"
-                                                                                size="sm"
-                                                                                className="h-7 w-7 p-0"
-                                                                                onClick={() => handleQRPreview(item.itemName, item.productExpiry, `bulk-${idx}`)}
-                                                                                disabled={!item.productExpiry}
-                                                                            >
-                                                                                <Eye className="h-3.5 w-3.5" />
-                                                                            </Button>
-                                                                        </PopoverTrigger>
-                                                                        <PopoverContent className="w-[550px] p-2 bg-white" side="left">
-                                                                            <div className="flex flex-col items-center gap-2">
-                                                                                <span className="text-xs font-semibold text-gray-500">Label Preview</span>
-                                                                                {previewImages[`bulk-${idx}`] ? (
-                                                                                    <img
-                                                                                        src={previewImages[`bulk-${idx}`]}
-                                                                                        alt="QR Label Preview"
-                                                                                        className="border shadow-sm max-w-full rounded-sm"
-                                                                                    />
-                                                                                ) : (
-                                                                                    <div className="flex items-center justify-center w-full h-[200px] bg-slate-50 border border-dashed rounded text-slate-400">
-                                                                                        <Loader2 className="h-6 w-6 animate-spin" />
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        </PopoverContent>
-                                                                    </Popover>
-                                                                </div>
                                                             </TableCell>
                                                         </>
                                                     )}
                                                     {!bulkItems.some(i => i.warrantyClaim === "yes") && (
                                                         <TableCell>
-                                                            <div className="flex items-center gap-1">
-                                                                <Input
-                                                                    type="date"
-                                                                    value={item.productExpiry}
-                                                                    onChange={(e) => {
-                                                                        const newItems = [...bulkItems];
-                                                                        newItems[idx].productExpiry = e.target.value;
-                                                                        setBulkItems(newItems);
-                                                                    }}
-                                                                    className="h-8 text-[10px]"
-                                                                />
-                                                                <Popover>
-                                                                    <PopoverTrigger asChild>
-                                                                        <Button
-                                                                            type="button"
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-7 w-7 p-0"
-                                                                            onClick={() => handleQRPreview(item.itemName, item.productExpiry, `bulk-${idx}`)}
-                                                                            disabled={!item.productExpiry}
-                                                                        >
-                                                                            <Eye className="h-3.5 w-3.5" />
-                                                                        </Button>
-                                                                    </PopoverTrigger>
-                                                                    <PopoverContent className="w-[550px] p-2 bg-white" side="left">
-                                                                        <div className="flex flex-col items-center gap-2">
-                                                                            <span className="text-xs font-semibold text-gray-500">Label Preview</span>
-                                                                            {previewImages[`bulk-${idx}`] ? (
-                                                                                <img
-                                                                                    src={previewImages[`bulk-${idx}`]}
-                                                                                    alt="QR Label Preview"
-                                                                                    className="border shadow-sm max-w-full rounded-sm"
-                                                                                />
-                                                                            ) : (
-                                                                                <div className="flex items-center justify-center w-full h-[200px] bg-slate-50 border border-dashed rounded text-slate-400">
-                                                                                    <Loader2 className="h-6 w-6 animate-spin" />
-                                                                                </div>
-                                                                            )}
-                                                                            </div>
-                                                                        </PopoverContent>
-                                                                </Popover>
-                                                            </div>
+                                                            <Input
+                                                                type="date"
+                                                                value={item.productExpiry}
+                                                                onChange={(e) => {
+                                                                    const newItems = [...bulkItems];
+                                                                    newItems[idx].productExpiry = e.target.value;
+                                                                    setBulkItems(newItems);
+                                                                }}
+                                                                className="h-8 text-[10px]"
+                                                            />
                                                         </TableCell>
                                                     )}
                                                 </TableRow>
@@ -1834,7 +1573,7 @@ export default function Stage7() {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label>Warranty Information</Label>
+                                    <Label>Warranty</Label>
                                     <Select
                                         value={form.warrantyClaim}
                                         onValueChange={(v) => {
@@ -1866,36 +1605,6 @@ export default function Stage7() {
                                             onChange={(e) => setForm({ ...form, productExpiry: e.target.value })}
                                             className="flex-1"
                                         />
-                                        <Popover>
-                                            <PopoverTrigger asChild>
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="icon"
-                                                    className="h-10 w-10 shrink-0"
-                                                    onClick={() => handleQRPreview(form.itemName, form.productExpiry, "single")}
-                                                    disabled={!form.productExpiry}
-                                                >
-                                                    <Eye className="h-5 w-5 text-gray-500" />
-                                                </Button>
-                                            </PopoverTrigger>
-                                            <PopoverContent className="w-[550px] p-2 bg-white" side="left">
-                                                <div className="flex flex-col items-center gap-2">
-                                                    <span className="text-xs font-semibold text-gray-500">Label Preview</span>
-                                                    {previewImages["single"] ? (
-                                                        <img
-                                                            src={previewImages["single"]}
-                                                            alt="QR Label Preview"
-                                                            className="border shadow-sm max-w-full rounded-sm"
-                                                        />
-                                                    ) : (
-                                                        <div className="flex items-center justify-center w-full h-[200px] bg-slate-50 border border-dashed rounded text-slate-400">
-                                                            <Loader2 className="h-8 w-8 animate-spin" />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </PopoverContent>
-                                        </Popover>
                                     </div>
                                 </div>
                             </div>
