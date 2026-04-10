@@ -78,6 +78,7 @@ const HISTORY_COLUMNS = [
     { key: "productExpiry", label: "Product Expiry" },
     { key: "planned", label: "Planned" },
     { key: "actual", label: "Actual" },
+    { key: "qr", label: "QR" },
 ];
 
 interface WarrantyEntry {
@@ -288,12 +289,18 @@ export default function SerialGeneration() {
         setIsLoading(true);
         try {
             // Need INDENT-LIFT for PO Copy (col BG = 58)
-            const [raRes, fmsRes, dropRes] = await Promise.all([
+            const [raRes, fmsRes, dropRes, warrantyRes] = await Promise.all([
                 fetch(`${API}?sheet=RECEIVING-ACCOUNTS&action=getAll`),
                 fetch(`${API}?sheet=INDENT-LIFT&action=getAll`),
-                fetch(`${API}?sheet=Dropdown&action=getAll`)
+                fetch(`${API}?sheet=Dropdown&action=getAll`),
+                fetch(`${API}?sheet=WARRANTY&action=getAll`)
             ]);
-            const [raJson, fmsJson, dropJson] = await Promise.all([raRes.json(), fmsRes.json(), dropRes.json()]);
+            const [raJson, fmsJson, dropJson, warrantyJson] = await Promise.all([
+                raRes.json(), 
+                fmsRes.json(), 
+                dropRes.json(),
+                warrantyRes.json()
+            ]);
 
             // Dropdown mapping
             const vCodes: Record<string, string> = {};
@@ -320,6 +327,19 @@ export default function SerialGeneration() {
                 fmsJson.data.slice(7).forEach((r: any) => { // FMS data starts from row 9, so slice(8) for 0-indexed, or slice(7) if headers are row 8
                     if (r[1] && String(r[1]).trim()) { // Indent No. is B(1)
                         fmsMap.set(String(r[1]).trim(), r);
+                    }
+                });
+            }
+            
+            // Create Warranty Map (Indent#_Lift# -> QR Code Link col C(2))
+            const qrMap = new Map<string, string>();
+            if (warrantyJson.success && Array.isArray(warrantyJson.data)) {
+                warrantyJson.data.slice(6).forEach((r: any) => {
+                    const indent = String(r[0] || "").trim();
+                    const lift = String(r[1] || "").trim();
+                    const qrLink = String(r[2] || "").trim();
+                    if (indent && qrLink) {
+                        qrMap.set(`${indent}_${lift}`, qrLink);
                     }
                 });
             }
@@ -358,6 +378,7 @@ export default function SerialGeneration() {
                         productExpiry: row[107] || "",             // DD: Product Expiry
                         planned,
                         actual,
+                        qr: qrMap.get(`${indentNo}_${row[2] || ""}`) || "",
                     };
 
                     const id = `${data.indentNo}_${data.liftNo || raIndex}`;
@@ -622,7 +643,7 @@ export default function SerialGeneration() {
         const val = data?.[key];
 
         // Link columns
-        if (key === "invoiceCopy" || key === "poCopy") {
+        if (key === "invoiceCopy" || key === "poCopy" || key === "qr") {
             if (!val || String(val).trim() === "" || val === "-") return "-";
             return (
                 <a
