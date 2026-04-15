@@ -11,10 +11,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Search, ShieldAlert, Eye } from "lucide-react";
+import { Loader2, Search, ShieldAlert, Eye, Printer, X } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate, parseSheetDate, getFmsTimestamp } from "@/lib/utils";
 import QRCode from "qrcode";
+
+const getDirectDriveLink = (url: string) => {
+    if (!url) return "";
+    const match = url.match(/\/d\/(.+?)\/(view|edit)/) || url.match(/id=(.+?)(&|$)/);
+    if (match && match[1]) {
+        return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+    }
+    return url;
+};
 import {
     Popover,
     PopoverContent,
@@ -78,7 +87,7 @@ const HISTORY_COLUMNS = [
     { key: "productExpiry", label: "Product Expiry" },
     { key: "planned", label: "Planned" },
     { key: "actual", label: "Actual" },
-    { key: "qr", label: "QR" },
+    { key: "actions", label: "Action" },
 ];
 
 interface WarrantyEntry {
@@ -281,6 +290,9 @@ export default function SerialGeneration() {
     const [previewImages, setPreviewImages] = useState<Record<number, string>>({});
     const [startingSequence, setStartingSequence] = useState(1);
     const [isCheckingSequence, setIsCheckingSequence] = useState(false);
+    const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+    const [selectedHistoryRecord, setSelectedHistoryRecord] = useState<any>(null);
+    const [isPrinting, setIsPrinting] = useState(false);
 
     // ─── Fetch ───────────────────────────────────────────────────────────────
     const fetchData = useCallback(async () => {
@@ -331,15 +343,19 @@ export default function SerialGeneration() {
                 });
             }
             
-            // Create Warranty Map (Indent#_Lift# -> QR Code Link col C(2))
-            const qrMap = new Map<string, string>();
+            // Create Warranty Map (Indent#_Lift# -> Array of { serialNo, qrLink })
+            const qrMap = new Map<string, any[]>();
             if (warrantyJson.success && Array.isArray(warrantyJson.data)) {
                 warrantyJson.data.slice(6).forEach((r: any) => {
                     const indent = String(r[0] || "").trim();
                     const lift = String(r[1] || "").trim();
                     const qrLink = String(r[2] || "").trim();
-                    if (indent && qrLink) {
-                        qrMap.set(`${indent}_${lift}`, qrLink);
+                    const serialNo = String(r[3] || "").trim();
+                    if (indent) {
+                        const key = `${indent}_${lift}`;
+                        const existing = qrMap.get(key) || [];
+                        existing.push({ serialNo, qrLink });
+                        qrMap.set(key, existing);
                     }
                 });
             }
@@ -378,7 +394,7 @@ export default function SerialGeneration() {
                         productExpiry: row[107] || "",             // DD: Product Expiry
                         planned,
                         actual,
-                        qr: qrMap.get(`${indentNo}_${row[2] || ""}`) || "",
+                        serials: qrMap.get(`${indentNo}_${row[2] || ""}`) || [],
                     };
 
                     const id = `${data.indentNo}_${data.liftNo || raIndex}`;
@@ -455,6 +471,98 @@ export default function SerialGeneration() {
             console.error("Sequence fetch error:", err);
         } finally {
             setIsCheckingSequence(false);
+        }
+    };
+
+    const openHistoryDetails = (record: any) => {
+        setSelectedHistoryRecord(record);
+        setHistoryDialogOpen(true);
+    };
+
+    const handlePrintAllQRs = async () => {
+        if (!selectedHistoryRecord) return;
+        setIsPrinting(true);
+        try {
+            const itemName = selectedHistoryRecord.data.itemName;
+            const itemCode = itemCodeMap[itemName] || "N/A";
+            const productExpiry = selectedHistoryRecord.data.productExpiry;
+            const encodedDate = encodeExpiryDate(productExpiry);
+            const serials = selectedHistoryRecord.data.serials || [];
+            
+            if (serials.length === 0) {
+                toast.error("No serial numbers found for this record");
+                return;
+            }
+
+            // Create a hidden iframe for printing
+            let printIframe = document.getElementById('print-iframe') as HTMLIFrameElement;
+            if (!printIframe) {
+                printIframe = document.createElement('iframe');
+                printIframe.id = 'print-iframe';
+                printIframe.style.position = 'absolute';
+                printIframe.style.top = '-9999px';
+                printIframe.style.left = '-9999px';
+                document.body.appendChild(printIframe);
+            }
+
+            const doc = printIframe.contentWindow?.document;
+            if (!doc) throw new Error("Could not access iframe document");
+
+            // Generate label dataURLs
+            const labelImages = await Promise.all(serials.map(async (s: any) => {
+                const blob = await generateQRLabel(itemName, itemCode, s.serialNo, encodedDate);
+                return new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(blob);
+                    reader.onloadend = () => resolve(reader.result as string);
+                });
+            }));
+
+            const html = `
+                <html>
+                <head>
+                    <title>Print Labels</title>
+                    <style>
+                        @page { size: auto; margin: 0; }
+                        body { margin: 0; padding: 10px; font-family: sans-serif; }
+                        .labels-container { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+                        .label-item { border: 1px solid #ccc; padding: 5px; page-break-inside: avoid; margin-bottom: 10px; }
+                        img { display: block; width: 400px; height: auto; }
+                    </style>
+                </head>
+                <body>
+                    <div class="labels-container">
+                        ${labelImages.map(src => `<div class="label-item"><img src="${src}" /></div>`).join('')}
+                    </div>
+                </body>
+                </html>
+            `;
+
+            doc.open();
+            doc.write(html);
+            doc.close();
+
+            // Wait for images to load before printing
+            const imgElements = doc.getElementsByTagName('img');
+            const loadPromises = Array.from(imgElements).map(img => {
+                return new Promise((resolve) => {
+                    if (img.complete) resolve(true);
+                    else img.onload = () => resolve(true);
+                });
+            });
+
+            await Promise.all(loadPromises);
+            
+            setTimeout(() => {
+                printIframe.contentWindow?.focus();
+                printIframe.contentWindow?.print();
+            }, 500);
+
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to prepare labels");
+        } finally {
+            setIsPrinting(false);
         }
     };
 
@@ -643,7 +751,7 @@ export default function SerialGeneration() {
         const val = data?.[key];
 
         // Link columns
-        if (key === "invoiceCopy" || key === "poCopy" || key === "qr") {
+        if (key === "invoiceCopy" || key === "poCopy" || key === "actions") {
             if (!val || String(val).trim() === "" || val === "-") return "-";
             return (
                 <a
@@ -786,7 +894,16 @@ export default function SerialGeneration() {
                                                 <tr key={rec.id} className="bg-green-50 hover:bg-green-100 transition-colors">
                                                     {HISTORY_COLUMNS.map((col) => (
                                                         <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
-                                                            {renderCell(rec.data, col.key)}
+                                                            {col.key === "actions" ? (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                                                    onClick={() => openHistoryDetails(rec)}
+                                                                >
+                                                                    <Eye className="h-4 w-4" />
+                                                                </Button>
+                                                            ) : renderCell(rec.data, col.key)}
                                                         </td>
                                                     ))}
                                                 </tr>
@@ -909,6 +1026,67 @@ export default function SerialGeneration() {
                             </Button>
                         </DialogFooter>
                     </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* ── HISTORY DETAILS DIALOG ── */}
+            <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+                <DialogContent className="sm:max-w-md p-0 overflow-hidden rounded-2xl border-none shadow-2xl">
+                    <div className="bg-[#0089d1] p-4 flex items-center justify-between text-white">
+                        <DialogTitle className="text-lg font-bold">Product QR</DialogTitle>
+                    </div>
+                    
+                    <div className="p-6 space-y-6 bg-white">
+                        {/* QR Label Card - Mimicking img2 */}
+                        <div className="relative bg-white border border-slate-100 rounded-2xl p-6 shadow-sm flex flex-col items-center gap-4">
+                            <div className="w-full flex justify-center">
+                                {selectedHistoryRecord?.data.serials?.[0] ? (
+                                    <div className="flex flex-col items-center gap-3">
+                                        <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Sample QR</div>
+                                        <div className="p-2 border rounded-lg bg-slate-50">
+                                            <img 
+                                                src={getDirectDriveLink(selectedHistoryRecord.data.serials[0].qrLink)} 
+                                                alt="Sample QR Label" 
+                                                className="max-w-full h-auto w-[300px]"
+                                            />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="h-40 w-full flex items-center justify-center bg-slate-50 border border-dashed rounded-xl text-slate-400">
+                                        No QR Available
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="text-center space-y-2">
+                                <h3 className="text-2xl font-black text-slate-900 leading-tight">
+                                    {selectedHistoryRecord?.data.indentNo} / {selectedHistoryRecord?.data.liftNo}
+                                </h3>
+                                <p className="text-sm text-slate-500 font-medium px-4">
+                                    {selectedHistoryRecord?.data.itemName}
+                                </p>
+                                <div className="mt-2">
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold ring-1 ring-inset ring-slate-200">
+                                        Quantity: {selectedHistoryRecord?.data.receivedQty}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3 pt-2">
+                            <Button 
+                                className="w-full h-14 bg-[#0089d1] hover:bg-[#0077b6] text-white text-base font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+                                onClick={handlePrintAllQRs}
+                                disabled={isPrinting}
+                            >
+                                {isPrinting ? (
+                                    <><Loader2 className="h-5 w-5 animate-spin" /> Preparing...</>
+                                ) : (
+                                    <><Printer className="h-5 w-5" /> Print QRs ({selectedHistoryRecord?.data.receivedQty})</>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>
