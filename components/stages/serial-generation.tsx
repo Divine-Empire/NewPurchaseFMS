@@ -261,8 +261,8 @@ const generateQRLabel = async (
     // Draw Line 1 (Name & Code)
     const nextY = wrapText(ctx, line1, startX, startY, maxWidth, lineHeight);
     
-    // Draw Line 2 (Serial No.)
-    const currentY = wrapText(ctx, line2, startX, nextY, maxWidth, lineHeight);
+    // Draw Line 2 (Serial No.) with one-line-space
+    const currentY = wrapText(ctx, line2, startX, nextY + lineHeight, maxWidth, lineHeight);
 
     // Draw Line 3 (Encoded Date) if present
     if (line3) {
@@ -444,7 +444,7 @@ export default function SerialGeneration() {
         try {
             const vendorCode = vendorCodes[vendorName] || "UNKNOWN";
             const encodedDate = encodeDateYYMMDD(invoiceDate);
-            const prefix = `${vendorCode}/${encodedDate}/`;
+            const prefix = `SN-${vendorCode}/${encodedDate}/`;
             
             const res = await fetch(`${API}?sheet=WARRANTY&action=getAll`);
             const json = await res.json();
@@ -573,7 +573,7 @@ export default function SerialGeneration() {
         
         const vendorCode = vendorCodes[record.data.vendorName] || "UNKNOWN";
         const encodedDate = encodeDateYYMMDD(record.data.invoiceDate);
-        const prefix = `${vendorCode}/${encodedDate}/`;
+        const prefix = `SN-${vendorCode}/${encodedDate}/`;
         
         const qty = Math.max(1, parseInt(record.data.receivedQty) || 1);
         setEntries(Array.from({ length: qty }, () => ({
@@ -591,7 +591,7 @@ export default function SerialGeneration() {
         if (!selectedRecord) return;
         const vendorCode = vendorCodes[selectedRecord.data.vendorName] || "UNKNOWN";
         const encodedDate = encodeDateYYMMDD(selectedRecord.data.invoiceDate);
-        const prefix = `${vendorCode}/${encodedDate}/`;
+        const prefix = `SN-${vendorCode}/${encodedDate}/`;
 
         if (isAutoMode) {
             if (isCheckingSequence) {
