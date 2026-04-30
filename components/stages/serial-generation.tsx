@@ -155,122 +155,31 @@ const encodeDateYYMMDD = (dateStr: string) => {
 };
 
 
-const generateQRLabel = async (
+/**
+ * Generates an SVG QR code string.
+ * Uses Low error correction level to minimize density for 203 DPI printers.
+ */
+const generateQRSvgString = async (
     itemName: string,
     itemCode: string,
     serialNo: string,
     encodedDate: string
-): Promise<Blob> => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 600;
-    canvas.height = 250;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Could not get canvas context");
-
-    // Background
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // QR Code square on the left half
+): Promise<string> => {
     const qrData = encodedDate 
         ? `${itemName}/${itemCode}/${serialNo}/${encodedDate}`
         : `${itemName}/${itemCode}/${serialNo}`;
-    const qrSize = 200;
-    const qrDataUrl = await QRCode.toDataURL(qrData, { 
-        margin: 1, 
-        width: qrSize,
-        errorCorrectionLevel: 'M'
+    
+    // Using 'L' level to reduce density and increase module size
+    return await QRCode.toString(qrData, { 
+        type: 'svg',
+        margin: 2, 
+        errorCorrectionLevel: 'L'
     });
-    
-    const qrImg = new Image();
-    qrImg.src = qrDataUrl;
-    await new Promise((res) => {
-        qrImg.onload = res;
-    });
-    // Draw QR with padding (20px margin)
-    ctx.drawImage(qrImg, 20, 25, qrSize, qrSize);
-
-    // Right-half Text Info
-    ctx.fillStyle = "black";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    ctx.font = "22px Arial";
-    
-    const line1 = `${itemName} (${itemCode})`;
-    const line2 = serialNo;
-    const line3 = encodedDate;
-    const startX = 240;
-    const startY = 40;
-    const maxWidth = 340;
-    const lineHeight = 28;
-
-    const wrapText = (context: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number => {
-        const words = text.split(' ');
-        let line = '';
-        let currentY = y;
-
-        for (let n = 0; n < words.length; n++) {
-            const word = words[n];
-            const testLine = line + word + ' ';
-            const metrics = context.measureText(testLine);
-            const testWidth = metrics.width;
-
-            if (testWidth > maxWidth && n > 0) {
-                if (context.measureText(word).width > maxWidth) {
-                    context.fillText(line.trim(), x, currentY);
-                    currentY += lineHeight;
-                    line = '';
-                    for (let i = 0; i < word.length; i++) {
-                        const char = word[i];
-                        if (context.measureText(line + char).width > maxWidth) {
-                            context.fillText(line, x, currentY);
-                            line = char;
-                            currentY += lineHeight;
-                        } else {
-                            line += char;
-                        }
-                    }
-                    line += ' ';
-                } else {
-                    context.fillText(line.trim(), x, currentY);
-                    line = word + ' ';
-                    currentY += lineHeight;
-                }
-            } else {
-                if (n === 0 && context.measureText(word).width > maxWidth) {
-                    for (let i = 0; i < word.length; i++) {
-                        const char = word[i];
-                        if (context.measureText(line + char).width > maxWidth) {
-                            context.fillText(line, x, currentY);
-                            line = char;
-                            currentY += lineHeight;
-                        } else {
-                            line += char;
-                        }
-                    }
-                    line += ' ';
-                } else {
-                    line = testLine;
-                }
-            }
-        }
-        context.fillText(line.trim(), x, currentY);
-        return currentY + lineHeight;
-    };
-
-    // Draw Line 1 (Name & Code)
-    const nextY = wrapText(ctx, line1, startX, startY, maxWidth, lineHeight);
-    
-    // Draw Line 2 (Serial No.) with one-line-space
-    const currentY = wrapText(ctx, line2, startX, nextY + lineHeight, maxWidth, lineHeight);
-
-    // Draw Line 3 (Encoded Date) if present
-    if (line3) {
-        wrapText(ctx, line3, startX, currentY, maxWidth, lineHeight);
-    }
-
-    return new Promise((resolve) => canvas.toBlob(b => resolve(b!), "image/png"));
 };
+
+
+
+
 
 
 export default function SerialGeneration() {
@@ -287,7 +196,7 @@ export default function SerialGeneration() {
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [vendorCodes, setVendorCodes] = useState<Record<string, string>>({});
     const [itemCodeMap, setItemCodeMap] = useState<Record<string, string>>({});
-    const [previewImages, setPreviewImages] = useState<Record<number, string>>({});
+    const [previewContent, setPreviewContent] = useState<Record<number, string>>({});
     const [startingSequence, setStartingSequence] = useState(1);
     const [isCheckingSequence, setIsCheckingSequence] = useState(false);
     const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -494,69 +403,143 @@ export default function SerialGeneration() {
                 return;
             }
 
-            // Create a hidden iframe for printing
-            let printIframe = document.getElementById('print-iframe') as HTMLIFrameElement;
-            if (!printIframe) {
-                printIframe = document.createElement('iframe');
-                printIframe.id = 'print-iframe';
-                printIframe.style.position = 'absolute';
-                printIframe.style.top = '-9999px';
-                printIframe.style.left = '-9999px';
-                document.body.appendChild(printIframe);
+            // Create print window (Pop-up experience)
+            const printWindow = window.open('', '', 'width=900,height=800');
+            if (!printWindow) {
+                toast.error("Pop-up blocked. Please allow pop-ups to print.");
+                return;
             }
 
-            const doc = printIframe.contentWindow?.document;
-            if (!doc) throw new Error("Could not access iframe document");
-
-            // Generate label dataURLs
-            const labelImages = await Promise.all(serials.map(async (s: any) => {
-                const blob = await generateQRLabel(itemName, itemCode, s.serialNo, encodedDate);
-                return new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.readAsDataURL(blob);
-                    reader.onloadend = () => resolve(reader.result as string);
-                });
+            // Generate label HTML content for each serial
+            const labelContents = await Promise.all(serials.map(async (s: any) => {
+                const svgString = await generateQRSvgString(itemName, itemCode, s.serialNo, encodedDate);
+                return `
+                    <div class="page">
+                        <div class="label-wrapper">
+                            <div class="qr-container">
+                                ${svgString}
+                            </div>
+                            <div class="text-container">
+                                <div class="item-name">${itemName.toUpperCase()}</div>
+                                <div class="item-code">(${itemCode})</div>
+                                <div class="serial-no">${s.serialNo}</div>
+                                ${encodedDate ? `<div class="expiry-date">${encodedDate}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
             }));
 
             const html = `
                 <html>
                 <head>
-                    <title>Print Labels</title>
+                    <title>Print Labels - ${selectedHistoryRecord.data.indentNo}</title>
                     <style>
-                        @page { size: auto; margin: 0; }
-                        body { margin: 0; padding: 10px; font-family: sans-serif; }
-                        .labels-container { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-                        .label-item { border: 1px solid #ccc; padding: 5px; page-break-inside: avoid; margin-bottom: 10px; }
-                        img { display: block; width: 400px; height: auto; }
+                        @page { 
+                            size: 50mm 38mm; 
+                            margin: 0 !important; 
+                        }
+                        * {
+                            margin: 0;
+                            padding: 0;
+                            box-sizing: border-box;
+                        }
+                        body { 
+                            margin: 0; 
+                            padding: 0; 
+                            background: white; 
+                            font-family: Arial, sans-serif; 
+                        }
+                        .page { 
+                            width: 50mm; 
+                            height: 38mm; 
+                            page-break-after: always;
+                            overflow: hidden;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            padding-left: 2mm; /* Side padding */
+                        }
+                        .label-wrapper {
+                            width: 100%;
+                            height: 100%;
+                            display: flex;
+                            align-items: center;
+                            justify-content: flex-start;
+                            padding: 2mm;
+                        }
+                        .qr-container {
+                            width: 24mm;
+                            height: 24mm;
+                            flex-shrink: 0;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+                        .qr-container svg {
+                            width: 100%;
+                            height: 100%;
+                            display: block;
+                            shape-rendering: crispEdges; /* Ensure sharp vector edges */
+                        }
+                        .text-container {
+                            flex: 1;
+                            padding-left: 3mm;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            overflow: hidden;
+                            min-width: 0;
+                        }
+                        .item-name {
+                            font-size: 5.5pt;
+                            font-weight: 900;
+                            line-height: 1.1;
+                            margin-bottom: 1px;
+                            word-break: break-all;
+                        }
+                        .item-code {
+                            font-size: 4.5pt;
+                            font-weight: 900;
+                            line-height: 1.1;
+                            margin-bottom: 4px;
+                        }
+                        .serial-no {
+                            font-size: 6.5pt;
+                            font-weight: 900;
+                            line-height: 1.1;
+                            word-break: break-all;
+                        }
+                        .expiry-date {
+                            font-size: 4.5pt;
+                            font-weight: 900;
+                            margin-top: 2px;
+                        }
+                        @media print {
+                            body { -webkit-print-color-adjust: exact; }
+                            * {
+                                image-rendering: pixelated;
+                            }
+                        }
                     </style>
                 </head>
                 <body>
-                    <div class="labels-container">
-                        ${labelImages.map(src => `<div class="label-item"><img src="${src}" /></div>`).join('')}
-                    </div>
+                    ${labelContents.join('')}
+                    <script>
+                        window.onload = function() {
+                            setTimeout(function() {
+                                window.print();
+                                // window.close(); // Optional: close after print
+                            }, 500);
+                        };
+                    </script>
                 </body>
                 </html>
             `;
 
-            doc.open();
-            doc.write(html);
-            doc.close();
-
-            // Wait for images to load before printing
-            const imgElements = doc.getElementsByTagName('img');
-            const loadPromises = Array.from(imgElements).map(img => {
-                return new Promise((resolve) => {
-                    if (img.complete) resolve(true);
-                    else img.onload = () => resolve(true);
-                });
-            });
-
-            await Promise.all(loadPromises);
-            
-            setTimeout(() => {
-                printIframe.contentWindow?.focus();
-                printIframe.contentWindow?.print();
-            }, 500);
+            printWindow.document.open();
+            printWindow.document.write(html);
+            printWindow.document.close();
 
         } catch (err) {
             console.error(err);
@@ -565,6 +548,8 @@ export default function SerialGeneration() {
             setIsPrinting(false);
         }
     };
+
+
 
     const openForm = useCallback((record: any) => {
         setSelectedRecord(record);
@@ -619,7 +604,7 @@ export default function SerialGeneration() {
             return next;
         });
         // Clear preview when value changes
-        setPreviewImages(prev => {
+        setPreviewContent(prev => {
             const next = { ...prev };
             delete next[idx];
             return next;
@@ -638,14 +623,29 @@ export default function SerialGeneration() {
             const itemName = selectedRecord.data.itemName;
             const itemCode = itemCodeMap[itemName] || "N/A";
             const encodedDate = encodeExpiryDate(selectedRecord.data.productExpiry);
-            const blob = await generateQRLabel(itemName, itemCode, entry.serialNo, encodedDate);
-            const url = URL.createObjectURL(blob);
-            setPreviewImages(prev => ({ ...prev, [idx]: url }));
+            const svgString = await generateQRSvgString(itemName, itemCode, entry.serialNo, encodedDate);
+            
+            const html = `
+                <div style="width: 400px; height: 190px; border: 1px solid #eee; display: flex; align-items: center; padding: 10px; font-family: Arial, sans-serif;">
+                    <div style="width: 130px; height: 130px; flex-shrink: 0;">
+                        ${svgString.replace('<svg', '<svg style="width:100%;height:100%"')}
+                    </div>
+                    <div style="flex: 1; padding-left: 10px; overflow: hidden; display: flex; flex-direction: column; justify-content: center;">
+                        <div style="font-size: 7.5px; font-weight: 900; line-height: 1.1; margin-bottom: 1px; word-break: break-all;">${itemName.toUpperCase()}</div>
+                        <div style="font-size: 6px; font-weight: 900; color: #000; margin-bottom: 4px;">(${itemCode})</div>
+                        <div style="font-size: 8.5px; font-weight: 900; line-height: 1.1; word-break: break-all;">${entry.serialNo}</div>
+                        ${encodedDate ? `<div style="font-size: 6px; font-weight: 900; margin-top: 2px;">${encodedDate}</div>` : ''}
+                    </div>
+                </div>
+            `;
+
+            setPreviewContent(prev => ({ ...prev, [idx]: html }));
         } catch (err) {
             console.error(err);
             toast.error("Failed to generate preview");
         }
     };
+
 
     // ─── Submit ───────────────────────────────────────────────────────────────
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -664,8 +664,9 @@ export default function SerialGeneration() {
             const uploadResults = await Promise.all(entries.map(async (entry, idx) => {
                 try {
                     const encodedDate = encodeExpiryDate(selectedRecord.data.productExpiry);
-                    const blob = await generateQRLabel(itemName, itemCode, entry.serialNo, encodedDate);
-                    const fileName = `QR_${entry.serialNo.replace(/[/\\:]/g, '_')}.png`;
+                    const svgString = await generateQRSvgString(itemName, itemCode, entry.serialNo, encodedDate);
+                    const blob = new Blob([svgString], { type: 'image/svg+xml' });
+                    const fileName = `QR_${entry.serialNo.replace(/[/\\:]/g, '_')}.svg`;
                     const driveUrl = await uploadFileToDrive(blob, fileName, API, FOLDER_ID);
                     return driveUrl;
                 } catch (err) {
@@ -994,19 +995,19 @@ export default function SerialGeneration() {
                                                 <PopoverContent className="w-[420px] p-2 bg-white" side="left">
                                                     <div className="flex flex-col items-center gap-2">
                                                         <span className="text-xs font-semibold text-gray-500">Label Preview</span>
-                                                        {previewImages[idx] ? (
-                                                            <img 
-                                                                src={previewImages[idx]} 
-                                                                alt="QR Label Preview" 
+                                                        {previewContent[idx] ? (
+                                                            <div 
+                                                                dangerouslySetInnerHTML={{ __html: previewContent[idx] }}
                                                                 className="border shadow-sm max-w-full"
                                                             />
                                                         ) : (
-                                                            <div className="flex items-center justify-center w-[400px] h-[420px] bg-slate-50 border border-dashed rounded text-slate-400">
+                                                            <div className="flex items-center justify-center w-[400px] h-[190px] bg-slate-50 border border-dashed rounded text-slate-400">
                                                                 <Loader2 className="h-8 w-8 animate-spin" />
                                                             </div>
                                                         )}
                                                     </div>
                                                 </PopoverContent>
+
                                             </Popover>
                                         </div>
                                     </div>
