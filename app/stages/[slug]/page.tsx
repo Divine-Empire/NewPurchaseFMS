@@ -22,6 +22,7 @@ import VerificationByAccounts from "@/components/stages/verification";
 import SubmitInvoiceHO from "@/components/stages/submit-invoice-ho";
 import SerialGeneration from "@/components/stages/serial-generation";
 import WarrantyClaim from "@/components/stages/warranty-claim";
+import ImsPage from "@/components/stages/ims";
 
 const stageComponents: Record<string, React.ComponentType> = {
     "create-indent": CreateIndent,
@@ -44,6 +45,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "vendor-payment": VendorPayment,
     "freight-payments": FreightPayments,
     "return-approval": ReturnApproval,
+    "ims": ImsPage,
 };
 
 export default function StagePage() {

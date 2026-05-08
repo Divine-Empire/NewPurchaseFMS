@@ -23,6 +23,7 @@ export default function Sidebar() {
   // Helper to check if a page is allowed
   const isPageAllowed = (pageName: string) => {
     if (!pageAccess || pageAccess.length === 0) return true; // Show all if no restrictions
+    if (pageName === "IMS") return true; // Always show IMS
     if (pageName === "Verification by Accounts") return pageAccess.includes("Verification") || pageAccess.includes("Verification by Accounts");
     return pageAccess.includes(pageName);
   };

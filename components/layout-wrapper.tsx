@@ -34,6 +34,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
                 // Check if user has access (or if stage is public/whitelisted)
                 const hasAccess =
                     (!pageAccess || pageAccess.length === 0) ||
+                    (currentStage.name === "IMS") ||
                     (currentStage.name === "Verification by Accounts" && (pageAccess.includes("Verification") || pageAccess.includes("Verification by Accounts"))) ||
                     pageAccess.includes(currentStage.name);
 

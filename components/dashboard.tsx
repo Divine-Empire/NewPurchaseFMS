@@ -1557,7 +1557,7 @@ export default function PurchaseDashboard() {
           </Card>
 
           {/* New Overview Table */}
-          <Card>
+          {/* <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium">
                 Purchase Order Overview
@@ -1626,7 +1626,7 @@ export default function PurchaseDashboard() {
                 </TableBody>
               </Table>
             </CardContent>
-          </Card>
+          </Card> */}
         </TabsContent>
 
         {/* IN-TRANSIT TAB */}
