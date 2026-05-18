@@ -11,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LayoutGrid, RefreshCw, AlertCircle } from "lucide-react";
+import { Loader2, LayoutGrid, RefreshCw, AlertCircle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -55,6 +55,50 @@ export default function ImsPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const exportToExcel = () => {
+    if (filteredData.length === 0) {
+      toast.error("No data to export");
+      return;
+    }
+
+    const headers = [
+      "Group",
+      "Category",
+      "Item Code",
+      "Name of Item",
+      "CG Reorder Qty",
+      "NE Reorder Qty",
+      "Maniquip Reorder Qty",
+      "Head Office Reorder Qty"
+    ];
+
+    const csvContent = [
+      headers.join(","),
+      ...filteredData.map((row) => {
+        const group = row[0] !== undefined ? `"${String(row[0]).replace(/"/g, '""')}"` : "";
+        const category = row[1] !== undefined ? `"${String(row[1]).replace(/"/g, '""')}"` : "";
+        const itemCode = row[2] !== undefined ? `"${String(row[2]).replace(/"/g, '""')}"` : "";
+        const itemName = row[3] !== undefined ? `"${String(row[3]).replace(/"/g, '""')}"` : "";
+        const cg = row[94] !== undefined ? `"${String(row[94]).replace(/"/g, '""')}"` : "0";
+        const ne = row[95] !== undefined ? `"${String(row[95]).replace(/"/g, '""')}"` : "0";
+        const mq = row[96] !== undefined ? `"${String(row[96]).replace(/"/g, '""')}"` : "0";
+        const ho = row[97] !== undefined ? `"${String(row[97]).replace(/"/g, '""')}"` : "0";
+        return [group, category, itemCode, itemName, cg, ne, mq, ho].join(",");
+      })
+    ].join("\n");
+
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `IMS_Reorder_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Excel report exported successfully");
+  };
 
   const uniqueGroups = Array.from(new Set(data.slice(2).map(row => row[0]).filter(Boolean))).sort();
   const uniqueCategories = Array.from(new Set(data.slice(2).map(row => row[1]).filter(Boolean))).sort();
@@ -109,10 +153,21 @@ export default function ImsPage() {
             <p className="text-[13px] text-muted-foreground mt-0">Live stock levels and reorder status across branches</p>
           </div>
         </div>
-        <Button variant="outline" onClick={fetchData} size="sm" className="bg-white shadow-sm hover:bg-slate-50 border-slate-200">
-          <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh Data
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={exportToExcel}
+            size="sm"
+            className="bg-white shadow-sm hover:bg-slate-50 border-slate-200 flex items-center justify-center gap-1"
+          >
+            <Download className="w-4 h-4 mr-1" />
+            <span>Export Excel</span>
+          </Button>
+          <Button variant="outline" onClick={fetchData} size="sm" className="bg-white shadow-sm hover:bg-slate-50 border-slate-200">
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh Data
+          </Button>
+        </div>
       </div>
 
       <Card className="border-0 shadow-2xl bg-white overflow-hidden ring-1 ring-slate-200">
