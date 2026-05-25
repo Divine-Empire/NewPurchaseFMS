@@ -13,6 +13,9 @@ export const metadata: Metadata = {
   title: 'Purchase App',
   description: 'Purchase App',
   generator: 'v0.app',
+  icons: {
+    icon: '/divine-logo.svg',
+  },
 }
 
 export default function RootLayout({

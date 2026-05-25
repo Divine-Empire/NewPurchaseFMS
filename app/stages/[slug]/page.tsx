@@ -24,6 +24,7 @@ import SerialGeneration from "@/components/stages/serial-generation";
 import WarrantyClaim from "@/components/stages/warranty-claim";
 import ImsPage from "@/components/stages/ims";
 import DamagedRecords from "@/components/stages/damaged-records";
+import OrderCancelPage from "@/components/stages/order-cancel";
 
 const stageComponents: Record<string, React.ComponentType> = {
     "create-indent": CreateIndent,
@@ -48,6 +49,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "return-approval": ReturnApproval,
     "ims": ImsPage,
     "damaged-records": DamagedRecords,
+    "order-cancel": OrderCancelPage,
 };
 
 export default function StagePage() {
