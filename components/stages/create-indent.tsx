@@ -58,16 +58,16 @@ export default function Stage1() {
     if (!SHEET_API_URL) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`);
+      const res = await fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll&_t=${Date.now()}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         // Skip header and first 6 data rows (indices 0-6) -> Data starts at Row 8
         let autoIdCounter = 1;
         const rows = json.data.slice(6)
-          .filter((row: any) => row[1] && String(row[1]).trim() !== "") // Skip empty rows
-          .map((row: any, i: number) => {
+          .map((row: any, i: number) => ({ row, originalIndex: i + 7 }))
+          .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "") // Skip empty rows
+          .map(({ row, originalIndex }: any) => {
             const rawId = row[1] ? String(row[1]).trim() : "";
-            const originalIndex = i + 7;
             let indentNum: string;
 
             if (rawId) {
@@ -152,17 +152,17 @@ export default function Stage1() {
     );
   };
 
-  const pending = useMemo(() => 
+  const pending = useMemo(() =>
     sheetRecords
       .filter((r) => r.status === "pending")
       .filter(matchesSearch)
-  , [sheetRecords, searchTerm]);
+    , [sheetRecords, searchTerm]);
 
-  const history = useMemo(() => 
+  const history = useMemo(() =>
     sheetRecords
       .filter((r) => r.status === "completed")
       .filter(matchesSearch)
-  , [sheetRecords, searchTerm]);
+    , [sheetRecords, searchTerm]);
 
   const Combobox = ({
     options,
@@ -448,7 +448,11 @@ export default function Stage1() {
 
         await fetch(SHEET_API_URL, {
           method: "POST",
-          body: params,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: params.toString(),
+          redirect: "follow",
         });
       } catch (e) {
         console.error("Failed to save new options:", e);
@@ -457,17 +461,17 @@ export default function Stage1() {
   };
 
 
-    // submitToSheet: Uses insertIndent GAS action which atomically generates
-    // unique IN-NNN[A/B/C] IDs under a LockService lock, preventing duplicates
-    // when multiple users submit simultaneously.
-    // Returns the generated indent IDs so the counter can be synced.
-    const submitToSheet = async (data: any, attachmentUrl: string): Promise<string[]> => {
-        const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
-        if (!SHEET_API_URL) throw new Error("Sheet API URL is not defined");
+  // submitToSheet: Uses insertIndent GAS action which atomically generates
+  // unique IN-NNN[A/B/C] IDs under a LockService lock, preventing duplicates
+  // when multiple users submit simultaneously.
+  // Returns the generated indent IDs so the counter can be synced.
+  const submitToSheet = async (data: any, attachmentUrl: string): Promise<string[]> => {
+    const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+    if (!SHEET_API_URL) throw new Error("Sheet API URL is not defined");
 
-        // Build rows WITHOUT Col B (index 1) — GAS will fill it with unique IDs
-        const rows = data.items.map((item: any) => {
-            const timestamp = getFmsTimestamp();
+    // Build rows WITHOUT Col B (index 1) — GAS will fill it with unique IDs
+    const rows = data.items.map((item: any) => {
+      const timestamp = getFmsTimestamp();
 
       const row = new Array(70).fill("");
       row[0] = timestamp;                    // A: Timestamp
@@ -488,7 +492,14 @@ export default function Stage1() {
     params.append("action", "insertIndent");
     params.append("rowsData", JSON.stringify(rows));
 
-    const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
+    const res = await fetch(SHEET_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+      redirect: "follow",
+    });
     const text = await res.text();
     let result: any;
     try {
@@ -538,7 +549,14 @@ export default function Stage1() {
           const folderId = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID || "1SihRrPrgbuPGm-09fuB180QJhdxq5Nxy";
           uploadParams.append("folderId", folderId);
 
-          const uploadRes = await fetch(SHEET_API_URL, { method: "POST", body: uploadParams });
+          const uploadRes = await fetch(SHEET_API_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: uploadParams.toString(),
+            redirect: "follow",
+          });
           if (!uploadRes.ok) throw new Error(`Upload failed with status ${uploadRes.status}`);
           const uploadJson = await uploadRes.json();
           if (uploadJson.success) {
@@ -546,6 +564,8 @@ export default function Stage1() {
           } else {
             throw new Error(uploadJson.error || "Upload failed");
           }
+          // Delay to prevent concurrent request rate limits on Google Apps Script redirect
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
 
         // 2. Submit to sheet — GAS generates unique IDs atomically under a lock
@@ -722,6 +742,7 @@ export default function Stage1() {
           const uploadRes = await fetch(SHEET_API_URL, {
             method: "POST",
             body: uploadParams,
+            redirect: "follow",
           });
           const uploadJson = await uploadRes.json();
           if (uploadJson.success) {
@@ -754,10 +775,20 @@ export default function Stage1() {
 
       const res = await fetch(SHEET_API_URL, {
         method: "POST",
-        body: params,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
+        redirect: "follow",
       });
 
-      const result = await res.json();
+      const text = await res.text();
+      let result: any;
+      try {
+        result = JSON.parse(text);
+      } catch (e) {
+        throw new Error("Failed to parse update response: " + text);
+      }
 
       if (result.success) {
         setEditOpen(false);
@@ -765,11 +796,11 @@ export default function Stage1() {
         fetchData(); // Refresh data
       } else {
         console.error("Update failed:", result.error);
-        alert("Failed to update record. Please try again.");
+        alert("Failed to update record: " + (result.error || "Please try again."));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating record:", error);
-      alert("Error updating record. Please check console.");
+      alert("Error updating record: " + (error?.message || "Please check console."));
     } finally {
       setIsEditSubmitting(false);
     }
