@@ -873,6 +873,29 @@ export default function Stage5() {
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Bulk PO Creation ({selectedRecordIds.length} items)</DialogTitle>
             <p className="text-sm text-gray-600">Fill PO details for all selected items</p>
+            {selectedRecordIds.length > 1 && (
+              <div className="mt-3 flex items-center gap-2 max-w-xs">
+                <Label htmlFor="grand-total-display" className="text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
+                  Grand Total (w/ Tax):
+                </Label>
+                <div className="relative flex-1">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 font-medium">₹</span>
+                  <Input
+                    id="grand-total-display"
+                    type="text"
+                    readOnly
+                    value={(selectedRecordIds.reduce((sum, recordId) => {
+                      const data = bulkFormData[recordId] || {};
+                      return sum + (parseFloat(data.totalWithTax) || 0);
+                    }, 0) + getPkgTotals(commonPkgAmount, commonPkgGST, selectedRecordIds.length).totalPkg).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
+                    className="pl-7 bg-slate-100 cursor-not-allowed font-bold text-green-700 h-9"
+                  />
+                </div>
+              </div>
+            )}
           </DialogHeader>
 
           <form onSubmit={handleBulkSubmit} className="flex-1 overflow-y-auto space-y-6 pr-2">

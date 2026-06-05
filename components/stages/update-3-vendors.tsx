@@ -96,6 +96,8 @@ export default function Stage3() {
   const [currentRecord, setCurrentRecord] = useState<any>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // New state for bulk selection
+  const [editedQuantities, setEditedQuantities] = useState<Record<string, string>>({});
+  const [isSavingQuantities, setIsSavingQuantities] = useState(false);
 
   // Vendor list fetched from Dropdown sheet
   const [vendorList, setVendorList] = useState<string[]>([]);
@@ -233,6 +235,13 @@ export default function Stage3() {
                 planned2: row[18] || "",
                 actual2: row[19] || "",
                 delay2: row[20],
+
+                // Approval fields from Stage 2
+                status: row[13],          // Col N
+                approvedQty: row[14],     // Col O
+                vendorType: row[15],      // Col P
+                remarks: row[16],         // Col Q
+                img: row[17],             // Col R
 
                 // Vendor 1 (Starts at U / Index 21)
                 vendor1Name: row[21],
@@ -575,6 +584,75 @@ export default function Stage3() {
       return next;
     });
   }, [pending]);
+  const handleSaveQuantities = async () => {
+    const SHEET_API_URL = process.env.NEXT_PUBLIC_API_URI;
+    if (!SHEET_API_URL) {
+      toast.error("API URL not configured");
+      return;
+    }
+
+    // Filter editedQuantities to only save ones that are actually selected (checkbox checked)
+    const selectedEditedIds = Array.from(selectedIds).filter(id => editedQuantities[id] !== undefined);
+
+    if (selectedEditedIds.length === 0) {
+      toast.info("No quantity changes to save");
+      return;
+    }
+
+    setIsSavingQuantities(true);
+    const savePromise = (async () => {
+      const updatePromises = selectedEditedIds.map(async (id) => {
+        const record = sheetRecords.find((r) => r.id === id);
+        if (!record) return;
+
+        const newValue = editedQuantities[id];
+        const params = new URLSearchParams();
+        params.append("action", "updateCell");
+        params.append("sheetName", "INDENT-LIFT");
+        params.append("rowIndex", record.rowIndex.toString());
+        params.append("columnIndex", "15"); // O is index 15
+        params.append("value", newValue);
+
+        const response = await fetch(SHEET_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: params.toString(),
+        });
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || `Failed to update approved quantity for ${record.data.indentNumber}`);
+        }
+      });
+
+      await Promise.all(updatePromises);
+      
+      // Refresh local data
+      await fetchData();
+      
+      // Clear saved entries from editedQuantities
+      setEditedQuantities((prev) => {
+        const next = { ...prev };
+        selectedEditedIds.forEach((id) => delete next[id]);
+        return next;
+      });
+    })();
+
+    toast.promise(savePromise, {
+      loading: "Saving quantity updates...",
+      success: "Quantities updated successfully!",
+      error: (err) => `Failed to save quantities: ${err.message}`,
+    });
+
+    try {
+      await savePromise;
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSavingQuantities(false);
+    }
+  };
 
   const handleBulkUpdate = useCallback(() => {
     if (selectedIds.size === 0) return;
@@ -704,12 +782,23 @@ export default function Stage3() {
           </TabsList>
 
           {selectedIds.size > 0 && activeTab === "pending" && (
-            <Button
-              onClick={handleBulkUpdate}
-              className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
-            >
-              Update Vendor ({selectedIds.size})
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleSaveQuantities}
+                disabled={isSavingQuantities || !Array.from(selectedIds).some(id => editedQuantities[id] !== undefined)}
+                className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-green-700 hover:bg-green-800 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg flex items-center gap-2"
+              >
+                {isSavingQuantities && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Quantities
+              </Button>
+              <Button
+                onClick={handleBulkUpdate}
+                disabled={isSavingQuantities}
+                className="animate-in fade-in zoom-in duration-200 shadow-md shadow-slate-200 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 h-auto text-sm font-bold rounded-lg"
+              >
+                Update Vendor ({selectedIds.size})
+              </Button>
+            </div>
           )}
         </div>
 
@@ -736,7 +825,7 @@ export default function Stage3() {
                       />
                     </TableHead>
                     {baseColumns
-                      .filter((c) => ["indentNumber", "createdBy", "category", "itemName", "quantity", "warehouseLocation", "itemCode", "leadTime", "planned2"].includes(c.accessorKey) || (c.accessorKey !== "actual2" && selectedColumns.includes(c.accessorKey)))
+                      .filter((c) => ["indentNumber", "createdBy", "category", "itemName", "quantity", "approvedQty", "warehouseLocation", "itemCode", "leadTime", "planned2"].includes(c.accessorKey) || (c.accessorKey !== "actual2" && selectedColumns.includes(c.accessorKey)))
                       .map((col) => (
                         <TableHead key={col.accessorKey} className="sticky top-0 z-20 bg-slate-200 border-none px-4 py-3">
                           <div className="flex items-center gap-2 font-bold text-slate-600 truncate uppercase text-[11px] tracking-wider">
@@ -756,16 +845,32 @@ export default function Stage3() {
                         />
                       </TableCell>
                       {baseColumns
-                        .filter((c) => ["indentNumber", "createdBy", "category", "itemName", "quantity", "warehouseLocation", "itemCode", "leadTime", "planned2"].includes(c.accessorKey) || (c.accessorKey !== "actual2" && selectedColumns.includes(c.accessorKey)))
-                        .map((col) => (
-                          <TableCell key={col.accessorKey} className="text-sm text-slate-700 px-4">
-                            {col.accessorKey === "leadTime"
-                              ? `${record.data[col.accessorKey] || 0} days`
-                              : (col.accessorKey === "planned2" || col.accessorKey === "actual2")
-                                ? formatDateDash(record.data[col.accessorKey])
-                                : (col.cell ? col.cell({ getValue: () => record.data[col.accessorKey] }) : String(record.data[col.accessorKey] ?? "-"))}
-                          </TableCell>
-                        ))}
+                        .filter((c) => ["indentNumber", "createdBy", "category", "itemName", "quantity", "approvedQty", "warehouseLocation", "itemCode", "leadTime", "planned2"].includes(c.accessorKey) || (c.accessorKey !== "actual2" && selectedColumns.includes(c.accessorKey)))
+                        .map((col) => {
+                          const isEditingApprovedQty = col.accessorKey === "approvedQty" && selectedIds.has(record.id);
+                          return (
+                            <TableCell key={col.accessorKey} className="text-sm text-slate-700 px-4">
+                              {isEditingApprovedQty ? (
+                                <Input
+                                  type="number"
+                                  className="w-24 h-8 text-sm px-2 bg-white"
+                                  value={editedQuantities[record.id] !== undefined ? editedQuantities[record.id] : (record.data.approvedQty || "")}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setEditedQuantities((prev) => ({
+                                      ...prev,
+                                      [record.id]: val,
+                                    }));
+                                  }}
+                                />
+                              ) : col.accessorKey === "leadTime"
+                                ? `${record.data[col.accessorKey] || 0} days`
+                                : (col.accessorKey === "planned2" || col.accessorKey === "actual2")
+                                  ? formatDateDash(record.data[col.accessorKey])
+                                  : (col.cell ? col.cell({ getValue: () => record.data[col.accessorKey] }) : String(record.data[col.accessorKey] ?? "-"))}
+                            </TableCell>
+                          );
+                        })}
                     </TableRow>
                   ))}
                 </TableBody>

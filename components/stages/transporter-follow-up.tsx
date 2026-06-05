@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, Search, Truck } from "lucide-react";
+import { Loader2, RefreshCw, Search, Truck, Download } from "lucide-react";
 import {
     TableBody,
     TableCell,
@@ -52,6 +52,7 @@ export default function TransporterFollowUp() {
     const [records, setRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
     const [searchTerm, setSearchTerm] = useState("");
 
@@ -453,6 +454,56 @@ export default function TransporterFollowUp() {
         return String(val);
     };
 
+    const handleExportPendingCSV = () => {
+        setIsExporting(true);
+
+        // Simulate export delay so that the spinner is visible to the user
+        setTimeout(() => {
+            try {
+                const headers = pendingColumns.map((c) => c.label);
+
+                const rowData = pending.map((record) => {
+                    return pendingColumns.map((col) => {
+                        const val = record.data[col.key];
+                        if (col.key === "plannedDate" || col.key === "expectedDate") {
+                            return formatDateDash(val);
+                        }
+                        return val === undefined || val === null || String(val).trim() === "" ? "-" : String(val);
+                    });
+                });
+
+                const escapeCSV = (val: string) => {
+                    const clean = val === undefined || val === null ? "" : String(val);
+                    if (clean.includes(",") || clean.includes('"') || clean.includes("\n") || clean.includes("\r")) {
+                        return `"${clean.replace(/"/g, '""')}"`;
+                    }
+                    return clean;
+                };
+
+                const csvContent = [
+                    headers.map(escapeCSV).join(","),
+                    ...rowData.map((row) => row.map(escapeCSV).join(","))
+                ].join("\r\n");
+
+                const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `Pending_Transporter_FollowUp_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                toast.success("CSV file exported successfully!");
+            } catch (error) {
+                console.error("Export CSV error:", error);
+                toast.error("Failed to export CSV file");
+            } finally {
+                setIsExporting(false);
+            }
+        }, 1000); // 1 second delay to showcase spinner
+    };
+
     return (
         <div className="p-6 h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
             <div className="mb-6 p-6 bg-linear-to-br from-slate-50 to-white border border-slate-200 rounded-xl shadow-sm shrink-0">
@@ -521,10 +572,38 @@ export default function TransporterFollowUp() {
                 </div>
             ) : (
                 <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col overflow-hidden">
-                    <TabsList className="grid w-full grid-cols-2 shrink-0">
-                        <TabsTrigger value="pending">Pending ({pending.length})</TabsTrigger>
-                        <TabsTrigger value="history">History ({completed.length})</TabsTrigger>
-                    </TabsList>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between shrink-0 mb-4 gap-3">
+                        <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-full sm:w-auto">
+                            <TabsTrigger
+                                value="pending"
+                                className="py-2.5 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm"
+                            >
+                                Pending ({pending.length})
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="history"
+                                className="py-2.5 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm"
+                            >
+                                History ({completed.length})
+                            </TabsTrigger>
+                        </TabsList>
+
+                        {activeTab === "pending" && (
+                            <Button
+                                onClick={handleExportPendingCSV}
+                                disabled={isExporting}
+                                size="sm"
+                                className="bg-green-700 hover:bg-green-800 text-white flex items-center gap-2 ml-auto sm:ml-0"
+                            >
+                                {isExporting ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <Download className="w-4 h-4" />
+                                )}
+                                Export CSV
+                            </Button>
+                        )}
+                    </div>
 
                     <TabsContent value="pending" className="mt-0 flex-1 flex flex-col overflow-hidden">
                         {pending.length === 0 ? (

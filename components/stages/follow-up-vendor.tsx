@@ -45,6 +45,7 @@ import {
   ClipboardList,
   History,
   Search,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -194,6 +195,7 @@ export default function Stage6() {
   const [receivingAccountsData, setReceivingAccountsData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Unified form mode state
   const [isUnifiedMode, setIsUnifiedMode] = useState(false);
@@ -1029,6 +1031,100 @@ export default function Stage6() {
       });
   })();
 
+  const handleExportPendingCSV = () => {
+    setIsExporting(true);
+
+    // Simulate export delay so that the spinner is visible to the user
+    setTimeout(() => {
+      try {
+        const headers = [
+          ...baseColumns.filter((c) => selectedColumns.includes(c.key)).map((c) => c.label),
+          "Vendor",
+          "Rate",
+          "Terms",
+          "Delivery Date",
+          "Warranty",
+          "Warranty Attach",
+          "Approved By",
+          "PO Number",
+          "Basic Value",
+          "Total w/Tax",
+          "PO Copy"
+        ];
+
+        const rowData = pending.map((record) => {
+          const v = getVendorData(record);
+          
+          const baseData = baseColumns
+            .filter((c) => selectedColumns.includes(c.key))
+            .map((col) => {
+              const val = record.data[col.key];
+              if (col.key === "planned5" || col.key === "estimatedDate") {
+                return formatDateDash(val);
+              }
+              return val || "-";
+            });
+
+          const warrantyStr = v.warrantyType
+            ? v.warrantyType.charAt(0).toUpperCase() + v.warrantyType.slice(1)
+            : "-";
+
+          const attachmentStr = v.attachment
+            ? (typeof v.attachment === 'string' ? v.attachment : (v.attachment as any).name)
+            : "-";
+
+          const poCopyStr = v.poCopy
+            ? (typeof v.poCopy === 'string' ? v.poCopy : (v.poCopy as any).name)
+            : "-";
+
+          return [
+            ...baseData,
+            v.name || "-",
+            v.rate || "-",
+            v.terms || "-",
+            v.delivery ? new Date(v.delivery).toLocaleDateString("en-IN") : "-",
+            warrantyStr,
+            attachmentStr,
+            v.approvedBy || "-",
+            v.poNumber || "-",
+            v.basicValue || "-",
+            v.totalWithTax || "-",
+            poCopyStr
+          ];
+        });
+
+        const escapeCSV = (val: string) => {
+          const clean = val === undefined || val === null ? "" : String(val);
+          if (clean.includes(",") || clean.includes('"') || clean.includes("\n") || clean.includes("\r")) {
+            return `"${clean.replace(/"/g, '""')}"`;
+          }
+          return clean;
+        };
+
+        const csvContent = [
+          headers.map(escapeCSV).join(","),
+          ...rowData.map((row) => row.map(escapeCSV).join(","))
+        ].join("\r\n");
+
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Pending_Vendor_FollowUp_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("CSV file exported successfully!");
+      } catch (error) {
+        console.error("Export CSV error:", error);
+        toast.error("Failed to export CSV file");
+      } finally {
+        setIsExporting(false);
+      }
+    }, 1000); // 1 second delay to showcase spinner
+  };
+
   return (
     <div className="p-4 md:p-6 md:h-[calc(100vh-2rem)] flex flex-col md:overflow-hidden min-h-screen md:min-h-0 bg-[#f8fafc]">
       {/* Header */}
@@ -1105,61 +1201,79 @@ export default function Stage6() {
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full flex-1 flex flex-col md:overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between shrink-0 mb-4 gap-3">
           <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto grid grid-cols-2 gap-1 border border-slate-200/50 w-full sm:w-auto">
-          <TabsTrigger
-            value="pending"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <ClipboardList className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">Pending</span>
-              <span className="text-[10px] opacity-70">Awaiting processing</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {pending.length}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger
-            value="history"
-            className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
-          >
-            <History className="w-5 h-5" />
-            <div className="flex flex-col items-start leading-none gap-1">
-              <span className="font-bold">History</span>
-              <span className="text-[10px] opacity-70">Completed</span>
-            </div>
-            <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-              {completed.length}
-            </Badge>
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger
+              value="pending"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <ClipboardList className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">Pending</span>
+                <span className="text-[10px] opacity-70">Awaiting processing</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {pending.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="text-base py-3 px-6 rounded-lg data-[state=active]:bg-white data-[state=active]:text-black data-[state=active]:shadow-sm flex items-center gap-3 transition-all"
+            >
+              <History className="w-5 h-5" />
+              <div className="flex flex-col items-start leading-none gap-1">
+                <span className="font-bold">History</span>
+                <span className="text-[10px] opacity-70">Completed</span>
+              </div>
+              <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
+                {completed.length}
+              </Badge>
+            </TabsTrigger>
+          </TabsList>
 
-        {selectedRecordIds.length > 0 && activeTab === "pending" && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <div className="flex items-center gap-3 ml-auto sm:ml-0">
+            {selectedRecordIds.length > 0 && activeTab === "pending" && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    disabled={selectedRecordIds.length === 0}
+                    size="sm"
+                    className="bg-slate-900 hover:bg-slate-800 text-white"
+                  >
+                    Process Selected ({selectedRecordIds.length})
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-white border shadow-md">
+                  <DropdownMenuItem
+                    onClick={() => handleBulkProcessOption("follow-up")}
+                    className="cursor-pointer hover:bg-slate-100 px-3 py-2 text-sm text-slate-800"
+                  >
+                    Follow-Up
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleBulkProcessOption("lift-material")}
+                    className="cursor-pointer hover:bg-slate-100 px-3 py-2 text-sm text-slate-800"
+                  >
+                    Material Lifting
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {activeTab === "pending" && (
               <Button
-                disabled={selectedRecordIds.length === 0}
+                onClick={handleExportPendingCSV}
+                disabled={isExporting}
                 size="sm"
-                className="bg-slate-900 hover:bg-slate-800 text-white"
+                className="bg-green-700 hover:bg-green-800 text-white flex items-center gap-2"
               >
-                Process Selected ({selectedRecordIds.length})
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                Export CSV
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-white border shadow-md">
-              <DropdownMenuItem
-                onClick={() => handleBulkProcessOption("follow-up")}
-                className="cursor-pointer hover:bg-slate-100 px-3 py-2 text-sm text-slate-800"
-              >
-                Follow-Up
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleBulkProcessOption("lift-material")}
-                className="cursor-pointer hover:bg-slate-100 px-3 py-2 text-sm text-slate-800"
-              >
-                Material Lifting
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+            )}
+          </div>
         </div>
 
         {/* PENDING */}
@@ -1375,11 +1489,11 @@ export default function Stage6() {
                     };
 
                     // Fetch matching INDENT-LIFT record to get planned5 and actual5
-                    const indentRecord = sheetRecords.find((r) => 
-                      String(r.data.indentNumber).trim().toLowerCase() === 
+                    const indentRecord = sheetRecords.find((r) =>
+                      String(r.data.indentNumber).trim().toLowerCase() ===
                       String(row.indentNumber).trim().toLowerCase()
                     );
-                    
+
                     return (
                       <TableRow key={row.id} className="bg-green-50/50 hover:bg-green-100/50">
                         <TableCell className="font-medium">{row.indentNumber || "-"}</TableCell>
