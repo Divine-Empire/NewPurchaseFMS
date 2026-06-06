@@ -932,34 +932,32 @@ export default function SerialGeneration() {
                             min-width: 0;
                         }
                         .item-name {
-                            font-size: 5.5pt;
+                            font-size: 8pt;
                             font-weight: 900;
                             line-height: 1.1;
                             margin-bottom: 1px;
                             word-break: break-all;
                         }
                         .item-code {
-                            font-size: 4.5pt;
+                            font-size: 7pt;
                             font-weight: 900;
                             line-height: 1.1;
                             margin-bottom: 4px;
                         }
                         .serial-no {
-                            font-size: 6.5pt;
+                            font-size: 9pt;
                             font-weight: 900;
+                            font-family: "Courier New", monospace;
                             line-height: 1.1;
                             word-break: break-all;
                         }
                         .expiry-date {
-                            font-size: 4.5pt;
+                            font-size: 7pt;
                             font-weight: 900;
                             margin-top: 2px;
                         }
                         @media print {
                             body { -webkit-print-color-adjust: exact; }
-                            * {
-                                image-rendering: pixelated;
-                            }
                         }
                     </style>
                 </head>

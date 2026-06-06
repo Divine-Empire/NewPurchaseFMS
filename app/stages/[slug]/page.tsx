@@ -9,7 +9,7 @@ import POEntry from "@/components/stages/po-entry";
 import FollowUpVendor from "@/components/stages/follow-up-vendor";
 import TransporterFollowUp from "@/components/stages/transporter-follow-up";
 import MaterialReceived from "@/components/stages/material-received";
-import QCRequirement from "@/components/stages/qc-requirement";
+import QCRequirement from "@/components/stages/material-testing";
 import ReceiptInTally from "@/components/stages/tally-entry";
 import SubmitInvoice from "@/components/stages/submit-invoice";
 import Verification from "@/components/stages/verification";
@@ -35,7 +35,7 @@ const stageComponents: Record<string, React.ComponentType> = {
     "follow-up-vendor": FollowUpVendor,
     "transporter-follow-up": TransporterFollowUp,
     "material-received": MaterialReceived,
-    "qc-requirement": QCRequirement,
+    "material-testing": QCRequirement,
     "receipt-in-tally": ReceiptInTally,
     "submit-invoice-ho": SubmitInvoiceHO,
     "submit-invoice": SubmitInvoice,
