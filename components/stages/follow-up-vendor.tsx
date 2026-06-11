@@ -288,38 +288,21 @@ export default function Stage6() {
           .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "") // Skip empty rows
           .map(({ row, originalIndex }: any) => {
             // Stage 6 completion check
-            // PENDING IF: Plan 5 (58) !Empty AND Actual 5 (59) Empty 
+            // PENDING IF: col-BI (Index 60) is not null and col-BP (Index 67) = 'Pending'
+            // HISTORY IF: col-BI (Index 60) is not null and col-BP = 'Complete'
             const hasPlan5 = !!row[60] && String(row[60]).trim() !== "" && String(row[60]).trim() !== "-";
-            const hasActual5 = !!row[61] && String(row[61]).trim() !== "" && String(row[61]).trim() !== "-"; // Dispatch Date
-
-            // Check Remaining Qty (BQ / Index 68)
-            const remainingVal = parseFloat(row[68] || "0");
-            const hasRemaining = !isNaN(remainingVal) && remainingVal > 0;
 
             const indentId = row[1] || `row-${originalIndex}`;
-            // const isLiftDone = completedIndentIds.has(String(indentId).trim());
 
             // Status Logic:
-            // Rely on FMS Actual 5 (Dispatch Date) for completion
             let status = "not_ready";
-            // if (isLiftDone) { status = "completed"; } else ...
 
             if (hasPlan5) {
-              const totalLifted = parseFloat(String(row[63] || "0"));
-              const pendingLifted = parseFloat(String(row[64] || "0"));
-              const isFirstTime = !row[63] && !row[64];
-
-              if (pendingLifted > 0) {
+              const colBPValue = String(row[67] || "").trim(); // Index 67 is Column BP
+              if (colBPValue === "Pending") {
                 status = "pending";
-              } else if (totalLifted > 0 && pendingLifted <= 0) {
-                // Fully lifted
+              } else if (colBPValue === "Complete") {
                 status = "completed";
-              } else if (isFirstTime) {
-                // Initial state
-                status = "pending";
-              } else {
-                // Default fallback
-                status = "pending";
               }
             }
 
@@ -330,7 +313,7 @@ export default function Stage6() {
               stage: 6,
               status: status,
               createdAt: parseSheetDate(row[0]),
-              history: (status === "completed") ? [{ stage: 6, date: parseSheetDate(row[59] || row[58] || row[0]), data: {} }] : [],
+              history: (status === "completed") ? [{ stage: 6, date: parseSheetDate(row[61] || row[60] || row[0]), data: {} }] : [],
               data: {
                 timestamp: row[0],
                 indentNumber: row[1],
@@ -1221,7 +1204,7 @@ export default function Stage6() {
                 <span className="text-[10px] opacity-70">Completed</span>
               </div>
               <Badge variant="secondary" className="bg-slate-100 text-black border-slate-200 px-2">
-                {completed.length}
+                {filteredHistoryData.length}
               </Badge>
             </TabsTrigger>
           </TabsList>
