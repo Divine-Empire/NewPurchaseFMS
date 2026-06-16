@@ -35,6 +35,74 @@ const toBase64 = (file: File) => new Promise<string>((resolve, reject) => {
 });
 
 
+interface SearchableSrnDropdownProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+  placeholder: string;
+}
+
+function SearchableSrnDropdown({ value, onChange, options, placeholder }: SearchableSrnDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSearch(value);
+  }, [value]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    if (!term) return options;
+    return options.filter((opt) => opt.toLowerCase().includes(term));
+  }, [options, search]);
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <Input
+        placeholder={placeholder}
+        className="bg-slate-50/50 border-slate-200 rounded-lg h-9 text-sm w-full focus-visible:ring-1 focus-visible:ring-blue-500"
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          onChange(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        required
+      />
+      {isOpen && filteredOptions.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+          {filteredOptions.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              className="w-full text-left px-3 py-2 text-xs hover:bg-slate-100 transition-colors focus:bg-slate-100 focus:outline-none"
+              onClick={() => {
+                onChange(opt);
+                setSearch(opt);
+                setIsOpen(false);
+              }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PENDING_COLUMNS = [
   { key: "indentNumber", label: "Indent No." },
   { key: "liftNo", label: "Unit Tracking No." },
@@ -82,7 +150,7 @@ export default function Stage8() {
   const [formData, setFormData] = useState({
     qcBy: "",
     qcDate: "",
-    workingCondition: "", // "yes" or "no"
+    workingCondition: "", // "yes", "no", "passed_concern"
     approvedQty: "",
     checklistSelected: [] as string[],
     rejectType: "",
@@ -91,7 +159,11 @@ export default function Stage8() {
     rejectPhoto: null as File | null,
     remarks: "",
     srnEntries: [] as { serialNo: number; srn: string; image: File | null }[],
+    rejectSrnEntries: [] as { serialNo: number; srn: string; image: File | null }[],
   });
+
+  const [serialNoList, setSerialNoList] = useState<string[]>([]);
+  const [isSerialsLoading, setIsSerialsLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!SHEET_API_URL) return;
@@ -277,7 +349,47 @@ export default function Stage8() {
       .reverse();
   }, [partialQCRecords, sheetRecords, searchTerm]);
 
+  const fetchSerialsForRecord = useCallback(async (indentNumber: string, liftNo: string) => {
+    if (!SHEET_API_URL) return;
+    setIsSerialsLoading(true);
+    try {
+      const res = await fetch(`${SHEET_API_URL}?sheet=Serial-Generation&action=getAll`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const cleanIndent = String(indentNumber || "").trim().toLowerCase();
+        const cleanLift = String(liftNo || "").trim().toLowerCase();
+
+        let serials = json.data.slice(6)
+          .filter((row: any) => {
+            const rowIndent = String(row[0] || "").trim().toLowerCase();
+            const rowLift = String(row[1] || "").trim().toLowerCase();
+            return rowIndent === cleanIndent && rowLift === cleanLift;
+          })
+          .map((row: any) => String(row[3] || "").trim())
+          .filter((s: string) => s !== "");
+
+        if (serials.length === 0) {
+          serials = json.data.slice(6)
+            .filter((row: any) => {
+              const rowIndent = String(row[0] || "").trim().toLowerCase();
+              return rowIndent === cleanIndent;
+            })
+            .map((row: any) => String(row[3] || "").trim())
+            .filter((s: string) => s !== "");
+        }
+        setSerialNoList(serials);
+      }
+    } catch (e) {
+      console.error("Failed to fetch serial numbers", e);
+    } finally {
+      setIsSerialsLoading(false);
+    }
+  }, []);
+
   const handleOpenForm = useCallback((recordId: string) => {
+    const record = sheetRecords.find((r) => r.id === recordId);
+    if (!record) return;
+
     setSelectedRecordId(recordId);
     setFormData({
       qcBy: "",
@@ -291,13 +403,18 @@ export default function Stage8() {
       rejectPhoto: null,
       remarks: "",
       srnEntries: [],
+      rejectSrnEntries: [],
     });
+    setSerialNoList([]);
     setOpen(true);
-  }, []);
+
+    fetchSerialsForRecord(record.data.indentNumber, record.data.liftNo);
+  }, [sheetRecords, fetchSerialsForRecord]);
 
   const isFormValid = useMemo(() => {
     if (!formData.qcDate || !formData.workingCondition) return false;
-    if (formData.workingCondition === "yes") {
+    const isPassed = formData.workingCondition === "yes" || formData.workingCondition === "passed_concern";
+    if (isPassed) {
       return !!(
         formData.qcBy &&
         formData.approvedQty &&
@@ -311,7 +428,9 @@ export default function Stage8() {
         formData.rejectType &&
         formData.partName &&
         formData.rejectQty &&
-        parseInt(formData.rejectQty) > 0
+        parseInt(formData.rejectQty) > 0 &&
+        formData.rejectSrnEntries.length > 0 &&
+        formData.rejectSrnEntries.every((e) => e.srn.trim() !== "")
       );
     }
     return false;
@@ -331,22 +450,10 @@ export default function Stage8() {
         ? `${qcDateObj.getMonth() + 1}/${qcDateObj.getDate()}/${qcDateObj.getFullYear()}`
         : "";
 
-      let photoUrl = "";
-      if (formData.rejectPhoto instanceof File) {
-        const uploadParams = new URLSearchParams();
-        uploadParams.append("action", "uploadFile");
-        uploadParams.append("base64Data", await toBase64(formData.rejectPhoto));
-        uploadParams.append("fileName", formData.rejectPhoto.name);
-        uploadParams.append("mimeType", formData.rejectPhoto.type);
-        uploadParams.append("folderId", IMAGE_FOLDER_ID);
-        const res = await fetch(SHEET_API_URL, { method: "POST", body: uploadParams });
-        const json = await res.json();
-        if (json.success) photoUrl = json.fileUrl;
-        else throw new Error("Photo upload failed");
-      }
+      const isPassed = formData.workingCondition === "yes" || formData.workingCondition === "passed_concern";
 
       let approvedQtyJson = "";
-      if (formData.workingCondition === "yes" && formData.srnEntries.length > 0) {
+      if (isPassed && formData.srnEntries.length > 0) {
         const srnData = await Promise.all(
           formData.srnEntries.map(async (entry) => {
             let imageUrl = "";
@@ -355,6 +462,25 @@ export default function Stage8() {
               uploadParams.append("action", "uploadFile");
               uploadParams.append("base64Data", await toBase64(entry.image));
               uploadParams.append("fileName", `SRN_${entry.serialNo}_${entry.image.name}`);
+              uploadParams.append("mimeType", entry.image.type);
+              uploadParams.append("folderId", IMAGE_FOLDER_ID);
+              const res = await fetch(SHEET_API_URL!, { method: "POST", body: uploadParams });
+              const json = await res.json();
+              if (json.success) imageUrl = json.fileUrl || "";
+            }
+            return { serialNo: entry.serialNo, srn: entry.srn, image: imageUrl };
+          })
+        );
+        approvedQtyJson = JSON.stringify(srnData);
+      } else if (formData.workingCondition === "no" && formData.rejectSrnEntries.length > 0) {
+        const srnData = await Promise.all(
+          formData.rejectSrnEntries.map(async (entry) => {
+            let imageUrl = "";
+            if (entry.image instanceof File) {
+              const uploadParams = new URLSearchParams();
+              uploadParams.append("action", "uploadFile");
+              uploadParams.append("base64Data", await toBase64(entry.image));
+              uploadParams.append("fileName", `REJECT_SRN_${entry.serialNo}_${entry.image.name}`);
               uploadParams.append("mimeType", entry.image.type);
               uploadParams.append("folderId", IMAGE_FOLDER_ID);
               const res = await fetch(SHEET_API_URL!, { method: "POST", body: uploadParams });
@@ -394,7 +520,7 @@ export default function Stage8() {
       const currentResolved = (selectedRecord.data.totalApproved || 0) + (selectedRecord.data.totalRejected || 0);
       const promises: Promise<any>[] = [];
 
-      const checklistStr = formData.workingCondition === "yes" ? formData.checklistSelected.join(", ") : "";
+      const checklistStr = isPassed ? formData.checklistSelected.join(", ") : "";
 
       const row = [
         mDYYYY,                                                // A: Timestamp
@@ -403,19 +529,19 @@ export default function Stage8() {
         qcDateFormatted,                                        // D: QC-Date
         formData.workingCondition,                             // E: Working Condition
         formData.qcBy || "",                                   // F: Checked By
-        formData.workingCondition === "yes" ? formData.approvedQty : "", // G: Approved Qty
+        isPassed ? formData.approvedQty : "",                  // G: Approved Qty
         checklistStr,                                           // H: Checklist
-        formData.workingCondition === "yes" ? approvedQtyJson : "", // I: Approved-Qty with S No. and Img
+        approvedQtyJson,                                        // I: Approved-Qty with S No. and Img (or Rejected-Qty JSON)
         formData.workingCondition === "no" ? formData.rejectType : "", // J: Reject Type
         formData.workingCondition === "no" ? formData.partName : "",   // K: Part-Name
         formData.workingCondition === "no" ? formData.rejectQty : "",   // L: Reject Qty
-        formData.workingCondition === "no" ? photoUrl : "",            // M: Img (Rejected)
+        "",                                                     // M: Img (Rejected) -> empty as we write to Column I
         formData.remarks || "",                                // N: Remarks
       ];
 
       promises.push(postToPartialQC(row));
 
-      const changeQty = formData.workingCondition === "yes"
+      const changeQty = isPassed
         ? parseFloat(formData.approvedQty || "0")
         : parseFloat(formData.rejectQty || "0");
 
@@ -473,6 +599,9 @@ export default function Stage8() {
       if (key === "workingCondition") {
         const cond = data.workingCondition;
         if (!cond || cond === "-" || cond === "") return "-";
+        if (cond === "yes") return "Passed";
+        if (cond === "no") return "Rejected";
+        if (cond === "passed_concern") return "Passed but Concern";
         return cond.charAt(0).toUpperCase() + cond.slice(1);
       }
 
@@ -695,18 +824,19 @@ export default function Stage8() {
                       approvedQty: v === "no" ? "" : formData.approvedQty,
                       checklistSelected: v === "no" ? [] : formData.checklistSelected,
                       srnEntries: v === "no" ? [] : formData.srnEntries,
-                      rejectType: v === "yes" ? "" : formData.rejectType,
-                      partName: v === "yes" ? "" : formData.partName,
-                      rejectQty: v === "yes" ? "" : formData.rejectQty,
-                      rejectPhoto: v === "yes" ? null : formData.rejectPhoto,
+                      rejectType: (v === "yes" || v === "passed_concern") ? "" : formData.rejectType,
+                      partName: (v === "yes" || v === "passed_concern") ? "" : formData.partName,
+                      rejectQty: (v === "yes" || v === "passed_concern") ? "" : formData.rejectQty,
+                      rejectSrnEntries: (v === "yes" || v === "passed_concern") ? [] : formData.rejectSrnEntries,
                     })}
                   >
                     <SelectTrigger className="bg-white border-slate-200 rounded-lg shadow-sm h-10">
-                      <SelectValue placeholder="Select Yes/No" />
+                      <SelectValue placeholder="Select Option" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="yes">Yes</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
+                      <SelectItem value="yes">Passed</SelectItem>
+                      <SelectItem value="no">Rejected</SelectItem>
+                      <SelectItem value="passed_concern">Passed but Concern</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -734,7 +864,7 @@ export default function Stage8() {
                   </Select>
                 </div>
 
-                {formData.workingCondition === "yes" && (
+                {(formData.workingCondition === "yes" || formData.workingCondition === "passed_concern") && (
                   <>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold text-slate-700 font-medium">Approved Qty <span className="text-red-500">*</span></Label>
@@ -820,11 +950,35 @@ export default function Stage8() {
                         required
                       />
                     </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold text-slate-700">Reject Qty <span className="text-red-500">*</span></Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max={selectedRecord?.data?.pendingQty || 999}
+                        className="bg-white border-slate-200 rounded-lg shadow-sm h-10"
+                        placeholder={`Pending: ${selectedRecord?.data?.pendingQty || "0"}`}
+                        value={formData.rejectQty}
+                        onChange={(e) => {
+                          const qty = parseInt(e.target.value) || 0;
+                          const maxQty = parseInt(selectedRecord?.data?.pendingQty) || 999;
+                          const validQty = Math.min(Math.max(0, qty), maxQty);
+                          const newEntries = Array.from({ length: validQty }, (_, i) => ({
+                            serialNo: i + 1,
+                            srn: formData.rejectSrnEntries[i]?.srn || "",
+                            image: formData.rejectSrnEntries[i]?.image || null,
+                          }));
+                          setFormData({ ...formData, rejectQty: String(validQty), rejectSrnEntries: newEntries });
+                        }}
+                        required
+                      />
+                    </div>
                   </>
                 )}
               </div>
 
-              {formData.workingCondition === "yes" && formData.srnEntries.length > 0 && (
+              {(formData.workingCondition === "yes" || formData.workingCondition === "passed_concern") && formData.srnEntries.length > 0 && (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                   <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-slate-800">Approved-Qty with S No. and Img</h3>
@@ -837,16 +991,15 @@ export default function Stage8() {
                       <div key={entry.serialNo} className="grid grid-cols-12 gap-3 items-center bg-white p-3 rounded-lg border border-slate-100 group">
                         <div className="col-span-1 text-xs font-bold text-slate-400">#{entry.serialNo}</div>
                         <div className="col-span-5 relative">
-                          <Input
-                            placeholder="Enter SRN Number"
-                            className="bg-slate-50/50 border-slate-200 rounded-lg h-9 text-sm"
+                          <SearchableSrnDropdown
                             value={entry.srn}
-                            onChange={(e) => {
+                            onChange={(val) => {
                               const updated = [...formData.srnEntries];
-                              updated[idx] = { ...updated[idx], srn: e.target.value };
+                              updated[idx] = { ...updated[idx], srn: val };
                               setFormData({ ...formData, srnEntries: updated });
                             }}
-                            required
+                            options={serialNoList}
+                            placeholder="Select/Search SRN"
                           />
                         </div>
                         <div className="col-span-6 flex items-center gap-2">
@@ -902,63 +1055,91 @@ export default function Stage8() {
                 </div>
               )}
 
-              {formData.workingCondition === "no" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-red-50/50 p-6 rounded-xl border border-red-100">
-                  <div className="space-y-4">
-                    <Label className="text-xs font-bold text-red-800">Img (Rejected)</Label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => { const file = e.target.files?.[0]; if (file) setFormData({ ...formData, rejectPhoto: file }); }}
-                      className="hidden"
-                      id="reject-photo"
-                    />
-                    <label
-                      htmlFor="reject-photo"
-                      className={`flex flex-col items-center justify-center w-full aspect-video border-2 border-dashed rounded-xl cursor-pointer transition-all ${formData.rejectPhoto
-                          ? "bg-white border-emerald-300 text-emerald-600"
-                          : "bg-white border-red-200 text-slate-400 hover:bg-red-50 hover:border-red-300"
-                        }`}
-                    >
-                      {formData.rejectPhoto ? (
-                        <>
-                          <FileText className="w-8 h-8 mb-2" />
-                          <span className="text-sm font-bold truncate max-w-[200px] px-4">{formData.rejectPhoto.name}</span>
-                          <span className="text-[10px] mt-1 text-slate-400 underline">Tap to change photo</span>
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="w-8 h-8 mb-2 text-red-200" />
-                          <span className="text-sm font-medium">Upload Defect Image</span>
-                          <span className="text-[10px] text-slate-400 mt-1">Accepts JPG, PNG</span>
-                        </>
-                      )}
-                    </label>
+              {formData.workingCondition === "no" && formData.rejectSrnEntries.length > 0 && (
+                <div className="bg-red-50/30 border border-red-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 bg-red-50/80 border-b border-red-100 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-red-800">Rejected-Qty with S No. and Img</h3>
+                    <span className="text-xs bg-white text-red-600 px-2 py-0.5 rounded-full border border-red-200 font-medium">
+                      {formData.rejectSrnEntries.length} Items Pending
+                    </span>
                   </div>
-                  <div className="space-y-4 flex flex-col justify-between">
-                    <div className="space-y-2">
-                      <Label className="text-xs font-bold text-red-800">Reject Qty <span className="text-red-500">*</span></Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max={selectedRecord?.data?.pendingQty || 999}
-                        className="bg-white border-red-200 rounded-lg shadow-sm h-10"
-                        placeholder={`Pending: ${selectedRecord?.data?.pendingQty || "0"}`}
-                        value={formData.rejectQty}
-                        onChange={(e) => setFormData({ ...formData, rejectQty: e.target.value })}
-                        required
-                      />
-                    </div>
+                  <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto">
+                    {formData.rejectSrnEntries.map((entry, idx) => (
+                      <div key={entry.serialNo} className="grid grid-cols-12 gap-3 items-center bg-white p-3 rounded-lg border border-slate-100 group">
+                        <div className="col-span-1 text-xs font-bold text-slate-400">#{entry.serialNo}</div>
+                        <div className="col-span-5 relative">
+                          <SearchableSrnDropdown
+                            value={entry.srn}
+                            onChange={(val) => {
+                              const updated = [...formData.rejectSrnEntries];
+                              updated[idx] = { ...updated[idx], srn: val };
+                              setFormData({ ...formData, rejectSrnEntries: updated });
+                            }}
+                            options={serialNoList}
+                            placeholder="Select/Search SRN"
+                          />
+                        </div>
+                        <div className="col-span-6 flex items-center gap-2">
+                          <div className="flex-1">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              id={`reject-srn-image-${idx}`}
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                const updated = [...formData.rejectSrnEntries];
+                                updated[idx] = { ...updated[idx], image: file };
+                                setFormData({ ...formData, rejectSrnEntries: updated });
+                              }}
+                            />
+                            <label
+                              htmlFor={`reject-srn-image-${idx}`}
+                              className={`flex items-center justify-center gap-2 px-3 py-1.5 border rounded-lg cursor-pointer transition-all h-9 text-xs font-medium ${entry.image
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                }`}
+                            >
+                              {entry.image ? (
+                                <>
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span className="truncate max-w-[120px]">{entry.image.name}</span>
+                                </>
+                              ) : (
+                                "Attach Photo"
+                              )}
+                            </label>
+                          </div>
+                          {entry.image && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                              onClick={() => {
+                                const updated = [...formData.rejectSrnEntries];
+                                updated[idx] = { ...updated[idx], image: null };
+                                setFormData({ ...formData, rejectSrnEntries: updated });
+                              }}
+                            >
+                              ✕
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label className="text-xs font-bold text-slate-700 font-medium">Remarks</Label>
+                <Label className="text-xs font-bold text-slate-700 font-medium">
+                  {formData.workingCondition === "passed_concern" ? "Concern Issue" : "Remarks"}
+                </Label>
                 <textarea
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl resize-none text-sm focus:ring-blue-500 h-24"
                   rows={3}
-                  placeholder="Remarks..."
+                  placeholder={formData.workingCondition === "passed_concern" ? "Concern Issue..." : "Remarks..."}
                   value={formData.remarks}
                   onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
                 />
