@@ -101,7 +101,7 @@ export default function Stage13() {
         setIsLoading(true);
         try {
             const [partialRes, accRes] = await Promise.all([
-                fetch(`${SHEET_API_URL}?sheet=${encodeURIComponent("Partial QC")}&action=getAll`),
+                fetch(`${SHEET_API_URL}?sheet=${encodeURIComponent("Material-Testing")}&action=getAll`),
                 fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`)
             ]);
 
@@ -127,24 +127,22 @@ export default function Stage13() {
                         itemName: row[7] || "",
                         invoiceNumber: row[24] || "-",
                         poNumber: row[4],
-                        damageQty: row[116] || "0",
-                        damageReason: row[117] || "-",
-                        damageImage: row[118] || "",
+
                     });
                 });
             }
 
-            // 2. Process Partial QC Rows
+            // 2. Process Material Testing Rows
             if (Array.isArray(partialJson.data)) {
-                const rows = partialJson.data.slice(7)
-                    .map((row: any, i: number) => ({ row, rowIndex: i + 8 }))
+                const rows = partialJson.data.slice(6)
+                    .map((row: any, i: number) => ({ row, rowIndex: i + 7 }))
                     .filter(({ row }: any) => row[1] && String(row[1]).trim() !== "")
                     .map(({ row, rowIndex }: any) => {
                         const indentNo = String(row[1]).trim();
 
-                        // Indices: X=23, Y=24...
-                        const plan = row[23];  // X
-                        const actual = row[24];// Y
+                        // Indices: Y=24, Z=25...
+                        const plan = row[24];  // Y
+                        const actual = row[25];// Z
 
                         const hasPlan = !!plan && String(plan).trim() !== "" && String(plan).trim() !== "-";
                         const hasActual = !!actual && String(actual).trim() !== "" && String(actual).trim() !== "-";
@@ -166,14 +164,14 @@ export default function Stage13() {
                             data: {
                                 ...details,
                                 indentNumber: indentNo,
-                                returnQty: row[16] || "-",
-                                plannedDate: row[23],            // X
-                                actualDate: row[24],             // Y
-                                delay: row[25],                  // Z
-                                dnNumber: row[26],               // AA
-                                remarks: row[27],                // AB
-                                returnImage: row[28],            // AC
-                                returnStatus: row[20],           // U
+                                returnQty: row[17] || "-",       // R
+                                plannedDate: row[24],            // Y
+                                actualDate: row[25],             // Z
+                                delay: row[26],                  // AA
+                                dnNumber: row[27],               // AB
+                                remarks: row[28],                // AC
+                                returnImage: row[29],            // AD
+                                returnStatus: row[21],           // V
                             }
                         };
                     })
@@ -321,23 +319,27 @@ export default function Stage13() {
 
             const dateStr = getFmsTimestamp();
 
-            // 1-based Write Indices: Y=25, AA=27, AB=28, AC=29
+            // 1-based Write Indices: Z=26, AB=28, AC=29, AD=30
             const updates = [
-                { col: "25", val: dateStr },
-                { col: "27", val: formData.dnNumber },
-                { col: "28", val: formData.remarks },
-                { col: "29", val: imageUrl }
+                { col: "26", val: dateStr },
+                { col: "28", val: formData.dnNumber },
+                { col: "29", val: formData.remarks },
+                { col: "30", val: imageUrl }
             ];
 
             // Parallel updates
-            await Promise.all(updates.map(u => {
+            await Promise.all(updates.map(async (u) => {
                 const params = new URLSearchParams();
                 params.append("action", "updateCell");
-                params.append("sheetName", "Partial QC");
+                params.append("sheetName", "Material-Testing");
                 params.append("rowIndex", rec.rowIndex.toString());
                 params.append("columnIndex", u.col);
                 params.append("value", u.val);
-                return fetch(SHEET_API_URL, { method: "POST", body: params });
+                const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
+                const json = await res.json();
+                if (!json.success) {
+                    throw new Error(json.error || `Failed to update column ${u.col}`);
+                }
             }));
 
             toast.success("Approved successfully!", { id: toastId });
@@ -384,20 +386,24 @@ export default function Stage13() {
 
                 try {
                     const updates = [
-                        { col: "25", val: dateStr },
-                        { col: "27", val: bulkFormData.dnNumber },
-                        { col: "28", val: bulkFormData.remarks },
-                        { col: "29", val: imageUrl }
+                        { col: "26", val: dateStr },
+                        { col: "28", val: bulkFormData.dnNumber },
+                        { col: "29", val: bulkFormData.remarks },
+                        { col: "30", val: imageUrl }
                     ];
 
-                    await Promise.all(updates.map(u => {
+                    await Promise.all(updates.map(async (u) => {
                         const params = new URLSearchParams();
                         params.append("action", "updateCell");
-                        params.append("sheetName", "Partial QC");
+                        params.append("sheetName", "Material-Testing");
                         params.append("rowIndex", rec.rowIndex.toString());
                         params.append("columnIndex", u.col);
                         params.append("value", u.val);
-                        return fetch(SHEET_API_URL, { method: "POST", body: params });
+                        const res = await fetch(SHEET_API_URL, { method: "POST", body: params });
+                        const json = await res.json();
+                        if (!json.success) {
+                            throw new Error(json.error || `Failed to update column ${u.col}`);
+                        }
                     }));
                     successCount++;
                 } catch {
@@ -542,9 +548,6 @@ export default function Stage13() {
                                                     <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Return Qty</th>
                                                     <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Status</th>
                                                     <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Planned</th>
-                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Damage Qty</th>
-                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Reason</th>
-                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Image</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
@@ -578,15 +581,6 @@ export default function Stage13() {
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(rec.data.plannedDate)}</td>
-                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{safeValue(rec.data.damageQty)}</td>
-                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{safeValue(rec.data.damageReason)}</td>
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            {rec.data.damageImage ? (
-                                                                <a href={rec.data.damageImage} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-medium whitespace-nowrap">
-                                                                    <FileText className="w-3.5 h-3.5" /> View
-                                                                </a>
-                                                            ) : "-"}
-                                                        </td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -624,9 +618,6 @@ export default function Stage13() {
                                                     <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">DN Number</th>
                                                     <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Image</th>
                                                     <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Remarks</th>
-                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Damage Qty</th>
-                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Reason</th>
-                                                    <th className="px-4 py-4 font-semibold text-slate-900 whitespace-nowrap">Image</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
@@ -654,15 +645,6 @@ export default function Stage13() {
                                                             ) : "-"}
                                                         </td>
                                                         <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate whitespace-nowrap">{rec.data.remarks}</td>
-                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{safeValue(rec.data.damageQty)}</td>
-                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{safeValue(rec.data.damageReason)}</td>
-                                                        <td className="px-4 py-3 whitespace-nowrap">
-                                                            {rec.data.damageImage ? (
-                                                                <a href={rec.data.damageImage} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors text-xs font-medium whitespace-nowrap">
-                                                                    <FileText className="w-3.5 h-3.5" /> View
-                                                                </a>
-                                                            ) : "-"}
-                                                        </td>
                                                     </tr>
                                                 ))}
                                             </tbody>

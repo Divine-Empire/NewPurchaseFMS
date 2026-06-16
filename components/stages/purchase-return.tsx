@@ -35,9 +35,6 @@ const PENDING_COLUMNS = [
   { key: "vendor", label: "Vendor" },
   { key: "invoiceNumber", label: "Invoice No" },
   { key: "plan6", label: "Planned" },
-  { key: "damageQty", label: "Damage Qty" },
-  { key: "damageReason", label: "Reason" },
-  { key: "damageImage", label: "Image" },
 ];
 
 const HISTORY_COLUMNS = [
@@ -54,9 +51,6 @@ const HISTORY_COLUMNS = [
   { key: "returnStatus", label: "Status" },
   { key: "returnItemImage", label: "Item Img" },
   { key: "creditNoteImage", label: "Credit Note" },
-  { key: "damageQty", label: "Damage Qty" },
-  { key: "damageReason", label: "Reason" },
-  { key: "damageImage", label: "Image" },
 ];
 
 // Helper functions
@@ -128,7 +122,7 @@ export default function Stage12() {
       const [accRes, fmsRes, partialRes] = await Promise.all([
         fetch(`${SHEET_API_URL}?sheet=RECEIVING-ACCOUNTS&action=getAll`, { cache: "no-store" }),
         fetch(`${SHEET_API_URL}?sheet=INDENT-LIFT&action=getAll`, { cache: "no-store" }),
-        fetch(`${SHEET_API_URL}?sheet=Partial QC&action=getAll`, { cache: "no-store" }),
+        fetch(`${SHEET_API_URL}?sheet=${encodeURIComponent("Material-Testing")}&action=getAll`, { cache: "no-store" }),
       ]);
 
       const [accJson, fmsJson, partialJson] = await Promise.all([
@@ -139,7 +133,7 @@ export default function Stage12() {
 
       if (!accJson.success) console.error("Receiving Accounts fetch failed:", accJson);
       if (!fmsJson.success) console.error("Indent Lift fetch failed:", fmsJson);
-      if (!partialJson.success) console.error("Partial QC fetch failed:", partialJson);
+      if (!partialJson.success) console.error("Material Testing fetch failed:", partialJson);
 
       if (!accJson.success || !fmsJson.success || !partialJson.success) {
         throw new Error("Failed to load sheet data. Check console for details.");
@@ -168,22 +162,23 @@ export default function Stage12() {
         });
       }
 
-      // 2. Process Partial QC rows to determine Pending & History
+      // 2. Process Material Testing rows to determine Pending & History
       let newPending: any[] = [];
       let newHistory: any[] = [];
 
       if (Array.isArray(partialJson.data)) {
-        partialJson.data.slice(1).forEach((r: any, idx: number) => {
-          const rowIndex = idx + 2; // Data starts at row 2
+        partialJson.data.slice(6).forEach((r: any, idx: number) => {
+          const rowIndex = idx + 7; // Data starts at row 7
+          const timestamp = String(r[0] || "").trim();
           const indentNo = String(r[1] || "").trim();
-          const status = String(r[5] || "").toLowerCase();
-          const returnStatus = String(r[12] || "").toLowerCase(); // M
-          const plan7 = String(r[13] || "").trim(); // N
-          const actual7 = String(r[14] || "").trim(); // O
-          const rejectQty = parseFloat(r[7] || "0"); // H
+          const liftNo = String(r[2] || "").trim();
 
-          // Basic Criteria: QC Rejected AND Return Status is 'return'
-          if (!indentNo || status !== "rejected" || !returnStatus.includes("return")) return;
+          // Basic Criteria: Col-A, B, C must not be empty
+          if (!timestamp || !indentNo || !liftNo) return;
+
+          const plan7 = String(r[14] || "").trim(); // O: Planned7
+          const actual7 = String(r[15] || "").trim(); // P: Actual7
+          const rejectQty = parseFloat(r[12] || "0"); // M: Reject Qty
 
           const parent = indentMap.get(indentNo) || {};
 
@@ -198,14 +193,14 @@ export default function Stage12() {
               plan6: plan7,
               actual6: actual7,
 
-              // Return Details (Cols Q-W / 16-22)
-              returnedQty: r[16], // Q
-              returnRate: r[17],  // R
-              returnAmount: r[18],// S
-              returnReason: r[19],// T
-              returnStatus: r[20],// U
-              returnItemImage: r[21], // V
-              creditNoteImage: r[22], // W
+              // Return Details (Cols R-X / 17-23 in 0-based array)
+              returnedQty: r[17], // R
+              returnRate: r[18],  // S
+              returnAmount: r[19],// T
+              returnReason: r[20],// U
+              returnStatus: r[21],// V
+              returnItemImage: r[22], // W
+              creditNoteImage: r[23], // X
               originalRow: r,
             }
           };
@@ -341,32 +336,32 @@ export default function Stage12() {
       const d = formData.actual6Date || new Date();
       const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(new Date().getHours())}:${pad(new Date().getMinutes())}:${pad(new Date().getSeconds())}`;
 
-      // Update specific Partial QC cells using updateCell to avoid overwriting row data (col A-N) or formulas (col P)
-      // O: Actual7 (Return Date) -> Col 15
-      // P: Delay7 -> Col 16 (Formula, SKIP)
-      // Q-W: Return columns -> Col 17-23
 
       const updates = [
-        { col: 15, val: dateStr },            // O: Actual7
-        { col: 17, val: formData.returnedQty }, // Q: Return Qty
-        { col: 18, val: formData.returnRate },  // R: Return Rate
-        { col: 19, val: formData.returnAmount },// S: Total Return Amount
-        { col: 20, val: formData.returnReason },// T: Return Reason
-        { col: 21, val: formData.returnStatus },// U: Return Status
-        { col: 22, val: itemImgUrl },           // V: Return Item Image
-        { col: 23, val: creditImgUrl },         // W: Credit Note Image
+        { col: 16, val: dateStr },              // P: Actual7
+        { col: 18, val: formData.returnedQty },   // R: Return Qty
+        { col: 19, val: formData.returnRate },    // S: Return Rate
+        { col: 20, val: formData.returnAmount },  // T: Total Return Amount
+        { col: 21, val: formData.returnReason },  // U: Return Reason
+        { col: 22, val: formData.returnStatus },  // V: Return Status
+        { col: 23, val: itemImgUrl },             // W: Return Item Image
+        { col: 24, val: creditImgUrl },           // X: Credit Note Image
       ];
 
       // Parallel updates for speed
-      await Promise.all(updates.map(u => {
+      await Promise.all(updates.map(async (u) => {
         const params = new URLSearchParams();
         params.append("action", "updateCell");
-        params.append("sheetName", "Partial QC");
+        params.append("sheetName", "Material-Testing");
         params.append("rowIndex", rec.rowIndex.toString());
         params.append("columnIndex", u.col.toString());
         params.append("value", String(u.val || ""));
 
-        return fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
+        const res = await fetch(`${SHEET_API_URL}`, { method: "POST", body: params });
+        const json = await res.json();
+        if (!json.success) {
+          throw new Error(json.error || `Failed to update column ${u.col}`);
+        }
       }));
 
       toast.success("Return processed successfully!", { id: toastId });

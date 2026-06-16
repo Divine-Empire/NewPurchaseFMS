@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Loader2, Search, ClipboardCheck, RefreshCw } from "lucide-react";
+import { FileText, Loader2, Search, ClipboardCheck, RefreshCw, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { getFmsTimestamp } from "@/lib/utils";
 
@@ -125,6 +125,8 @@ const HISTORY_COLUMNS = [
   { key: "qcBy", label: "Checked By" },
   { key: "approvedQty", label: "Approved Qty" },
   { key: "checklist", label: "Checklist" },
+  { key: "serialNo", label: "Serial-No" },
+  { key: "image", label: "Image" },
   { key: "rejectType", label: "Reject Type" },
   { key: "partName", label: "Part-Name" },
   { key: "rejectedQty", label: "Reject Qty" },
@@ -146,6 +148,8 @@ export default function Stage8() {
   const [rejectTypeList, setRejectTypeList] = useState<string[]>([]);
   const [partialQCRecords, setPartialQCRecords] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [selectedHistoryRecord, setSelectedHistoryRecord] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     qcBy: "",
@@ -204,12 +208,12 @@ export default function Stage8() {
       let pRows: any[] = [];
 
       if (partialJson.success && Array.isArray(partialJson.data)) {
-        pRows = partialJson.data.slice(7);
+        pRows = partialJson.data.slice(6).filter((r: any) => r[1] && String(r[1]).trim() !== "");
         pRows.forEach((r: any) => {
           const liftNo = String(r[2] || "").trim().toLowerCase();
           if (!liftNo) return;
           approvedMap.set(liftNo, (approvedMap.get(liftNo) || 0) + (parseFloat(r[6] || "0") || 0));
-          rejectedMap.set(liftNo, (rejectedMap.get(liftNo) || 0) + (parseFloat(r[11] || "0") || 0));
+          rejectedMap.set(liftNo, (rejectedMap.get(liftNo) || 0) + (parseFloat(r[12] || "0") || 0));
         });
         setPartialQCRecords(pRows);
       }
@@ -322,7 +326,7 @@ export default function Stage8() {
             qcDate: pRow[3] || "-",
             qcBy: pRow[5] || "-",
             approvedQty: pRow[6] || "0",
-            rejectedQty: pRow[11] || "0",
+            rejectedQty: pRow[12] || "0",
             qcStatus: pRow[4] || "-",
             remarks: pRow[13] || "-",
             damageQty: parentData.damageQty || "-",
@@ -332,8 +336,10 @@ export default function Stage8() {
             liftNo: pRow[2] || "-",
             workingCondition: pRow[4] || "-",
             checklist: pRow[7] || "-",
-            rejectType: pRow[9] || "-",
-            partName: pRow[10] || "-",
+            serialNo: pRow[8] || "-",
+            image: pRow[9] || "-",
+            rejectType: pRow[10] || "-",
+            partName: pRow[11] || "-",
           },
         };
       })
@@ -413,7 +419,7 @@ export default function Stage8() {
 
   const isFormValid = useMemo(() => {
     if (!formData.qcDate || !formData.workingCondition) return false;
-    const isPassed = formData.workingCondition === "yes" || formData.workingCondition === "passed_concern";
+    const isPassed = formData.workingCondition === "Passed" || formData.workingCondition === "Passed but Concern";
     if (isPassed) {
       return !!(
         formData.qcBy &&
@@ -423,7 +429,7 @@ export default function Stage8() {
         formData.srnEntries.length > 0 &&
         formData.srnEntries.every((e) => e.srn.trim() !== "")
       );
-    } else if (formData.workingCondition === "no") {
+    } else if (formData.workingCondition === "Rejected") {
       return !!(
         formData.rejectType &&
         formData.partName &&
@@ -450,9 +456,10 @@ export default function Stage8() {
         ? `${qcDateObj.getMonth() + 1}/${qcDateObj.getDate()}/${qcDateObj.getFullYear()}`
         : "";
 
-      const isPassed = formData.workingCondition === "yes" || formData.workingCondition === "passed_concern";
+      const isPassed = formData.workingCondition === "Passed" || formData.workingCondition === "Passed but Concern";
 
-      let approvedQtyJson = "";
+      let serialNosStr = "";
+      let imageUrlsStr = "";
       if (isPassed && formData.srnEntries.length > 0) {
         const srnData = await Promise.all(
           formData.srnEntries.map(async (entry) => {
@@ -468,11 +475,12 @@ export default function Stage8() {
               const json = await res.json();
               if (json.success) imageUrl = json.fileUrl || "";
             }
-            return { serialNo: entry.serialNo, srn: entry.srn, image: imageUrl };
+            return { srn: entry.srn, image: imageUrl };
           })
         );
-        approvedQtyJson = JSON.stringify(srnData);
-      } else if (formData.workingCondition === "no" && formData.rejectSrnEntries.length > 0) {
+        serialNosStr = srnData.map((d) => d.srn).filter(Boolean).join(", ");
+        imageUrlsStr = srnData.map((d) => d.image).filter(Boolean).join(" , ");
+      } else if (formData.workingCondition === "Rejected" && formData.rejectSrnEntries.length > 0) {
         const srnData = await Promise.all(
           formData.rejectSrnEntries.map(async (entry) => {
             let imageUrl = "";
@@ -487,10 +495,11 @@ export default function Stage8() {
               const json = await res.json();
               if (json.success) imageUrl = json.fileUrl || "";
             }
-            return { serialNo: entry.serialNo, srn: entry.srn, image: imageUrl };
+            return { srn: entry.srn, image: imageUrl };
           })
         );
-        approvedQtyJson = JSON.stringify(srnData);
+        serialNosStr = srnData.map((d) => d.srn).filter(Boolean).join(", ");
+        imageUrlsStr = srnData.map((d) => d.image).filter(Boolean).join(" , ");
       }
 
       const postToPartialQC = async (row: any[]) => {
@@ -523,20 +532,20 @@ export default function Stage8() {
       const checklistStr = isPassed ? formData.checklistSelected.join(", ") : "";
 
       const row = [
-        mDYYYY,                                                // A: Timestamp
-        selectedRecord.data.indentNumber,                      // B: Indent No
-        selectedRecord.data.liftNo || "",                      // C: Lift No
-        qcDateFormatted,                                        // D: QC-Date
-        formData.workingCondition,                             // E: Working Condition
-        formData.qcBy || "",                                   // F: Checked By
-        isPassed ? formData.approvedQty : "",                  // G: Approved Qty
-        checklistStr,                                           // H: Checklist
-        approvedQtyJson,                                        // I: Approved-Qty with S No. and Img (or Rejected-Qty JSON)
-        formData.workingCondition === "no" ? formData.rejectType : "", // J: Reject Type
-        formData.workingCondition === "no" ? formData.partName : "",   // K: Part-Name
-        formData.workingCondition === "no" ? formData.rejectQty : "",   // L: Reject Qty
-        "",                                                     // M: Img (Rejected) -> empty as we write to Column I
-        formData.remarks || "",                                // N: Remarks
+        mDYYYY,                                                        // A: Timestamp
+        selectedRecord.data.indentNumber,                              // B: Indent No
+        selectedRecord.data.liftNo || "",                              // C: Lift No
+        qcDateFormatted,                                                // D: QC-Date
+        formData.workingCondition,                                     // E: Working Condition
+        formData.qcBy || "",                                           // F: Checked By
+        isPassed ? formData.approvedQty : "",                          // G: Approved Qty
+        checklistStr,                                                   // H: Checklist
+        serialNosStr,                                                  // I: Serial-No
+        imageUrlsStr,                                                  // J: Image
+        formData.workingCondition === "Rejected" ? formData.rejectType : "", // K: Reject Type
+        formData.workingCondition === "Rejected" ? formData.partName : "",   // L: Part-Name
+        formData.workingCondition === "Rejected" ? formData.rejectQty : "",   // M: Reject Qty
+        formData.remarks || "",                                        // N: Remarks
       ];
 
       promises.push(postToPartialQC(row));
@@ -599,10 +608,30 @@ export default function Stage8() {
       if (key === "workingCondition") {
         const cond = data.workingCondition;
         if (!cond || cond === "-" || cond === "") return "-";
-        if (cond === "yes") return "Passed";
-        if (cond === "no") return "Rejected";
-        if (cond === "passed_concern") return "Passed but Concern";
+        if (cond === "yes" || cond === "Passed") return "Passed";
+        if (cond === "no" || cond === "Rejected") return "Rejected";
+        if (cond === "passed_concern" || cond === "Passed but Concern") return "Passed but Concern";
         return cond.charAt(0).toUpperCase() + cond.slice(1);
+      }
+
+      if (key === "checklist" || key === "serialNo" || key === "image") {
+        const val = data[key];
+        if (!val || String(val).trim() === "" || val === "-") return "-";
+        return (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedHistoryRecord(record);
+              setHistoryDialogOpen(true);
+            }}
+          >
+            <Eye className="w-4 h-4" />
+          </Button>
+        );
       }
 
       if (AMOUNT_FIELDS.has(key)) {
@@ -821,22 +850,22 @@ export default function Stage8() {
                     onValueChange={(v) => setFormData({
                       ...formData,
                       workingCondition: v,
-                      approvedQty: v === "no" ? "" : formData.approvedQty,
-                      checklistSelected: v === "no" ? [] : formData.checklistSelected,
-                      srnEntries: v === "no" ? [] : formData.srnEntries,
-                      rejectType: (v === "yes" || v === "passed_concern") ? "" : formData.rejectType,
-                      partName: (v === "yes" || v === "passed_concern") ? "" : formData.partName,
-                      rejectQty: (v === "yes" || v === "passed_concern") ? "" : formData.rejectQty,
-                      rejectSrnEntries: (v === "yes" || v === "passed_concern") ? [] : formData.rejectSrnEntries,
+                      approvedQty: v === "Rejected" ? "" : formData.approvedQty,
+                      checklistSelected: v === "Rejected" ? [] : formData.checklistSelected,
+                      srnEntries: v === "Rejected" ? [] : formData.srnEntries,
+                      rejectType: (v === "Passed" || v === "Passed but Concern") ? "" : formData.rejectType,
+                      partName: (v === "Passed" || v === "Passed but Concern") ? "" : formData.partName,
+                      rejectQty: (v === "Passed" || v === "Passed but Concern") ? "" : formData.rejectQty,
+                      rejectSrnEntries: (v === "Passed" || v === "Passed but Concern") ? [] : formData.rejectSrnEntries,
                     })}
                   >
                     <SelectTrigger className="bg-white border-slate-200 rounded-lg shadow-sm h-10">
                       <SelectValue placeholder="Select Option" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="yes">Passed</SelectItem>
-                      <SelectItem value="no">Rejected</SelectItem>
-                      <SelectItem value="passed_concern">Passed but Concern</SelectItem>
+                      <SelectItem value="Passed">Passed</SelectItem>
+                      <SelectItem value="Rejected">Rejected</SelectItem>
+                      <SelectItem value="Passed but Concern">Passed but Concern</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -864,7 +893,7 @@ export default function Stage8() {
                   </Select>
                 </div>
 
-                {(formData.workingCondition === "yes" || formData.workingCondition === "passed_concern") && (
+                {(formData.workingCondition === "Passed" || formData.workingCondition === "Passed but Concern") && (
                   <>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold text-slate-700 font-medium">Approved Qty <span className="text-red-500">*</span></Label>
@@ -925,7 +954,7 @@ export default function Stage8() {
                   </>
                 )}
 
-                {formData.workingCondition === "no" && (
+                {formData.workingCondition === "Rejected" && (
                   <>
                     <div className="space-y-2">
                       <Label className="text-xs font-bold text-slate-700">Reject Type <span className="text-red-500">*</span></Label>
@@ -978,7 +1007,7 @@ export default function Stage8() {
                 )}
               </div>
 
-              {(formData.workingCondition === "yes" || formData.workingCondition === "passed_concern") && formData.srnEntries.length > 0 && (
+              {(formData.workingCondition === "Passed" || formData.workingCondition === "Passed but Concern") && formData.srnEntries.length > 0 && (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                   <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-slate-800">Approved-Qty with S No. and Img</h3>
@@ -1055,7 +1084,7 @@ export default function Stage8() {
                 </div>
               )}
 
-              {formData.workingCondition === "no" && formData.rejectSrnEntries.length > 0 && (
+              {formData.workingCondition === "Rejected" && formData.rejectSrnEntries.length > 0 && (
                 <div className="bg-red-50/30 border border-red-200 rounded-xl overflow-hidden shadow-sm">
                   <div className="px-4 py-3 bg-red-50/80 border-b border-red-100 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-red-800">Rejected-Qty with S No. and Img</h3>
@@ -1134,12 +1163,12 @@ export default function Stage8() {
 
               <div className="space-y-2">
                 <Label className="text-xs font-bold text-slate-700 font-medium">
-                  {formData.workingCondition === "passed_concern" ? "Concern Issue" : "Remarks"}
+                  {formData.workingCondition === "Passed but Concern" ? "Concern Issue" : "Remarks"}
                 </Label>
                 <textarea
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl resize-none text-sm focus:ring-blue-500 h-24"
                   rows={3}
-                  placeholder={formData.workingCondition === "passed_concern" ? "Concern Issue..." : "Remarks..."}
+                  placeholder={formData.workingCondition === "Passed but Concern" ? "Concern Issue..." : "Remarks..."}
                   value={formData.remarks}
                   onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
                 />
@@ -1170,6 +1199,101 @@ export default function Stage8() {
               ) : (
                 "Finalize Quality Report"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="max-w-md max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-xl bg-white">
+          <DialogHeader className="p-6 bg-slate-50 border-b">
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-blue-600" />
+              Inspection Details
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Record Summary */}
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Indent No</span>
+                <span className="text-xs font-bold text-slate-800">{selectedHistoryRecord?.data?.indentNumber || "-"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lift No</span>
+                <span className="text-xs font-bold text-slate-800">{selectedHistoryRecord?.data?.liftNo || "-"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">QC Date</span>
+                <span className="text-xs font-medium text-slate-800">{selectedHistoryRecord?.data?.qcDate || "-"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Checked By</span>
+                <span className="text-xs font-medium text-slate-800">{selectedHistoryRecord?.data?.qcBy || "-"}</span>
+              </div>
+            </div>
+
+            {/* Checklist Section */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">QC Checklist</h4>
+              {selectedHistoryRecord?.data?.checklist && selectedHistoryRecord.data.checklist !== "-" ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedHistoryRecord.data.checklist.split(",").map((item: string, i: number) => (
+                    <span key={i} className="text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-1 rounded-full">
+                      ✓ {item.trim()}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs text-slate-400 italic">No checklist recorded</span>
+              )}
+            </div>
+
+            {/* Serials & Images Section */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Serial Numbers & Photos</h4>
+              <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                {selectedHistoryRecord?.data?.serialNo && selectedHistoryRecord.data.serialNo !== "-" ? (
+                  (() => {
+                    const serials = String(selectedHistoryRecord.data.serialNo).split(",").map(s => s.trim()).filter(Boolean);
+                    const images = selectedHistoryRecord?.data?.image && selectedHistoryRecord.data.image !== "-"
+                      ? String(selectedHistoryRecord.data.image).split(",").map(i => i.trim()).filter(Boolean)
+                      : [];
+                    return serials.map((serial, idx) => {
+                      const imageUrl = images[idx] || "";
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
+                          <span className="text-xs font-semibold text-slate-400">#{idx + 1}</span>
+                          {imageUrl ? (
+                            <a
+                              href={imageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1.5 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-sm transition-all hover:bg-slate-50"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-blue-500" />
+                              {serial}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-600 font-medium bg-white px-2.5 py-1 rounded border border-slate-200">
+                              {serial}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()
+                ) : (
+                  <span className="text-xs text-slate-400 italic">No serial numbers recorded</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="p-4 bg-slate-50 border-t flex justify-end">
+            <Button variant="outline" onClick={() => setHistoryDialogOpen(false)} className="px-5 text-xs">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
