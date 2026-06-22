@@ -1283,7 +1283,10 @@ export default function SerialGeneration() {
             const prefix = `SN-${vendorCode}/${encodedDate}/`;
             const qty = Math.max(1, parseInt(rec.data.receivedQty) || 1);
 
-            newEntriesMap[rec.id] = Array.from({ length: qty }, (_, idx) => {
+            // When serial is not required, show only 1 row per record in the dialog
+            const length = !isSerialEnabled ? 1 : qty;
+
+            newEntriesMap[rec.id] = Array.from({ length }, (_, idx) => {
                 if (!isSerialEnabled) {
                     return { serialNo: prefix };
                 } else if (isAutoMode) {
@@ -1379,14 +1382,41 @@ export default function SerialGeneration() {
             // Loop over each selected record
             for (const rec of selectedRecords) {
                 const itemName = rec.data.itemName;
+
+                // When Serial Required = "No", insert exactly ONE row per record (no per-qty expansion)
+                if (!isSerialEnabled) {
+                    const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
+                    const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
+                    const prefix = `SN-${vendorCode}/${encodedDate}/`;
+
+                    let formattedWarrantyEnd = rec.data.warrantyExpiry;
+                    if (formattedWarrantyEnd && formattedWarrantyEnd !== "-") {
+                        const d = new Date(formattedWarrantyEnd);
+                        if (!isNaN(d.getTime())) {
+                            const pad = (n: number) => String(n).padStart(2, "0");
+                            formattedWarrantyEnd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        }
+                    }
+                    const warrantyRow = new Array(15).fill("");
+                    warrantyRow[0] = rec.data.indentNo;                    // A: Indent No.
+                    warrantyRow[1] = rec.data.liftNo;                      // B: Unit Tracking No.
+                    warrantyRow[2] = "";                                   // C: Serial Code (no QR)
+                    warrantyRow[3] = prefix;                               // D: Serial No. (prefix only)
+                    warrantyRow[4] = rec.data.vendorName;                  // E: Vendor Name
+                    warrantyRow[5] = itemName;                             // F: Item-Name
+                    warrantyRow[6] = formatDate(rec.data.invoiceDate);     // G: Invoice Date
+                    warrantyRow[7] = formattedWarrantyEnd;                 // H: Warranty End
+                    warrantyRow[13] = ts;                                  // N: Submission Timestamp
+                    warrantyRow[14] = "No";                                // O: Yes/No String
+                    allRowsData.push(warrantyRow);
+                    continue; // skip the per-entry loop below for this record
+                }
+
                 const itemCode = itemCodeMap[itemName] || "N/A";
                 const recEntries = entriesMap[rec.id] || [];
 
-                // 1. Generate and Upload images for each serial number (ONLY if isSerialEnabled is true)
+                // 1. Generate and Upload images for each serial number
                 const uploadResults = await Promise.all(recEntries.map(async (entry, idx) => {
-                    if (!isSerialEnabled) {
-                        return ""; // Skip QR generation & upload
-                    }
                     try {
                         const pngDataUrl = await generateLabelPngDataUrl(
                             itemName,
@@ -1404,9 +1434,9 @@ export default function SerialGeneration() {
                     }
                 }));
 
-                // 2. Build rows for this record
+                // 2. Build one row per serial entry
                 recEntries.forEach((entry, idx) => {
-                    const warrantyRow = new Array(15).fill(""); // Extended to length 15
+                    const warrantyRow = new Array(15).fill("");
 
                     let formattedWarrantyEnd = rec.data.warrantyExpiry;
                     if (formattedWarrantyEnd && formattedWarrantyEnd !== "-") {
@@ -1417,16 +1447,16 @@ export default function SerialGeneration() {
                         }
                     }
 
-                    warrantyRow[0] = rec.data.indentNo;    // A: Indent No.
-                    warrantyRow[1] = rec.data.liftNo;      // B: Unit Tracking No.
-                    warrantyRow[2] = uploadResults[idx] || "";        // C: Serial Code (Drive Link)
-                    warrantyRow[3] = entry.serialNo;                  // D: Serial No.
-                    warrantyRow[4] = rec.data.vendorName;  // E: Vendor Name
-                    warrantyRow[5] = rec.data.itemName;    // F: Item-Name
-                    warrantyRow[6] = formatDate(rec.data.invoiceDate); // G: Invoice Date
-                    warrantyRow[7] = formattedWarrantyEnd;            // H: Warranty End
-                    warrantyRow[13] = ts;                             // N: Submission Timestamp
-                    warrantyRow[14] = isSerialEnabled ? "Yes" : "No";  // O: Yes/No String
+                    warrantyRow[0] = rec.data.indentNo;                    // A: Indent No.
+                    warrantyRow[1] = rec.data.liftNo;                      // B: Unit Tracking No.
+                    warrantyRow[2] = uploadResults[idx] || "";             // C: Serial Code (Drive Link)
+                    warrantyRow[3] = entry.serialNo;                       // D: Serial No.
+                    warrantyRow[4] = rec.data.vendorName;                  // E: Vendor Name
+                    warrantyRow[5] = itemName;                             // F: Item-Name
+                    warrantyRow[6] = formatDate(rec.data.invoiceDate);     // G: Invoice Date
+                    warrantyRow[7] = formattedWarrantyEnd;                 // H: Warranty End
+                    warrantyRow[13] = ts;                                  // N: Submission Timestamp
+                    warrantyRow[14] = "Yes";                               // O: Yes/No String
                     allRowsData.push(warrantyRow);
                 });
             }
@@ -1477,7 +1507,7 @@ export default function SerialGeneration() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [selectedRecords, entriesMap, isSerialEnabled, fetchData, itemCodeMap]);
+    }, [selectedRecords, entriesMap, isSerialEnabled, fetchData, itemCodeMap, vendorCodes]);
 
     const updateDirectEntry = useCallback((idx: number, value: string) => {
         setDirectEntries((prev) => {
@@ -1628,9 +1658,9 @@ export default function SerialGeneration() {
         if (selectedRecords.length === 0) return false;
         return selectedRecords.every(rec => {
             const recEntries = entriesMap[rec.id] || [];
-            return recEntries.length > 0 && recEntries.every(e => e.serialNo.trim() !== "" && !e.serialNo.includes("Loading..."));
+            return recEntries.length > 0 && recEntries.every(e => !isSerialEnabled || (e.serialNo.trim() !== "" && !e.serialNo.includes("Loading...")));
         });
-    }, [selectedRecords, entriesMap]);
+    }, [selectedRecords, entriesMap, isSerialEnabled]);
 
     // ─── Cell renderer ────────────────────────────────────────────────────────
     const renderCell = (data: any, key: string) => {
