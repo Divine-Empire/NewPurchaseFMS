@@ -459,14 +459,19 @@ export default function SerialGeneration() {
     const [activeTab, setActiveTab] = useState<"pending" | "history">("pending");
 
     const [open, setOpen] = useState(false);
-    const [selectedRecord, setSelectedRecord] = useState<any>(null);
-    const [entries, setEntries] = useState<WarrantyEntry[]>([]);
+    const [selectedRecords, setSelectedRecords] = useState<any[]>([]);
+    const [entriesMap, setEntriesMap] = useState<Record<string, WarrantyEntry[]>>({});
+    const [isSerialEnabled, setIsSerialEnabled] = useState(true);
+    const [selectedPendingIds, setSelectedPendingIds] = useState<Set<string>>(new Set());
+    const [selectedInvoiceGroup, setSelectedInvoiceGroup] = useState<string | null>(null);
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [vendorCodes, setVendorCodes] = useState<Record<string, string>>({});
     const [itemCodeMap, setItemCodeMap] = useState<Record<string, string>>({});
-    const [previewContent, setPreviewContent] = useState<Record<number, string>>({});
+    const [previewContent, setPreviewContent] = useState<Record<string, string>>({});
     const [startingSequence, setStartingSequence] = useState(1);
     const [isCheckingSequence, setIsCheckingSequence] = useState(false);
+
+
     const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
     const [selectedHistoryRecord, setSelectedHistoryRecord] = useState<any>(null);
     const [isPrinting, setIsPrinting] = useState(false);
@@ -619,7 +624,7 @@ export default function SerialGeneration() {
                         itemName: row[7] || "",
                         receivedQty: row[25] || "",
                         invoiceDate: row[23] || "",
-                        invoiceNo: row[24] || "",
+                        invoiceNo: String(row[24] || "").trim(),
                         invoiceCopy: row[29] || "",
                         poCopy: fmsRow ? (fmsRow[58] || "") : "",
                         warrantyExpiry: row[106] || "",
@@ -664,7 +669,7 @@ export default function SerialGeneration() {
                             itemName: firstRARow[7] || "",
                             receivedQty: String(totalReceivedQty || serials.length),
                             invoiceDate: firstRARow[23] || "",
-                            invoiceNo: firstRARow[24] || "",
+                            invoiceNo: String(firstRARow[24] || "").trim(),
                             invoiceCopy: firstRARow[29] || "",
                             poCopy: firstFmsRow ? (firstFmsRow[58] || "") : "",
                             warrantyExpiry: firstRARow[106] || "",
@@ -734,7 +739,7 @@ export default function SerialGeneration() {
                             itemName: row[7] || "",
                             receivedQty: row[25] || "",
                             invoiceDate: row[23] || "",
-                            invoiceNo: row[24] || "",
+                            invoiceNo: String(row[24] || "").trim(),
                             invoiceCopy: row[29] || "",
                             poCopy: fmsRow ? (fmsRow[58] || "") : "",
                             warrantyExpiry: row[106] || "",
@@ -776,6 +781,65 @@ export default function SerialGeneration() {
     const pending = useMemo(() => applySearch(pendingRecords), [pendingRecords, applySearch]);
 
     const history = useMemo(() => applySearch(historyRecords), [historyRecords, applySearch]);
+
+    // Group pending records by Invoice Number
+    const pendingGroups = useMemo(() => {
+        const groups: Record<string, {
+            invoiceNo: string;
+            invoiceDate: string;
+            vendorName: string;
+            records: any[];
+        }> = {};
+
+        pending.forEach((rec) => {
+            const invNo = rec.data.invoiceNo || "No Invoice";
+            if (!groups[invNo]) {
+                groups[invNo] = {
+                    invoiceNo: invNo,
+                    invoiceDate: rec.data.invoiceDate,
+                    vendorName: rec.data.vendorName,
+                    records: [],
+                };
+            }
+            groups[invNo].records.push(rec);
+        });
+
+        return Object.values(groups);
+    }, [pending]);
+
+    const [expandedInvoices, setExpandedInvoices] = useState<Record<string, boolean>>({});
+
+    const toggleInvoiceExpanded = (invoiceNo: string) => {
+        setExpandedInvoices((prev) => ({
+            ...prev,
+            [invoiceNo]: !prev[invoiceNo],
+        }));
+    };
+
+    const handleCheckboxChange = (rec: any, checked: boolean) => {
+        const invNo = rec.data.invoiceNo || "No Invoice";
+        if (checked) {
+            if (selectedInvoiceGroup && selectedInvoiceGroup !== invNo) {
+                toast.warning(`Selection cleared: You can only select lifts from the same invoice group ("${invNo}").`);
+                const newSet = new Set<string>();
+                newSet.add(rec.id);
+                setSelectedPendingIds(newSet);
+                setSelectedInvoiceGroup(invNo);
+            } else {
+                const newSet = new Set(selectedPendingIds);
+                newSet.add(rec.id);
+                setSelectedPendingIds(newSet);
+                setSelectedInvoiceGroup(invNo);
+            }
+        } else {
+            const newSet = new Set(selectedPendingIds);
+            newSet.delete(rec.id);
+            setSelectedPendingIds(newSet);
+            if (newSet.size === 0) {
+                setSelectedInvoiceGroup(null);
+            }
+        }
+    };
 
     // ─── Open form ────────────────────────────────────────────────────────────
     const fetchNextSequence = async (vendorName: string, invoiceDate: string) => {
@@ -1180,78 +1244,100 @@ export default function SerialGeneration() {
 
 
 
-    const openForm = useCallback((record: any) => {
-        setSelectedRecord(record);
+    const openForm = useCallback((records: any[]) => {
+        setSelectedRecords(records);
         setIsAutoMode(false);
+        setIsSerialEnabled(true); // reset to Yes by default
         setStartingSequence(1); // Reset until fetch completes
 
-        const vendorCode = vendorCodes[record.data.vendorName] || "UNKNOWN";
-        const encodedDate = encodeDateYYMMDD(record.data.invoiceDate);
-        const prefix = `SN-${vendorCode}/${encodedDate}/`;
-
-        const qty = Math.max(1, parseInt(record.data.receivedQty) || 1);
-        setEntries(Array.from({ length: qty }, () => ({
-            serialNo: prefix, // Pre-fill prefix for manual mode immediately
-        })));
+        const newEntriesMap: Record<string, WarrantyEntry[]> = {};
+        records.forEach(rec => {
+            const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
+            const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
+            const prefix = `SN-${vendorCode}/${encodedDate}/`;
+            const qty = Math.max(1, parseInt(rec.data.receivedQty) || 1);
+            newEntriesMap[rec.id] = Array.from({ length: qty }, () => ({
+                serialNo: prefix, // Pre-fill prefix for manual mode immediately
+            }));
+        });
+        setEntriesMap(newEntriesMap);
 
         // Trigger fetch silently in background
-        fetchNextSequence(record.data.vendorName, record.data.invoiceDate);
+        if (records.length > 0) {
+            fetchNextSequence(records[0].data.vendorName, records[0].data.invoiceDate);
+        }
 
         setOpen(true);
     }, [vendorCodes]);
 
     // ─── Auto Serial Generation Logic ───
     useEffect(() => {
-        if (!selectedRecord) return;
-        const vendorCode = vendorCodes[selectedRecord.data.vendorName] || "UNKNOWN";
-        const encodedDate = encodeDateYYMMDD(selectedRecord.data.invoiceDate);
-        const prefix = `SN-${vendorCode}/${encodedDate}/`;
+        if (selectedRecords.length === 0) return;
 
-        if (isAutoMode) {
-            if (isCheckingSequence) {
-                // Optionally show prefix + "..." while loading
-                setEntries(prev => prev.map(() => ({
-                    serialNo: `${prefix}Loading...`
-                })));
-            } else {
-                setEntries(prev => prev.map((_, idx) => ({
-                    serialNo: `${prefix}${String(startingSequence + idx).padStart(3, "0")}`
-                })));
+        const newEntriesMap: Record<string, WarrantyEntry[]> = {};
+        let currentSeq = startingSequence;
+
+        selectedRecords.forEach(rec => {
+            const vendorCode = vendorCodes[rec.data.vendorName] || "UNKNOWN";
+            const encodedDate = encodeDateYYMMDD(rec.data.invoiceDate);
+            const prefix = `SN-${vendorCode}/${encodedDate}/`;
+            const qty = Math.max(1, parseInt(rec.data.receivedQty) || 1);
+
+            newEntriesMap[rec.id] = Array.from({ length: qty }, (_, idx) => {
+                if (!isSerialEnabled) {
+                    return { serialNo: prefix };
+                } else if (isAutoMode) {
+                    if (isCheckingSequence) {
+                        return { serialNo: `${prefix}Loading...` };
+                    } else {
+                        const seqStr = String(currentSeq + idx).padStart(3, "0");
+                        return { serialNo: `${prefix}${seqStr}` };
+                    }
+                } else {
+                    return { serialNo: prefix };
+                }
+            });
+
+            if (isSerialEnabled && isAutoMode && !isCheckingSequence) {
+                currentSeq += qty;
             }
-        } else {
-            // Manual Mode: Pre-fill prefix, clear sequence
-            setEntries(prev => prev.map(() => ({
-                serialNo: prefix
-            })));
-        }
-    }, [isAutoMode, selectedRecord, vendorCodes, startingSequence, isCheckingSequence]);
+        });
 
-    const updateEntry = useCallback((idx: number, field: keyof WarrantyEntry, value: string) => {
-        setEntries((prev) => {
-            const next = [...prev];
-            next[idx] = { ...next[idx], [field]: value };
+        setEntriesMap(newEntriesMap);
+    }, [isAutoMode, isSerialEnabled, selectedRecords, vendorCodes, startingSequence, isCheckingSequence]);
+
+    const updateEntry = useCallback((recordId: string, idx: number, value: string) => {
+        setEntriesMap((prev) => {
+            const next = { ...prev };
+            if (next[recordId]) {
+                const nextList = [...next[recordId]];
+                nextList[idx] = { ...nextList[idx], serialNo: value };
+                next[recordId] = nextList;
+            }
             return next;
         });
         // Clear preview when value changes
         setPreviewContent(prev => {
             const next = { ...prev };
-            delete next[idx];
+            delete next[`${recordId}_${idx}`];
             return next;
         });
     }, []);
 
-    const handlePreview = async (idx: number) => {
-        if (!selectedRecord) return;
-        const entry = entries[idx];
-        if (!entry.serialNo.trim()) {
+    const handlePreview = async (recordId: string, idx: number) => {
+        const rec = selectedRecords.find(r => r.id === recordId);
+        if (!rec) return;
+        const recEntries = entriesMap[recordId] || [];
+        const entry = recEntries[idx];
+        if (!entry || !entry.serialNo.trim()) {
             toast.error("Please enter a serial number first");
             return;
         }
 
         try {
-            const itemName = selectedRecord.data.itemName;
+            const itemName = rec.data.itemName;
             const itemCode = itemCodeMap[itemName] || "N/A";
-            const encodedDate = encodeExpiryDate(selectedRecord.data.productExpiry);
+            const encodedDate = encodeExpiryDate(rec.data.productExpiry);
             const svgString = await generateQRSvgString(itemName, itemCode, entry.serialNo, encodedDate);
 
             const html = `
@@ -1268,7 +1354,7 @@ export default function SerialGeneration() {
                 </div>
             `;
 
-            setPreviewContent(prev => ({ ...prev, [idx]: html }));
+            setPreviewContent(prev => ({ ...prev, [`${recordId}_${idx}`]: html }));
         } catch (err) {
             console.error(err);
             toast.error("Failed to generate preview");
@@ -1281,89 +1367,108 @@ export default function SerialGeneration() {
         e.preventDefault();
         const API = process.env.NEXT_PUBLIC_API_URI;
         const FOLDER_ID = process.env.NEXT_PUBLIC_IMAGE_FOLDER_ID;
-        if (!selectedRecord || !API || !FOLDER_ID) return;
+        if (selectedRecords.length === 0 || !API || !FOLDER_ID) return;
 
         setIsSubmitting(true);
         try {
             const ts = getFmsTimestamp();
-            const itemName = selectedRecord.data.itemName;
-            const itemCode = itemCodeMap[itemName] || "N/A";
+            
+            // Accumulate all rowsData for batch insert
+            const allRowsData: any[][] = [];
 
-            // 1. Generate and Upload images for each serial number
-            const uploadResults = await Promise.all(entries.map(async (entry, idx) => {
-                try {
-                    const pngDataUrl = await generateLabelPngDataUrl(
-                        itemName,
-                        itemCode,
-                        entry.serialNo,
-                        selectedRecord.data.productExpiry
-                    );
-                    const blob = dataURLtoBlob(pngDataUrl);
-                    const fileName = `QR_${entry.serialNo.replace(/[/\\:]/g, '_')}.png`;
-                    const driveUrl = await uploadFileToDrive(blob, fileName, API, FOLDER_ID);
-                    return driveUrl;
-                } catch (err) {
-                    console.error("Upload error for index", idx, err);
-                    return "";
-                }
-            }));
+            // Loop over each selected record
+            for (const rec of selectedRecords) {
+                const itemName = rec.data.itemName;
+                const itemCode = itemCodeMap[itemName] || "N/A";
+                const recEntries = entriesMap[rec.id] || [];
 
-            // 2. batchInsert new rows into Serial-Generation sheet
-            const rowsData = entries.map((entry, idx) => {
-                const warrantyRow = new Array(14).fill("");
-
-                let formattedWarrantyEnd = selectedRecord.data.warrantyExpiry;
-                if (formattedWarrantyEnd && formattedWarrantyEnd !== "-") {
-                    const d = new Date(formattedWarrantyEnd);
-                    if (!isNaN(d.getTime())) {
-                        const pad = (n: number) => String(n).padStart(2, "0");
-                        formattedWarrantyEnd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                // 1. Generate and Upload images for each serial number (ONLY if isSerialEnabled is true)
+                const uploadResults = await Promise.all(recEntries.map(async (entry, idx) => {
+                    if (!isSerialEnabled) {
+                        return ""; // Skip QR generation & upload
                     }
-                }
+                    try {
+                        const pngDataUrl = await generateLabelPngDataUrl(
+                            itemName,
+                            itemCode,
+                            entry.serialNo,
+                            rec.data.productExpiry
+                        );
+                        const blob = dataURLtoBlob(pngDataUrl);
+                        const fileName = `QR_${entry.serialNo.replace(/[/\\:]/g, '_')}.png`;
+                        const driveUrl = await uploadFileToDrive(blob, fileName, API, FOLDER_ID);
+                        return driveUrl;
+                    } catch (err) {
+                        console.error("Upload error for record", rec.id, "index", idx, err);
+                        return "";
+                    }
+                }));
 
-                warrantyRow[0] = selectedRecord.data.indentNo;    // A: Indent No.
-                warrantyRow[1] = selectedRecord.data.liftNo;      // B: Unit Tracking No.
-                warrantyRow[2] = uploadResults[idx] || "";        // C: Serial Code (Drive Link)
-                warrantyRow[3] = entry.serialNo;                  // D: Serial No.
-                warrantyRow[4] = selectedRecord.data.vendorName;  // E: Vendor Name
-                warrantyRow[5] = selectedRecord.data.itemName;    // F: Item-Name
-                warrantyRow[6] = formatDate(selectedRecord.data.invoiceDate); // G: Invoice Date
-                warrantyRow[7] = formattedWarrantyEnd;            // H: Warranty End
-                warrantyRow[13] = ts;                             // N: Product Expiry (Submission Timestamp as local date-time)
-                return warrantyRow;
-            });
+                // 2. Build rows for this record
+                recEntries.forEach((entry, idx) => {
+                    const warrantyRow = new Array(15).fill(""); // Extended to length 15
 
+                    let formattedWarrantyEnd = rec.data.warrantyExpiry;
+                    if (formattedWarrantyEnd && formattedWarrantyEnd !== "-") {
+                        const d = new Date(formattedWarrantyEnd);
+                        if (!isNaN(d.getTime())) {
+                            const pad = (n: number) => String(n).padStart(2, "0");
+                            formattedWarrantyEnd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                        }
+                    }
+
+                    warrantyRow[0] = rec.data.indentNo;    // A: Indent No.
+                    warrantyRow[1] = rec.data.liftNo;      // B: Unit Tracking No.
+                    warrantyRow[2] = uploadResults[idx] || "";        // C: Serial Code (Drive Link)
+                    warrantyRow[3] = entry.serialNo;                  // D: Serial No.
+                    warrantyRow[4] = rec.data.vendorName;  // E: Vendor Name
+                    warrantyRow[5] = rec.data.itemName;    // F: Item-Name
+                    warrantyRow[6] = formatDate(rec.data.invoiceDate); // G: Invoice Date
+                    warrantyRow[7] = formattedWarrantyEnd;            // H: Warranty End
+                    warrantyRow[13] = ts;                             // N: Submission Timestamp
+                    warrantyRow[14] = isSerialEnabled ? "Yes" : "No";  // O: Yes/No String
+                    allRowsData.push(warrantyRow);
+                });
+            }
+
+            // 3. Batch insert to Serial-Generation
             const insertParams = new URLSearchParams();
             insertParams.append("action", "batchInsert");
             insertParams.append("sheetName", "Serial-Generation");
-            insertParams.append("rowsData", JSON.stringify(rowsData));
+            insertParams.append("rowsData", JSON.stringify(allRowsData));
             insertParams.append("startRow", "7");
 
-            // 3. Update RECEIVING-ACCOUNTS col DF (index 109) = Actual timestamp
-            const raRow = new Array(110).fill("");
-            raRow[109] = ts; // DF: Actual
+            // 4. Update RECEIVING-ACCOUNTS actual timestamp (Col DF, index 109) for all records in parallel
+            const updatePromises = selectedRecords.map(rec => {
+                const raRow = new Array(110).fill("");
+                raRow[109] = ts; // DF: Actual
 
-            const updateParams = new URLSearchParams();
-            updateParams.append("action", "update");
-            updateParams.append("sheetName", "RECEIVING-ACCOUNTS");
-            updateParams.append("rowData", JSON.stringify(raRow));
-            updateParams.append("rowIndex", selectedRecord.raIndex.toString());
+                const updateParams = new URLSearchParams();
+                updateParams.append("action", "update");
+                updateParams.append("sheetName", "RECEIVING-ACCOUNTS");
+                updateParams.append("rowData", JSON.stringify(raRow));
+                updateParams.append("rowIndex", rec.raIndex.toString());
 
-            const [insertRes, updateRes] = await Promise.all([
+                return fetch(API, { method: "POST", body: updateParams }).then(res => res.json());
+            });
+
+            const [insertRes, ...updateJsonResults] = await Promise.all([
                 fetch(API, { method: "POST", body: insertParams }),
-                fetch(API, { method: "POST", body: updateParams }),
+                ...updatePromises
             ]);
 
-            const [insertJson, updateJson] = await Promise.all([
-                insertRes.json(), updateRes.json(),
-            ]);
+            const insertJson = await insertRes.json();
+            const allUpdatesSuccess = updateJsonResults.every(r => r.success);
 
-            if (insertJson.success && updateJson.success) {
+            if (insertJson.success && allUpdatesSuccess) {
                 toast.success("Serial Generation recorded successfully!");
                 setOpen(false);
+                setSelectedPendingIds(new Set());
+                setSelectedInvoiceGroup(null);
                 fetchData();
             } else {
-                const errMsg = (!insertJson.success ? insertJson.error : updateJson.error) || "Unknown error";
+                const failedUpdate = updateJsonResults.find(r => !r.success);
+                const errMsg = (!insertJson.success ? insertJson.error : failedUpdate?.error) || "Unknown error";
                 toast.error("Failed to save: " + errMsg);
             }
         } catch (err: any) {
@@ -1372,7 +1477,7 @@ export default function SerialGeneration() {
         } finally {
             setIsSubmitting(false);
         }
-    }, [selectedRecord, entries, fetchData, itemCodeMap]);
+    }, [selectedRecords, entriesMap, isSerialEnabled, fetchData, itemCodeMap]);
 
     const updateDirectEntry = useCallback((idx: number, value: string) => {
         setDirectEntries((prev) => {
@@ -1519,11 +1624,13 @@ export default function SerialGeneration() {
         }
     };
 
-    const formValid = useMemo(() =>
-        entries.length > 0 &&
-        entries.every((e) => e.serialNo.trim() !== ""),
-        [entries]
-    );
+    const formValid = useMemo(() => {
+        if (selectedRecords.length === 0) return false;
+        return selectedRecords.every(rec => {
+            const recEntries = entriesMap[rec.id] || [];
+            return recEntries.length > 0 && recEntries.every(e => e.serialNo.trim() !== "" && !e.serialNo.includes("Loading..."));
+        });
+    }, [selectedRecords, entriesMap]);
 
     // ─── Cell renderer ────────────────────────────────────────────────────────
     const renderCell = (data: any, key: string) => {
@@ -1569,6 +1676,17 @@ export default function SerialGeneration() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-4 flex-1 max-w-2xl justify-end">
+                                {selectedPendingIds.size > 0 && (
+                                    <Button
+                                        onClick={() => {
+                                            const selectedRecs = pendingRecords.filter(r => selectedPendingIds.has(r.id));
+                                            openForm(selectedRecs);
+                                        }}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm transition-all"
+                                    >
+                                        Generate Serials ({selectedPendingIds.size} selected)
+                                    </Button>
+                                )}
                                 <Button
                                     onClick={() => setDirectFormOpen(true)}
                                     className="bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-sm transition-colors"
@@ -1624,32 +1742,73 @@ export default function SerialGeneration() {
                                     <table className="w-full caption-bottom text-sm border-separate border-spacing-0 min-w-max">
                                         <thead className="sticky top-0 z-30 bg-slate-200 shadow-sm border-none text-center">
                                             <tr className="hover:bg-transparent border-none">
-                                                <th className="sticky left-0 z-40 bg-slate-200 w-[150px] border-b text-center whitespace-nowrap px-4 py-3 font-semibold text-slate-900">Actions</th>
+                                                <th className="sticky left-0 z-40 bg-slate-200 w-[170px] border-b text-center whitespace-nowrap px-4 py-3 font-semibold text-slate-900">Actions</th>
                                                 {PENDING_COLUMNS.map((c) => (
                                                     <th key={c.key} className="bg-slate-200 border-b text-center px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{c.label}</th>
                                                 ))}
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {pending.map((rec) => {
+                                            {pendingGroups.map((group) => {
+                                                const isExpanded = !!expandedInvoices[group.invoiceNo];
                                                 return (
-                                                    <tr key={rec.id} className="hover:bg-gray-50 group transition-colors">
-                                                        <td className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-b text-center px-4 py-2 transition-colors">
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={() => openForm(rec)}
-                                                                className="h-8 px-3 text-xs font-medium border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-colors whitespace-nowrap"
-                                                            >
-                                                                Serial Generation
-                                                            </Button>
-                                                        </td>
-                                                        {PENDING_COLUMNS.map((col) => (
-                                                            <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
-                                                                {renderCell(rec.data, col.key)}
+                                                    <React.Fragment key={group.invoiceNo}>
+                                                        {/* Group Header Row */}
+                                                        <tr 
+                                                            className="bg-slate-100/80 cursor-pointer hover:bg-slate-200/60"
+                                                            onClick={() => toggleInvoiceExpanded(group.invoiceNo)}
+                                                        >
+                                                            <td className="sticky left-0 z-20 bg-slate-100/80 hover:bg-slate-200/60 border-b px-4 py-3 font-bold text-slate-900">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-slate-500 w-4 text-center">
+                                                                        {isExpanded ? "▼" : "▶"}
+                                                                    </span>
+                                                                    <span>
+                                                                        Invoice: {group.invoiceNo}
+                                                                    </span>
+                                                                </div>
                                                             </td>
-                                                        ))}
-                                                    </tr>
+                                                            <td colSpan={PENDING_COLUMNS.length} className="border-b px-4 py-3 font-semibold text-slate-700">
+                                                                <div className="flex gap-6 text-sm">
+                                                                    <span>Date: <span className="text-slate-900">{formatDateDash(group.invoiceDate)}</span></span>
+                                                                    <span>Vendor: <span className="text-slate-900">{group.vendorName}</span></span>
+                                                                    <span className="text-slate-500 font-normal">({group.records.length} lift{group.records.length > 1 ? "s" : ""})</span>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+
+                                                        {/* Child Rows */}
+                                                        {isExpanded && group.records.map((rec) => {
+                                                            const isChecked = selectedPendingIds.has(rec.id);
+                                                            return (
+                                                                <tr key={rec.id} className={cn("group transition-colors", isChecked ? "bg-blue-50/50 hover:bg-blue-100/50" : "hover:bg-gray-50")}>
+                                                                    <td className={cn("sticky left-0 z-20 border-b text-center px-4 py-2 transition-colors", isChecked ? "bg-blue-50 group-hover:bg-blue-100/50" : "bg-white group-hover:bg-gray-50")}>
+                                                                        <div className="flex items-center justify-center gap-3">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={isChecked}
+                                                                                onChange={(e) => handleCheckboxChange(rec, e.target.checked)}
+                                                                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                            />
+                                                                            <Button
+                                                                                variant="outline"
+                                                                                size="sm"
+                                                                                onClick={() => openForm([rec])}
+                                                                                className="h-8 px-3 text-xs font-medium border-slate-200 hover:bg-slate-50 hover:text-slate-900 transition-colors whitespace-nowrap"
+                                                                            >
+                                                                                Serial Generation
+                                                                            </Button>
+                                                                        </div>
+                                                                    </td>
+                                                                    {PENDING_COLUMNS.map((col) => (
+                                                                        <td key={col.key} className="border-b px-4 py-2 text-center text-slate-700">
+                                                                            {renderCell(rec.data, col.key)}
+                                                                        </td>
+                                                                    ))}
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </React.Fragment>
                                                 );
                                             })}
                                         </tbody>
@@ -1722,95 +1881,134 @@ export default function SerialGeneration() {
 
             {/* ── DIALOG ── */}
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col">
-                    <DialogHeader className="shrink-0">
+                <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+                    <DialogHeader className="shrink-0 border-b pb-4">
                         <DialogTitle>Serial Generation</DialogTitle>
-                        {selectedRecord && (
-                            <div className="flex flex-col gap-2 mt-1">
+                        {selectedRecords.length > 0 && (
+                            <div className="flex flex-col gap-2 mt-2">
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                                    <span>Indent: <span className="font-medium text-gray-700">{selectedRecord.data.indentNo}</span></span>
-                                    <span>Vendor: <span className="font-medium text-gray-700">{selectedRecord.data.vendorName}</span></span>
-                                    <span>Item: <span className="font-medium text-gray-700">{selectedRecord.data.itemName}</span></span>
-                                    <span>Qty: <span className="font-medium text-gray-700">{selectedRecord.data.receivedQty}</span></span>
+                                    <span>Invoice: <span className="font-medium text-gray-700">{selectedRecords[0].data.invoiceNo || "-"}</span></span>
+                                    <span>Vendor: <span className="font-medium text-gray-700">{selectedRecords[0].data.vendorName}</span></span>
+                                    <span>Total Lifts: <span className="font-medium text-gray-700">{selectedRecords.length}</span></span>
                                 </div>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <span className="text-sm font-medium text-gray-700">Serial Mode:</span>
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        variant={isAutoMode ? "default" : "outline"}
-                                        className={isAutoMode ? "bg-blue-600 hover:bg-blue-700 text-white min-w-[80px]" : "border-amber-500 text-amber-600 hover:bg-amber-50 min-w-[80px]"}
-                                        onClick={() => setIsAutoMode(!isAutoMode)}
-                                        disabled={isAutoMode && isCheckingSequence && entries[0]?.serialNo?.includes("Loading...")}
-                                    >
-                                        {isAutoMode && isCheckingSequence ? (
-                                            <><Loader2 className="w-3 h-3 animate-spin mr-1.5" />Auto</>
-                                        ) : (
-                                            isAutoMode ? "Auto" : "Manual"
-                                        )}
-                                    </Button>
+                                <div className="flex items-center justify-between mt-2 flex-wrap gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-gray-700">Yes / No Toggle:</span>
+                                        <select
+                                            value={isSerialEnabled ? "Yes" : "No"}
+                                            onChange={(e) => setIsSerialEnabled(e.target.value === "Yes")}
+                                            className="h-8 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-700 shadow-sm focus:border-amber-500 focus:outline-none"
+                                        >
+                                            <option value="Yes">Yes</option>
+                                            <option value="No">No</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-gray-700">Serial Mode:</span>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant={isAutoMode ? "default" : "outline"}
+                                            className={
+                                                !isSerialEnabled 
+                                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed min-w-[80px]"
+                                                : isAutoMode ? "bg-blue-600 hover:bg-blue-700 text-white min-w-[80px]" : "border-amber-500 text-amber-600 hover:bg-amber-50 min-w-[80px]"
+                                            }
+                                            onClick={() => {
+                                                if (isSerialEnabled) {
+                                                    setIsAutoMode(!isAutoMode);
+                                                }
+                                            }}
+                                            disabled={!isSerialEnabled || (isAutoMode && isCheckingSequence)}
+                                        >
+                                            {isAutoMode && isCheckingSequence ? (
+                                                <><Loader2 className="w-3 h-3 animate-spin mr-1.5" />Auto</>
+                                            ) : (
+                                                isAutoMode ? "Auto" : "Manual"
+                                            )}
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         )}
                     </DialogHeader>
 
                     <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-                        {/* Column headers */}
-                        <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 py-2 border-b shrink-0">
-                            <div className="col-span-1 text-center">#</div>
-                            <div className="col-span-10">Serial No. *</div>
-                            <div className="col-span-1 text-center">QR</div>
-                        </div>
-
-                        {/* Scrollable rows */}
-                        <div className="flex-1 overflow-y-auto space-y-2 py-3 pr-1">
-                            {entries.map((entry, idx) => {
+                        {/* Scrollable sections */}
+                        <div className="flex-1 overflow-y-auto space-y-6 py-4 pr-1">
+                            {selectedRecords.map((rec) => {
+                                const recEntries = entriesMap[rec.id] || [];
                                 return (
-                                    <div key={idx} className="grid grid-cols-12 gap-2 items-center px-1">
-                                        <div className="col-span-1 text-center text-sm font-medium text-gray-500">
-                                            {idx + 1}
+                                    <div key={rec.id} className="border rounded-lg p-3 space-y-3 bg-white shadow-sm">
+                                        <div className="bg-slate-50 px-3 py-2 -mx-3 -mt-3 rounded-t-lg border-b flex flex-wrap justify-between items-center text-xs font-semibold text-slate-700">
+                                            <div className="flex gap-3">
+                                                <span>Indent: <span className="font-bold text-slate-900">{rec.data.indentNo}</span></span>
+                                                <span>Lift: <span className="font-bold text-slate-900">{rec.data.liftNo || "-"}</span></span>
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <span>Item: <span className="font-bold text-slate-900">{rec.data.itemName}</span></span>
+                                                <span>Qty: <span className="font-bold text-slate-900">{rec.data.receivedQty}</span></span>
+                                            </div>
                                         </div>
-                                        <div className="col-span-10">
-                                            <Input
-                                                value={entry.serialNo}
-                                                onChange={(e) => updateEntry(idx, "serialNo", e.target.value)}
-                                                placeholder={isAutoMode ? "Auto-generated" : "Enter Serial Number"}
-                                                className={`h-8 text-sm ${isAutoMode ? "bg-gray-50 font-mono" : ""}`}
-                                                required
-                                                readOnly={isAutoMode}
-                                            />
-                                        </div>
-                                        <div className="col-span-1 flex justify-center">
-                                            <Popover>
-                                                <PopoverTrigger asChild>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="h-8 w-8 p-0"
-                                                        onClick={() => handlePreview(idx)}
-                                                        disabled={!entry.serialNo.trim()}
-                                                    >
-                                                        <Eye className="h-4 w-4" />
-                                                    </Button>
-                                                </PopoverTrigger>
-                                                <PopoverContent className="w-[420px] p-2 bg-white" side="left">
-                                                    <div className="flex flex-col items-center gap-2">
-                                                        <span className="text-xs font-semibold text-gray-500">Label Preview</span>
-                                                        {previewContent[idx] ? (
-                                                            <div
-                                                                dangerouslySetInnerHTML={{ __html: previewContent[idx] }}
-                                                                className="border shadow-sm max-w-full"
-                                                            />
-                                                        ) : (
-                                                            <div className="flex items-center justify-center w-[400px] h-[190px] bg-slate-50 border border-dashed rounded text-slate-400">
-                                                                <Loader2 className="h-8 w-8 animate-spin" />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </PopoverContent>
 
-                                            </Popover>
+                                        <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 border-b">
+                                            <div className="col-span-1 text-center">#</div>
+                                            <div className="col-span-10">Serial No. *</div>
+                                            <div className="col-span-1 text-center">QR</div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            {recEntries.map((entry, idx) => {
+                                                return (
+                                                    <div key={idx} className="grid grid-cols-12 gap-2 items-center px-1">
+                                                        <div className="col-span-1 text-center text-sm font-medium text-gray-500">
+                                                            {idx + 1}
+                                                        </div>
+                                                        <div className="col-span-10">
+                                                            <Input
+                                                                value={entry.serialNo}
+                                                                onChange={(e) => updateEntry(rec.id, idx, e.target.value)}
+                                                                placeholder={isAutoMode ? "Auto-generated" : "Enter Serial Number"}
+                                                                className={`h-8 text-sm ${isAutoMode || !isSerialEnabled ? "bg-slate-50 font-mono" : ""}`}
+                                                                required
+                                                                readOnly={isAutoMode || !isSerialEnabled}
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 flex justify-center">
+                                                            <Popover>
+                                                                <PopoverTrigger asChild>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="h-8 w-8 p-0"
+                                                                        onClick={() => handlePreview(rec.id, idx)}
+                                                                        disabled={!entry.serialNo.trim() || !isSerialEnabled}
+                                                                    >
+                                                                        <Eye className="h-4 w-4" />
+                                                                    </Button>
+                                                                </PopoverTrigger>
+                                                                <PopoverContent className="w-[420px] p-2 bg-white" side="left">
+                                                                    <div className="flex flex-col items-center gap-2">
+                                                                        <span className="text-xs font-semibold text-gray-500">Label Preview</span>
+                                                                        {previewContent[`${rec.id}_${idx}`] ? (
+                                                                            <div
+                                                                                dangerouslySetInnerHTML={{ __html: previewContent[`${rec.id}_${idx}`] }}
+                                                                                className="border shadow-sm max-w-full"
+                                                                            />
+                                                                        ) : (
+                                                                            <div className="flex items-center justify-center w-[400px] h-[190px] bg-slate-50 border border-dashed rounded text-slate-400">
+                                                                                <Loader2 className="h-8 w-8 animate-spin" />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </PopoverContent>
+                                                            </Popover>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 );
@@ -1824,7 +2022,7 @@ export default function SerialGeneration() {
                             <Button type="submit" disabled={!formValid || isSubmitting}>
                                 {isSubmitting
                                     ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</>
-                                    : `Submit (${entries.length} item${entries.length > 1 ? "s" : ""})`
+                                    : `Submit (${selectedRecords.reduce((acc, rec) => acc + (entriesMap[rec.id]?.length || 0), 0)} items across ${selectedRecords.length} lift${selectedRecords.length > 1 ? "s" : ""})`
                                 }
                             </Button>
                         </DialogFooter>
